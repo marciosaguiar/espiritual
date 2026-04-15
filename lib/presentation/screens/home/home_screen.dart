@@ -8,8 +8,7 @@ import '../../providers/songs_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/scale_model.dart';
-import '../songs/songs_screen.dart';
-import '../scale/scale_screen.dart';
+import '../../../data/models/song_model.dart';
 import '../songs/song_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -21,21 +20,34 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late int _verseIndex;
+  List<SongModel> _suggestions = [];
+  int _lastSongsCount = -1;
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
     _verseIndex = (now.day + now.month) % AppStrings.verses.length;
+    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshSuggestions());
+  }
+
+  /// Recomputes suggestions only when the song list actually changes.
+  void _refreshSuggestions() {
+    if (!mounted) return;
+    final songs = context.read<SongsProvider>();
+    final count = songs.allSongs.length;
+    if (count != _lastSongsCount && count > 0) {
+      _lastSongsCount = count;
+      setState(() {
+        _suggestions = songs.suggestRepertoire(count: 4);
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    final scale = context.watch<ScaleProvider>();
-    final songs = context.watch<SongsProvider>();
+    // Use Selector to rebuild only when the specific data we care about changes.
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final nextScale = scale.nextScale;
 
     return Scaffold(
       body: CustomScrollView(
@@ -49,45 +61,49 @@ class _HomeScreenState extends State<HomeScreen> {
             surfaceTintColor: Colors.transparent,
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
-              title: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Olá, ${auth.user?.name.split(' ').first ?? 'Levita'}! 👋',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+              title: Selector<AuthProvider, String?>(
+                selector: (_, auth) => auth.user?.name,
+                builder: (context, name, _) => Column(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Olá, ${name?.split(' ').first ?? 'Levita'}! 👋',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                      ),
                     ),
-                  ),
-                  Text(
-                    DateFormat('EEEE, d \'de\' MMMM', 'pt_BR').format(DateTime.now()),
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 11,
-                      color: AppColors.textSecondaryLight,
+                    Text(
+                      DateFormat('EEEE, d \'de\' MMMM', 'pt_BR').format(DateTime.now()),
+                      style: const TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 11,
+                        color: AppColors.textSecondaryLight,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             actions: [
               Padding(
                 padding: const EdgeInsets.only(right: 16),
-                child: CircleAvatar(
-                  radius: 20,
-                  backgroundColor: AppColors.blue.withOpacity(0.15),
-                  child: Text(
-                    (auth.user?.name.isNotEmpty == true)
-                        ? auth.user!.name[0].toUpperCase()
-                        : 'L',
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.blue,
-                      fontSize: 16,
+                child: Selector<AuthProvider, String?>(
+                  selector: (_, auth) => auth.user?.name,
+                  builder: (_, name, __) => CircleAvatar(
+                    radius: 20,
+                    backgroundColor: AppColors.blue.withOpacity(0.15),
+                    child: Text(
+                      (name?.isNotEmpty == true) ? name![0].toUpperCase() : 'L',
+                      style: const TextStyle(
+                        fontFamily: 'Poppins',
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.blue,
+                        fontSize: 16,
+                      ),
                     ),
                   ),
                 ),
@@ -105,16 +121,28 @@ class _HomeScreenState extends State<HomeScreen> {
                   _VerseCard(verse: AppStrings.verses[_verseIndex]),
                   const SizedBox(height: 20),
 
-                  // Next Service Card
-                  _NextServiceCard(scale: nextScale, songs: songs),
+                  // Next Service Card — rebuilds only when nextScale changes
+                  Selector<ScaleProvider, ScaleModel?>(
+                    selector: (_, scale) => scale.nextScale,
+                    builder: (_, nextScale, __) => _NextServiceCard(scale: nextScale),
+                  ),
                   const SizedBox(height: 20),
 
-                  // Quick Actions
-                  _QuickActionsSection(songs: songs),
+                  // Quick Actions (static, no provider needed)
+                  const _QuickActionsSection(),
                   const SizedBox(height: 20),
 
-                  // Suggested repertoire
-                  _SuggestionSection(songs: songs),
+                  // Suggested repertoire — uses cached list, not re-shuffled on every build
+                  Selector<SongsProvider, int>(
+                    selector: (_, sp) => sp.allSongs.length,
+                    builder: (context, count, _) {
+                      // Trigger refresh when count changes, but don't block the build
+                      WidgetsBinding.instance.addPostFrameCallback(
+                        (_) => _refreshSuggestions(),
+                      );
+                      return _SuggestionSection(suggestions: _suggestions);
+                    },
+                  ),
                   const SizedBox(height: 100),
                 ],
               ),
@@ -213,9 +241,8 @@ class _VerseCard extends StatelessWidget {
 
 class _NextServiceCard extends StatelessWidget {
   final ScaleModel? scale;
-  final SongsProvider songs;
 
-  const _NextServiceCard({this.scale, required this.songs});
+  const _NextServiceCard({this.scale});
 
   @override
   Widget build(BuildContext context) {
@@ -417,8 +444,7 @@ class _InfoRow extends StatelessWidget {
 }
 
 class _QuickActionsSection extends StatelessWidget {
-  final SongsProvider songs;
-  const _QuickActionsSection({required this.songs});
+  const _QuickActionsSection();
 
   @override
   Widget build(BuildContext context) {
@@ -524,12 +550,12 @@ class _QuickActionButton extends StatelessWidget {
 }
 
 class _SuggestionSection extends StatelessWidget {
-  final SongsProvider songs;
-  const _SuggestionSection({required this.songs});
+  final List<SongModel> suggestions;
+  const _SuggestionSection({required this.suggestions});
 
   @override
   Widget build(BuildContext context) {
-    final suggested = songs.suggestRepertoire(count: 4);
+    final suggested = suggestions;
     if (suggested.isEmpty) return const SizedBox.shrink();
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
