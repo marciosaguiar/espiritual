@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'dart:math';
 import '../../data/models/song_model.dart';
 import '../../data/services/firestore_service.dart';
 import '../../data/services/local_storage_service.dart';
@@ -145,10 +146,13 @@ class SongsProvider extends ChangeNotifier {
     }
   }
 
-  /// AI-like repertoire suggestion based on history
+  /// Repertoire suggestion — deterministic within the same day so the list
+  /// stays stable across rebuilds instead of reshuffling on every notify.
   List<SongModel> suggestRepertoire({int count = 6}) {
     if (_songs.isEmpty) return [];
-    final shuffled = List<SongModel>.from(_songs)..shuffle();
+    final now = DateTime.now();
+    final seed = now.year * 10000 + now.month * 100 + now.day;
+    final shuffled = List<SongModel>.from(_songs)..shuffle(Random(seed));
     return shuffled.take(count).toList();
   }
 }

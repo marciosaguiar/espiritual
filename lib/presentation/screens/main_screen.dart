@@ -21,24 +21,19 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-  late final List<Widget> _screens;
+
+  // HomeScreen is kept as a field so it is never recreated across rebuilds,
+  // preserving the scroll position and state when switching tabs.
+  late final HomeScreen _homeScreen;
 
   @override
   void initState() {
     super.initState();
-    _screens = [
-      HomeScreen(onNavigate: _navigateTo),
-      const SongsScreen(),
-      const ScaleScreen(),
-      const ChatScreen(),
-      const ProfileScreen(),
-    ];
+    _homeScreen = HomeScreen(onNavigate: _switchTab);
     _initData();
   }
 
-  void _navigateTo(int index) {
-    setState(() => _currentIndex = index);
-  }
+  void _switchTab(int index) => setState(() => _currentIndex = index);
 
   void _initData() {
     final auth = context.read<AuthProvider>();
@@ -62,7 +57,13 @@ class _MainScreenState extends State<MainScreen> {
     return Scaffold(
       body: IndexedStack(
         index: _currentIndex,
-        children: _screens,
+        children: [
+          _homeScreen,
+          const SongsScreen(),
+          const ScaleScreen(),
+          const ChatScreen(),
+          const ProfileScreen(),
+        ],
       ),
       bottomNavigationBar: Container(
         decoration: BoxDecoration(
@@ -75,7 +76,7 @@ class _MainScreenState extends State<MainScreen> {
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
-          onTap: _navigateTo,
+          onTap: _switchTab,
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined),

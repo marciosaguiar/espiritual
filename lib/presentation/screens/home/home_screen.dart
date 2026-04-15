@@ -8,12 +8,11 @@ import '../../providers/songs_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/scale_model.dart';
-import '../../../data/models/song_model.dart';
 import '../songs/song_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  /// Called with the tab index (1=Músicas, 2=Escala, 3=Chat) when a quick
-  /// action button is tapped.
+  /// Callback to switch tabs in the parent [MainScreen].
+  /// Index: 1 = Músicas, 2 = Escala, 3 = Chat.
   final void Function(int tabIndex)? onNavigate;
 
   const HomeScreen({super.key, this.onNavigate});
@@ -24,52 +23,26 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   late int _verseIndex;
-  List<SongModel> _suggestions = [];
-  int _lastSongsCount = -1;
-
-  SongsProvider? _songsProviderRef;
 
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
     _verseIndex = (now.day + now.month) % AppStrings.verses.length;
-
-    // Subscribe to songs changes after the first frame so context is ready.
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      final sp = context.read<SongsProvider>();
-      _songsProviderRef = sp;
-      sp.addListener(_onSongsChanged);
-      _onSongsChanged(); // initial check in case songs are already loaded
-    });
-  }
-
-  @override
-  void dispose() {
-    _songsProviderRef?.removeListener(_onSongsChanged);
-    super.dispose();
-  }
-
-  void _onSongsChanged() {
-    if (!mounted) return;
-    final count = _songsProviderRef?.allSongs.length ?? 0;
-    if (count > 0 && count != _lastSongsCount) {
-      setState(() {
-        _lastSongsCount = count;
-        _suggestions = _songsProviderRef!.suggestRepertoire(count: 4);
-      });
-    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final scale = context.watch<ScaleProvider>();
+    final songs = context.watch<SongsProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final nextScale = scale.nextScale;
 
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          // App Bar
+          // ── App Bar ──────────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 120,
             floating: false,
@@ -78,52 +51,48 @@ class _HomeScreenState extends State<HomeScreen> {
             surfaceTintColor: Colors.transparent,
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
-              title: Selector<AuthProvider, String?>(
-                selector: (_, auth) => auth.user?.name,
-                builder: (context, name, _) => Column(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Olá, ${name?.split(' ').first ?? 'Levita'}! 👋',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: isDark
-                            ? AppColors.textPrimaryDark
-                            : AppColors.textPrimaryLight,
-                      ),
+              title: Column(
+                mainAxisAlignment: MainAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Olá, ${auth.user?.name.split(' ').first ?? 'Levita'}! 👋',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight,
                     ),
-                    Text(
-                      DateFormat('EEEE, d \'de\' MMMM', 'pt_BR')
-                          .format(DateTime.now()),
-                      style: const TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 11,
-                        color: AppColors.textSecondaryLight,
-                      ),
+                  ),
+                  Text(
+                    DateFormat('EEEE, d \'de\' MMMM', 'pt_BR')
+                        .format(DateTime.now()),
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 11,
+                      color: AppColors.textSecondaryLight,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
             actions: [
               Padding(
                 padding: const EdgeInsets.only(right: 16),
-                child: Selector<AuthProvider, String?>(
-                  selector: (_, auth) => auth.user?.name,
-                  builder: (_, name, __) => CircleAvatar(
-                    radius: 20,
-                    backgroundColor: AppColors.blue.withOpacity(0.15),
-                    child: Text(
-                      (name?.isNotEmpty == true) ? name![0].toUpperCase() : 'L',
-                      style: const TextStyle(
-                        fontFamily: 'Poppins',
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.blue,
-                        fontSize: 16,
-                      ),
+                child: CircleAvatar(
+                  radius: 20,
+                  backgroundColor: AppColors.blue.withOpacity(0.15),
+                  child: Text(
+                    (auth.user?.name.isNotEmpty == true)
+                        ? auth.user!.name[0].toUpperCase()
+                        : 'L',
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.blue,
+                      fontSize: 16,
                     ),
                   ),
                 ),
@@ -139,21 +108,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   _VerseCard(verse: AppStrings.verses[_verseIndex]),
                   const SizedBox(height: 20),
-
-                  // Rebuilds only when nextScale changes
-                  Selector<ScaleProvider, ScaleModel?>(
-                    selector: (_, scale) => scale.nextScale,
-                    builder: (_, nextScale, __) =>
-                        _NextServiceCard(scale: nextScale),
-                  ),
+                  _NextServiceCard(scale: nextScale),
                   const SizedBox(height: 20),
-
-                  // Quick actions — navigation callback wired up
                   _QuickActionsSection(onNavigate: widget.onNavigate),
                   const SizedBox(height: 20),
-
-                  // Suggestions — driven by listener, not rebuilt by Selector
-                  _SuggestionSection(suggestions: _suggestions),
+                  _SuggestionSection(songs: songs),
                   const SizedBox(height: 100),
                 ],
               ),
@@ -165,7 +124,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-// ─── Verse Card ───────────────────────────────────────────────────────────────
+// ── Verse Card ────────────────────────────────────────────────────────────────
 
 class _VerseCard extends StatelessWidget {
   final String verse;
@@ -253,7 +212,7 @@ class _VerseCard extends StatelessWidget {
   }
 }
 
-// ─── Next Service Card ────────────────────────────────────────────────────────
+// ── Next Service Card ─────────────────────────────────────────────────────────
 
 class _NextServiceCard extends StatelessWidget {
   final ScaleModel? scale;
@@ -295,8 +254,9 @@ class _NextServiceCard extends StatelessWidget {
                   fontFamily: 'Poppins',
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color:
-                      isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimaryLight,
                 ),
               ),
             ],
@@ -340,29 +300,31 @@ class _NextServiceCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 6),
-              ...scale!.songs.take(3).map((s) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.music_note_rounded,
-                            size: 14, color: AppColors.blue),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            '${s.songName} • ${s.artist}',
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              fontSize: 12,
-                              color: isDark
-                                  ? AppColors.textPrimaryDark
-                                  : AppColors.textPrimaryLight,
+              ...scale!.songs.take(3).map(
+                    (s) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.music_note_rounded,
+                              size: 14, color: AppColors.blue),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '${s.songName} • ${s.artist}',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 12,
+                                color: isDark
+                                    ? AppColors.textPrimaryDark
+                                    : AppColors.textPrimaryLight,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  )),
+                  ),
               if (scale!.songs.length > 3)
                 Text(
                   '+ ${scale!.songs.length - 3} músicas',
@@ -457,8 +419,9 @@ class _InfoRow extends StatelessWidget {
             style: TextStyle(
               fontFamily: 'Poppins',
               fontSize: 13,
-              color:
-                  isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+              color: isDark
+                  ? AppColors.textPrimaryDark
+                  : AppColors.textPrimaryLight,
             ),
           ),
         ),
@@ -467,7 +430,7 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-// ─── Quick Actions ────────────────────────────────────────────────────────────
+// ── Quick Actions ─────────────────────────────────────────────────────────────
 
 class _QuickActionsSection extends StatelessWidget {
   final void Function(int)? onNavigate;
@@ -485,8 +448,9 @@ class _QuickActionsSection extends StatelessWidget {
             fontFamily: 'Poppins',
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color:
-                isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+            color: isDark
+                ? AppColors.textPrimaryDark
+                : AppColors.textPrimaryLight,
           ),
         ),
         const SizedBox(height: 12),
@@ -573,15 +537,16 @@ class _QuickActionButton extends StatelessWidget {
   }
 }
 
-// ─── Suggestion Section ───────────────────────────────────────────────────────
+// ── Suggestion Section ────────────────────────────────────────────────────────
 
 class _SuggestionSection extends StatelessWidget {
-  final List<SongModel> suggestions;
-  const _SuggestionSection({required this.suggestions});
+  final SongsProvider songs;
+  const _SuggestionSection({required this.songs});
 
   @override
   Widget build(BuildContext context) {
-    if (suggestions.isEmpty) return const SizedBox.shrink();
+    final suggested = songs.suggestRepertoire(count: 4);
+    if (suggested.isEmpty) return const SizedBox.shrink();
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -607,7 +572,7 @@ class _SuggestionSection extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 12),
-        ...suggestions.map(
+        ...suggested.map(
           (song) => GestureDetector(
             onTap: () => Navigator.push(
               context,
@@ -665,8 +630,8 @@ class _SuggestionSection extends StatelessWidget {
                     ),
                   ),
                   Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: AppColors.blue.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),
