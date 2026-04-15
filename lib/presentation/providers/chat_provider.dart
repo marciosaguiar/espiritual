@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../data/models/message_model.dart';
 import '../../data/services/firestore_service.dart';
@@ -6,19 +7,27 @@ class ChatProvider extends ChangeNotifier {
   List<MessageModel> _messages = [];
   bool _isLoading = false;
   String? _error;
+  StreamSubscription<List<MessageModel>>? _subscription;
 
   List<MessageModel> get messages => _messages;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
   void listenToMessages() {
-    FirestoreService.watchMessages().listen((messages) {
+    _subscription?.cancel();
+    _subscription = FirestoreService.watchMessages().listen((messages) {
       _messages = messages;
       notifyListeners();
     }, onError: (e) {
       _error = 'Erro ao carregar mensagens';
       notifyListeners();
     });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
   }
 
   Future<bool> sendMessage({

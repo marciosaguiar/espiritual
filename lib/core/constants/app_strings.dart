@@ -113,6 +113,13 @@ class AppStrings {
   static const String successSaved = 'Salvo com sucesso!';
   static const String successPresenceConfirmed = 'Presença confirmada!';
 
+  // Tab indices — keep in sync with MainScreen's IndexedStack order
+  static const int tabHome = 0;
+  static const int tabSongs = 1;
+  static const int tabScale = 2;
+  static const int tabChat = 3;
+  static const int tabProfile = 4;
+
   // Verses of the day (Portuguese)
   static const List<String> verses = [
     '"Cantai ao Senhor um cântico novo; cantai ao Senhor toda a terra." — Salmos 96:1',

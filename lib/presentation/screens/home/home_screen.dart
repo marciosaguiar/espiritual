@@ -169,7 +169,8 @@ class _VerseCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              GestureDetector(
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: verse));
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -461,7 +462,7 @@ class _QuickActionsSection extends StatelessWidget {
                 icon: Icons.search_rounded,
                 label: 'Buscar\nMúsica',
                 color: AppColors.blue,
-                onTap: () => onNavigate?.call(1),
+                onTap: () => onNavigate?.call(AppStrings.tabSongs),
               ),
             ),
             const SizedBox(width: 12),
@@ -470,7 +471,7 @@ class _QuickActionsSection extends StatelessWidget {
                 icon: Icons.calendar_month_rounded,
                 label: 'Ver\nEscala',
                 color: AppColors.red,
-                onTap: () => onNavigate?.call(2),
+                onTap: () => onNavigate?.call(AppStrings.tabScale),
               ),
             ),
             const SizedBox(width: 12),
@@ -479,7 +480,7 @@ class _QuickActionsSection extends StatelessWidget {
                 icon: Icons.chat_bubble_rounded,
                 label: 'Chat do\nMinistério',
                 color: AppColors.yellow,
-                onTap: () => onNavigate?.call(3),
+                onTap: () => onNavigate?.call(AppStrings.tabChat),
               ),
             ),
           ],
@@ -505,7 +506,8 @@ class _QuickActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -573,7 +575,8 @@ class _SuggestionSection extends StatelessWidget {
         ),
         const SizedBox(height: 12),
         ...suggested.map(
-          (song) => GestureDetector(
+          (song) => InkWell(
+            borderRadius: BorderRadius.circular(12),
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(

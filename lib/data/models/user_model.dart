@@ -118,11 +118,11 @@ class UserModel {
     );
   }
 
+  /// Public fields only — safe to write on updates and persist in local storage.
   Map<String, dynamic> toFirestore() {
     return {
       'id': id,
       'name': name,
-      'passwordHash': passwordHash,
       'role': role.name,
       'instrument': instrument.name,
       'photoUrl': photoUrl,
@@ -132,11 +132,21 @@ class UserModel {
     };
   }
 
+  /// Full Firestore document including the password hash — only used when
+  /// creating a new user document for the first time.
+  Map<String, dynamic> toFirestoreCreate() {
+    return {
+      ...toFirestore(),
+      'passwordHash': passwordHash,
+    };
+  }
+
   factory UserModel.fromFirestore(Map<String, dynamic> data) {
     return UserModel(
-      id: data['id'] as String,
-      name: data['name'] as String,
-      passwordHash: data['passwordHash'] as String,
+      id: data['id'] as String? ?? '',
+      name: data['name'] as String? ?? '',
+      // passwordHash is intentionally absent from sessions stored locally.
+      passwordHash: data['passwordHash'] as String? ?? '',
       role: UserRoleExtension.fromString(data['role'] as String? ?? 'levita'),
       instrument: UserInstrumentExtension.fromString(data['instrument'] as String? ?? 'other'),
       photoUrl: data['photoUrl'] as String?,

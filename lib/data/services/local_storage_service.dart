@@ -9,6 +9,7 @@ class LocalStorageService {
   static const String _offlineSongsKey = 'offline_songs';
 
   static SharedPreferences? _prefs;
+  static Map<String, SongModel>? _offlineCache;
 
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
@@ -24,14 +25,8 @@ class LocalStorageService {
   // ─── Session ─────────────────────────────────────────────────────────────
 
   static Future<void> saveSession(UserModel user) async {
-    final json = jsonEncode(user.toFirestore()
-      ..remove('passwordHash')); // don't store hash in prefs
-    await prefs.setString(_sessionKey, json);
-  }
-
-  static Future<void> saveSessionFull(UserModel user) async {
-    final data = user.toFirestore();
-    final json = jsonEncode(data);
+    // toFirestore() does not include passwordHash — safe to persist as-is.
+    final json = jsonEncode(user.toFirestore());
     await prefs.setString(_sessionKey, json);
   }
 
@@ -65,31 +60,37 @@ class LocalStorageService {
   static Future<void> saveSongOffline(SongModel song) async {
     final songs = getOfflineSongs();
     songs[song.id] = song;
-    final json = jsonEncode(
-      songs.map((k, v) => MapEntry(k, v.toJson())),
-    );
+    _offlineCache = Map.from(songs);
+    final json = jsonEncode(songs.map((k, v) => MapEntry(k, v.toJson())));
     await prefs.setString(_offlineSongsKey, json);
   }
 
   static Future<void> removeSongOffline(String songId) async {
     final songs = getOfflineSongs();
     songs.remove(songId);
-    final json = jsonEncode(
-      songs.map((k, v) => MapEntry(k, v.toJson())),
-    );
+    _offlineCache = Map.from(songs);
+    final json = jsonEncode(songs.map((k, v) => MapEntry(k, v.toJson())));
     await prefs.setString(_offlineSongsKey, json);
   }
 
+  /// Returns the offline songs map. Result is cached in memory so repeated
+  /// calls (e.g. from list tiles) skip JSON parsing after the first load.
   static Map<String, SongModel> getOfflineSongs() {
+    if (_offlineCache != null) return _offlineCache!;
     final json = prefs.getString(_offlineSongsKey);
-    if (json == null) return {};
+    if (json == null) {
+      _offlineCache = {};
+      return _offlineCache!;
+    }
     try {
       final data = Map<String, dynamic>.from(jsonDecode(json) as Map);
-      return data.map(
+      _offlineCache = data.map(
         (k, v) => MapEntry(k, SongModel.fromJson(Map<String, dynamic>.from(v as Map))),
       );
+      return _offlineCache!;
     } catch (_) {
-      return {};
+      _offlineCache = {};
+      return _offlineCache!;
     }
   }
 

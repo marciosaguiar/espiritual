@@ -1,5 +1,6 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import '../../data/models/song_model.dart';
 import '../../data/services/firestore_service.dart';
 import '../../data/services/local_storage_service.dart';
@@ -14,6 +15,7 @@ class SongsProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
   List<String> _favoriteSongIds = [];
+  StreamSubscription<List<SongModel>>? _subscription;
 
   List<SongModel> get songs => _filteredSongs;
   List<SongModel> get allSongs => _songs;
@@ -23,13 +25,15 @@ class SongsProvider extends ChangeNotifier {
   String? get error => _error;
 
   void setFavorites(List<String> ids) {
+    if (listEquals(_favoriteSongIds, ids)) return;
     _favoriteSongIds = ids;
     _applyFilter();
     notifyListeners();
   }
 
   void listenToSongs() {
-    FirestoreService.watchSongs().listen((songs) {
+    _subscription?.cancel();
+    _subscription = FirestoreService.watchSongs().listen((songs) {
       _songs = songs;
       _applyFilter();
       notifyListeners();
@@ -37,6 +41,12 @@ class SongsProvider extends ChangeNotifier {
       _error = 'Erro ao carregar músicas';
       notifyListeners();
     });
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
   }
 
   Future<void> loadSongs() async {

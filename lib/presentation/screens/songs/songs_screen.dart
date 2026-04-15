@@ -16,12 +16,37 @@ class SongsScreen extends StatefulWidget {
   State<SongsScreen> createState() => _SongsScreenState();
 }
 
-class _SongsScreenState extends State<SongsScreen>
-    with SingleTickerProviderStateMixin {
+class _SongsScreenState extends State<SongsScreen> {
   final _searchCtrl = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Sync favorites whenever the authenticated user's favorites list changes.
+    // Using addPostFrameCallback so the providers are ready on first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      _syncFavorites(auth);
+      auth.addListener(_onAuthChanged);
+    });
+  }
+
+  void _onAuthChanged() {
+    if (!mounted) return;
+    _syncFavorites(context.read<AuthProvider>());
+  }
+
+  void _syncFavorites(AuthProvider auth) {
+    if (auth.user != null) {
+      context.read<SongsProvider>().setFavorites(auth.user!.favoriteSongs);
+    }
+  }
+
+  @override
   void dispose() {
+    // Safe: context is still valid before super.dispose()
+    context.read<AuthProvider>().removeListener(_onAuthChanged);
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -31,13 +56,6 @@ class _SongsScreenState extends State<SongsScreen>
     final auth = context.watch<AuthProvider>();
     final songsProvider = context.watch<SongsProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    // Keep favorites in sync
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (auth.user != null) {
-        songsProvider.setFavorites(auth.user!.favoriteSongs);
-      }
-    });
 
     return Scaffold(
       appBar: AppBar(
@@ -187,7 +205,8 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -230,13 +249,14 @@ class _SongListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    final songs = context.watch<SongsProvider>();
-    final isFav = auth.isFavorite(song.id);
-    final isOffline = songs.isOffline(song.id);
+    // Select only the two booleans that matter — tile won't rebuild for
+    // unrelated provider changes.
+    final isFav = context.select<AuthProvider, bool>((a) => a.isFavorite(song.id));
+    final isOffline = context.select<SongsProvider, bool>((s) => s.isOffline(song.id));
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
       onTap: () {
         Navigator.push(
           context,

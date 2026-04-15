@@ -36,8 +36,8 @@ class AuthService {
         createdAt: DateTime.now(),
       );
 
-      await _db.collection(_collection).doc(id).set(user.toFirestore());
-      await LocalStorageService.saveSessionFull(user);
+      await _db.collection(_collection).doc(id).set(user.toFirestoreCreate());
+      await LocalStorageService.saveSession(user);
 
       return (success: true, error: null, user: user);
     } on FirebaseException catch (e) {
@@ -71,7 +71,7 @@ class AuthService {
       }
 
       final user = UserModel.fromFirestore(data);
-      await LocalStorageService.saveSessionFull(user);
+      await LocalStorageService.saveSession(user);
 
       return (success: true, error: null, user: user);
     } on FirebaseException catch (e) {
@@ -95,7 +95,7 @@ class AuthService {
         'favoriteSongs': user.favoriteSongs,
         'savedTones': user.savedTones,
       });
-      await LocalStorageService.saveSessionFull(user);
+      await LocalStorageService.saveSession(user);
       return true;
     } catch (_) {
       return false;
@@ -132,10 +132,11 @@ class AuthService {
   }
 
   /// Get all users (admin only)
-  static Stream<List<UserModel>> getAllUsers() {
+  static Stream<List<UserModel>> getAllUsers({int limit = 100}) {
     return _db
         .collection(_collection)
         .orderBy('name')
+        .limit(limit)
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => UserModel.fromFirestore(doc.data()))
