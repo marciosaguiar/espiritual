@@ -24,6 +24,11 @@ class SongsProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  void clearError() {
+    _error = null;
+    notifyListeners();
+  }
+
   void setFavorites(List<String> ids) {
     if (listEquals(_favoriteSongIds, ids)) return;
     _favoriteSongIds = ids;

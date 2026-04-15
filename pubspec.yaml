@@ -11,9 +11,9 @@ dependencies:
     sdk: flutter
 
   # Firebase
-  firebase_core: ^2.24.0
-  cloud_firestore: ^4.14.0
-  firebase_storage: ^11.5.0
+  firebase_core: ^2.27.2
+  cloud_firestore: ^4.17.5
+  firebase_storage: ^11.7.7
 
   # State management
   provider: ^6.1.1

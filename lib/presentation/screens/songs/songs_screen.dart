@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/songs_provider.dart';
+import '../../widgets/common/error_banner.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/song_model.dart';
@@ -155,6 +156,24 @@ class _SongsScreenState extends State<SongsScreen> {
       );
     }
 
+    return Column(
+      children: [
+        if (songs.error != null)
+          ErrorBanner(
+            message: songs.error!,
+            onRetry: () {
+              context.read<SongsProvider>()
+                ..clearError()
+                ..listenToSongs();
+            },
+            onDismiss: () => context.read<SongsProvider>().clearError(),
+          ),
+        Expanded(child: _buildList(songs, isDark)),
+      ],
+    );
+  }
+
+  Widget _buildList(SongsProvider songs, bool isDark) {
     if (songs.songs.isEmpty) {
       return Center(
         child: Column(

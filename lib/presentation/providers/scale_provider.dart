@@ -15,6 +15,11 @@ class ScaleProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   String? get error => _error;
 
+  void clearError() {
+    _error = null;
+    notifyListeners();
+  }
+
   void listenToScales() {
     _subscription?.cancel();
     _subscription = FirestoreService.watchScales().listen((scales) {
