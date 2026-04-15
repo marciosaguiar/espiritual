@@ -12,7 +12,11 @@ import '../../../data/models/song_model.dart';
 import '../songs/song_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  /// Called with the tab index (1=Músicas, 2=Escala, 3=Chat) when a quick
+  /// action button is tapped.
+  final void Function(int tabIndex)? onNavigate;
+
+  const HomeScreen({super.key, this.onNavigate});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -23,30 +27,43 @@ class _HomeScreenState extends State<HomeScreen> {
   List<SongModel> _suggestions = [];
   int _lastSongsCount = -1;
 
+  SongsProvider? _songsProviderRef;
+
   @override
   void initState() {
     super.initState();
     final now = DateTime.now();
     _verseIndex = (now.day + now.month) % AppStrings.verses.length;
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshSuggestions());
+
+    // Subscribe to songs changes after the first frame so context is ready.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final sp = context.read<SongsProvider>();
+      _songsProviderRef = sp;
+      sp.addListener(_onSongsChanged);
+      _onSongsChanged(); // initial check in case songs are already loaded
+    });
   }
 
-  /// Recomputes suggestions only when the song list actually changes.
-  void _refreshSuggestions() {
+  @override
+  void dispose() {
+    _songsProviderRef?.removeListener(_onSongsChanged);
+    super.dispose();
+  }
+
+  void _onSongsChanged() {
     if (!mounted) return;
-    final songs = context.read<SongsProvider>();
-    final count = songs.allSongs.length;
-    if (count != _lastSongsCount && count > 0) {
-      _lastSongsCount = count;
+    final count = _songsProviderRef?.allSongs.length ?? 0;
+    if (count > 0 && count != _lastSongsCount) {
       setState(() {
-        _suggestions = songs.suggestRepertoire(count: 4);
+        _lastSongsCount = count;
+        _suggestions = _songsProviderRef!.suggestRepertoire(count: 4);
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    // Use Selector to rebuild only when the specific data we care about changes.
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -73,11 +90,14 @@ class _HomeScreenState extends State<HomeScreen> {
                         fontFamily: 'Poppins',
                         fontSize: 16,
                         fontWeight: FontWeight.w700,
-                        color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
                       ),
                     ),
                     Text(
-                      DateFormat('EEEE, d \'de\' MMMM', 'pt_BR').format(DateTime.now()),
+                      DateFormat('EEEE, d \'de\' MMMM', 'pt_BR')
+                          .format(DateTime.now()),
                       style: const TextStyle(
                         fontFamily: 'Poppins',
                         fontSize: 11,
@@ -117,32 +137,23 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Verse of the Day Card
                   _VerseCard(verse: AppStrings.verses[_verseIndex]),
                   const SizedBox(height: 20),
 
-                  // Next Service Card — rebuilds only when nextScale changes
+                  // Rebuilds only when nextScale changes
                   Selector<ScaleProvider, ScaleModel?>(
                     selector: (_, scale) => scale.nextScale,
-                    builder: (_, nextScale, __) => _NextServiceCard(scale: nextScale),
+                    builder: (_, nextScale, __) =>
+                        _NextServiceCard(scale: nextScale),
                   ),
                   const SizedBox(height: 20),
 
-                  // Quick Actions (static, no provider needed)
-                  const _QuickActionsSection(),
+                  // Quick actions — navigation callback wired up
+                  _QuickActionsSection(onNavigate: widget.onNavigate),
                   const SizedBox(height: 20),
 
-                  // Suggested repertoire — uses cached list, not re-shuffled on every build
-                  Selector<SongsProvider, int>(
-                    selector: (_, sp) => sp.allSongs.length,
-                    builder: (context, count, _) {
-                      // Trigger refresh when count changes, but don't block the build
-                      WidgetsBinding.instance.addPostFrameCallback(
-                        (_) => _refreshSuggestions(),
-                      );
-                      return _SuggestionSection(suggestions: _suggestions);
-                    },
-                  ),
+                  // Suggestions — driven by listener, not rebuilt by Selector
+                  _SuggestionSection(suggestions: _suggestions),
                   const SizedBox(height: 100),
                 ],
               ),
@@ -153,6 +164,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+// ─── Verse Card ───────────────────────────────────────────────────────────────
 
 class _VerseCard extends StatelessWidget {
   final String verse;
@@ -180,7 +193,8 @@ class _VerseCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(8),
@@ -239,9 +253,10 @@ class _VerseCard extends StatelessWidget {
   }
 }
 
+// ─── Next Service Card ────────────────────────────────────────────────────────
+
 class _NextServiceCard extends StatelessWidget {
   final ScaleModel? scale;
-
   const _NextServiceCard({this.scale});
 
   @override
@@ -270,7 +285,8 @@ class _NextServiceCard extends StatelessWidget {
                   color: AppColors.yellow.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.church_rounded, color: AppColors.yellow, size: 22),
+                child: const Icon(Icons.church_rounded,
+                    color: AppColors.yellow, size: 22),
               ),
               const SizedBox(width: 12),
               Text(
@@ -279,7 +295,8 @@ class _NextServiceCard extends StatelessWidget {
                   fontFamily: 'Poppins',
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                  color:
+                      isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
                 ),
               ),
             ],
@@ -291,18 +308,19 @@ class _NextServiceCard extends StatelessWidget {
               style: TextStyle(
                 fontFamily: 'Poppins',
                 fontSize: 13,
-                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
               ),
             )
           else ...[
-            // Date
             _InfoRow(
               icon: Icons.calendar_today_rounded,
-              text: DateFormat('EEEE, d \'de\' MMMM', 'pt_BR').format(scale!.date),
+              text: DateFormat('EEEE, d \'de\' MMMM', 'pt_BR')
+                  .format(scale!.date),
               color: AppColors.blue,
             ),
             const SizedBox(height: 8),
-            // Service type
             _InfoRow(
               icon: Icons.church_rounded,
               text: scale!.serviceType,
@@ -316,7 +334,9 @@ class _NextServiceCard extends StatelessWidget {
                   fontFamily: 'Poppins',
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondaryLight,
                 ),
               ),
               const SizedBox(height: 6),
@@ -361,7 +381,9 @@ class _NextServiceCard extends StatelessWidget {
                   fontFamily: 'Poppins',
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondaryLight,
                 ),
               ),
               const SizedBox(height: 8),
@@ -419,7 +441,8 @@ class _InfoRow extends StatelessWidget {
   final String text;
   final Color color;
 
-  const _InfoRow({required this.icon, required this.text, required this.color});
+  const _InfoRow(
+      {required this.icon, required this.text, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -434,7 +457,8 @@ class _InfoRow extends StatelessWidget {
             style: TextStyle(
               fontFamily: 'Poppins',
               fontSize: 13,
-              color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+              color:
+                  isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
             ),
           ),
         ),
@@ -443,8 +467,11 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
+// ─── Quick Actions ────────────────────────────────────────────────────────────
+
 class _QuickActionsSection extends StatelessWidget {
-  const _QuickActionsSection();
+  final void Function(int)? onNavigate;
+  const _QuickActionsSection({this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
@@ -458,7 +485,8 @@ class _QuickActionsSection extends StatelessWidget {
             fontFamily: 'Poppins',
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+            color:
+                isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
           ),
         ),
         const SizedBox(height: 12),
@@ -469,9 +497,7 @@ class _QuickActionsSection extends StatelessWidget {
                 icon: Icons.search_rounded,
                 label: 'Buscar\nMúsica',
                 color: AppColors.blue,
-                onTap: () {
-                  // Navigate to songs tab
-                },
+                onTap: () => onNavigate?.call(1),
               ),
             ),
             const SizedBox(width: 12),
@@ -480,9 +506,7 @@ class _QuickActionsSection extends StatelessWidget {
                 icon: Icons.calendar_month_rounded,
                 label: 'Ver\nEscala',
                 color: AppColors.red,
-                onTap: () {
-                  // Navigate to scale tab
-                },
+                onTap: () => onNavigate?.call(2),
               ),
             ),
             const SizedBox(width: 12),
@@ -491,9 +515,7 @@ class _QuickActionsSection extends StatelessWidget {
                 icon: Icons.chat_bubble_rounded,
                 label: 'Chat do\nMinistério',
                 color: AppColors.yellow,
-                onTap: () {
-                  // Navigate to chat tab
-                },
+                onTap: () => onNavigate?.call(3),
               ),
             ),
           ],
@@ -539,7 +561,9 @@ class _QuickActionButton extends StatelessWidget {
                 fontFamily: 'Poppins',
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
-                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight,
               ),
             ),
           ],
@@ -549,14 +573,15 @@ class _QuickActionButton extends StatelessWidget {
   }
 }
 
+// ─── Suggestion Section ───────────────────────────────────────────────────────
+
 class _SuggestionSection extends StatelessWidget {
   final List<SongModel> suggestions;
   const _SuggestionSection({required this.suggestions});
 
   @override
   Widget build(BuildContext context) {
-    final suggested = suggestions;
-    if (suggested.isEmpty) return const SizedBox.shrink();
+    if (suggestions.isEmpty) return const SizedBox.shrink();
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
@@ -574,22 +599,21 @@ class _SuggestionSection extends StatelessWidget {
                 fontFamily: 'Poppins',
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight,
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
-        ...suggested.map(
+        ...suggestions.map(
           (song) => GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => SongDetailScreen(song: song),
-                ),
-              );
-            },
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => SongDetailScreen(song: song)),
+            ),
             child: Container(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(14),
@@ -597,7 +621,8 @@ class _SuggestionSection extends StatelessWidget {
                 color: isDark ? AppColors.cardDark : AppColors.cardLight,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+                  color:
+                      isDark ? Colors.grey.shade800 : Colors.grey.shade100,
                 ),
               ),
               child: Row(
@@ -640,8 +665,8 @@ class _SuggestionSection extends StatelessWidget {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
                       color: AppColors.blue.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(6),

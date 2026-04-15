@@ -21,19 +21,23 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
-
-  final List<Widget> _screens = const [
-    HomeScreen(),
-    SongsScreen(),
-    ScaleScreen(),
-    ChatScreen(),
-    ProfileScreen(),
-  ];
+  late final List<Widget> _screens;
 
   @override
   void initState() {
     super.initState();
+    _screens = [
+      HomeScreen(onNavigate: _navigateTo),
+      const SongsScreen(),
+      const ScaleScreen(),
+      const ChatScreen(),
+      const ProfileScreen(),
+    ];
     _initData();
+  }
+
+  void _navigateTo(int index) {
+    setState(() => _currentIndex = index);
   }
 
   void _initData() {
@@ -42,12 +46,10 @@ class _MainScreenState extends State<MainScreen> {
     final scale = context.read<ScaleProvider>();
     final chat = context.read<ChatProvider>();
 
-    // Set favorites in songs provider from user data
     if (auth.user != null) {
       songs.setFavorites(auth.user!.favoriteSongs);
     }
 
-    // Start real-time listeners
     songs.listenToSongs();
     scale.listenToScales();
     chat.listenToMessages();
@@ -73,7 +75,7 @@ class _MainScreenState extends State<MainScreen> {
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
-          onTap: (i) => setState(() => _currentIndex = i),
+          onTap: _navigateTo,
           items: const [
             BottomNavigationBarItem(
               icon: Icon(Icons.home_outlined),
