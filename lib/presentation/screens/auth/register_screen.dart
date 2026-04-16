@@ -20,7 +20,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
   UserInstrument _selectedInstrument = UserInstrument.vocalist;
-  UserRole _selectedRole = UserRole.levita;
 
   @override
   void dispose() {
@@ -37,7 +36,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
       name: _nameCtrl.text.trim(),
       password: _passwordCtrl.text,
       instrument: _selectedInstrument,
-      role: _selectedRole,
     );
     if (success && mounted) {
       Navigator.pop(context);
@@ -221,61 +219,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                           color: selected
                                               ? Colors.white
                                               : AppColors.textPrimaryLight,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }).toList(),
-                              ),
-                              const SizedBox(height: 16),
-                              // Role selector (first user becomes admin)
-                              const Text(
-                                'Função',
-                                style: TextStyle(
-                                  fontFamily: 'Poppins',
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w500,
-                                  color: AppColors.textSecondaryLight,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: UserRole.values.map((role) {
-                                  final selected = _selectedRole == role;
-                                  return Expanded(
-                                    child: GestureDetector(
-                                      onTap: () {
-                                        setState(() => _selectedRole = role);
-                                      },
-                                      child: Container(
-                                        margin: EdgeInsets.only(
-                                          right: role == UserRole.admin ? 0 : 8,
-                                          left: role == UserRole.admin ? 8 : 0,
-                                        ),
-                                        padding: const EdgeInsets.symmetric(
-                                            vertical: 12),
-                                        decoration: BoxDecoration(
-                                          color: selected
-                                              ? AppColors.red
-                                              : Colors.grey.shade100,
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(
-                                            color: selected
-                                                ? AppColors.red
-                                                : Colors.grey.shade200,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          role == UserRole.admin ? '👑 ${role.label}' : '🎵 ${role.label}',
-                                          textAlign: TextAlign.center,
-                                          style: TextStyle(
-                                            fontFamily: 'Poppins',
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w500,
-                                            color: selected
-                                                ? Colors.white
-                                                : AppColors.textPrimaryLight,
-                                          ),
                                         ),
                                       ),
                                     ),

@@ -79,6 +79,7 @@ class UserModel {
   final List<String> favoriteSongs;
   final Map<String, int> savedTones; // songId -> semitones offset
   final DateTime createdAt;
+  final bool isBlocked;
 
   const UserModel({
     required this.id,
@@ -90,6 +91,7 @@ class UserModel {
     this.favoriteSongs = const [],
     this.savedTones = const {},
     required this.createdAt,
+    this.isBlocked = false,
   });
 
   bool get isAdmin => role == UserRole.admin;
@@ -104,6 +106,7 @@ class UserModel {
     List<String>? favoriteSongs,
     Map<String, int>? savedTones,
     DateTime? createdAt,
+    bool? isBlocked,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -115,6 +118,7 @@ class UserModel {
       favoriteSongs: favoriteSongs ?? this.favoriteSongs,
       savedTones: savedTones ?? this.savedTones,
       createdAt: createdAt ?? this.createdAt,
+      isBlocked: isBlocked ?? this.isBlocked,
     );
   }
 
@@ -129,6 +133,7 @@ class UserModel {
       'favoriteSongs': favoriteSongs,
       'savedTones': savedTones,
       'createdAt': Timestamp.fromDate(createdAt),
+      'isBlocked': isBlocked,
     };
   }
 
@@ -153,6 +158,7 @@ class UserModel {
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? []),
       savedTones: Map<String, int>.from(data['savedTones'] ?? {}),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      isBlocked: data['isBlocked'] as bool? ?? false,
     );
   }
 }
