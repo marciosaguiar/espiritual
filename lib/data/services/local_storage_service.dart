@@ -25,8 +25,9 @@ class LocalStorageService {
   // ─── Session ─────────────────────────────────────────────────────────────
 
   static Future<void> saveSession(UserModel user) async {
-    // toFirestore() does not include passwordHash — safe to persist as-is.
-    final json = jsonEncode(user.toFirestore());
+    // toJson() uses ISO-8601 strings (not Firestore Timestamps) — survives
+    // JSON round-trip and does not include passwordHash.
+    final json = jsonEncode(user.toJson());
     await prefs.setString(_sessionKey, json);
   }
 

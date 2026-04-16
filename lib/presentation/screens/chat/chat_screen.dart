@@ -27,7 +27,21 @@ class _ChatScreenState extends State<ChatScreen> {
   final _songSearchCtrl = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Scroll to bottom when new messages arrive — using a listener instead of
+    // addPostFrameCallback inside build() to avoid accumulating callbacks.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<ChatProvider>().addListener(_onMessagesChanged);
+    });
+  }
+
+  void _onMessagesChanged() => _scrollToBottom();
+
+  @override
   void dispose() {
+    context.read<ChatProvider>().removeListener(_onMessagesChanged);
     _messageCtrl.dispose();
     _scrollCtrl.dispose();
     _songSearchCtrl.dispose();
@@ -150,9 +164,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final chat = context.watch<ChatProvider>();
     final songs = context.watch<SongsProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    // Scroll to bottom when new messages arrive
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
 
     return Scaffold(
       appBar: AppBar(

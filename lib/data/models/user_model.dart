@@ -122,7 +122,23 @@ class UserModel {
     );
   }
 
-  /// Public fields only — safe to write on updates and persist in local storage.
+  /// JSON-safe map for local storage — uses ISO-8601 string for [createdAt],
+  /// never includes [passwordHash].
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'role': role.name,
+      'instrument': instrument.name,
+      'photoUrl': photoUrl,
+      'favoriteSongs': favoriteSongs,
+      'savedTones': savedTones,
+      'createdAt': createdAt.toIso8601String(),
+      'isBlocked': isBlocked,
+    };
+  }
+
+  /// Public fields only — safe to write on Firestore updates.
   Map<String, dynamic> toFirestore() {
     return {
       'id': id,
@@ -146,6 +162,14 @@ class UserModel {
     };
   }
 
+  /// Parses [createdAt] from either a Firestore [Timestamp] or an ISO-8601
+  /// string (used when restoring from local JSON storage).
+  static DateTime _parseDateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+    return DateTime.now();
+  }
+
   factory UserModel.fromFirestore(Map<String, dynamic> data) {
     return UserModel(
       id: data['id'] as String? ?? '',
@@ -157,7 +181,7 @@ class UserModel {
       photoUrl: data['photoUrl'] as String?,
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? []),
       savedTones: Map<String, int>.from(data['savedTones'] ?? {}),
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt: _parseDateTime(data['createdAt']),
       isBlocked: data['isBlocked'] as bool? ?? false,
     );
   }
