@@ -6,6 +6,7 @@ import '../../providers/theme_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/user_model.dart';
+import '../members/members_screen.dart';
 import '../songs/song_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -235,6 +236,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
 
                   const SizedBox(height: 24),
+
+                  // Admin: members management
+                  if (user.isAdmin) ...[
+                    _SettingRow(
+                      icon: Icons.people_rounded,
+                      label: 'Membros do Ministério',
+                      trailing: const Icon(Icons.chevron_right_rounded,
+                          color: AppColors.textSecondaryLight),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const MembersScreen(),
+                          ),
+                        );
+                      },
+                    ),
+                    const SizedBox(height: 8),
+                  ],
 
                   // Theme toggle
                   _SettingRow(
