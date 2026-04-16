@@ -6,6 +6,7 @@ import '../../providers/theme_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/user_model.dart';
+import '../../../data/services/local_storage_service.dart';
 import '../songs/song_detail_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -227,7 +228,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(width: 12),
                       _StatCard(
                         label: 'Offline',
-                        value: '0',
+                        value: '${LocalStorageService.offlineSongsList.length}',
                         icon: Icons.download_done_rounded,
                         color: AppColors.success,
                       ),
