@@ -7,11 +7,11 @@ class AuthService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
   static const String _collection = 'users';
 
-  /// Register a new user
+  /// Register a new user.
+  /// Role is always [UserRole.levita] — admins are promoted by an existing admin.
   static Future<({bool success, String? error, UserModel? user})> register({
     required String name,
     required String password,
-    UserRole role = UserRole.levita,
     UserInstrument instrument = UserInstrument.other,
   }) async {
     try {
@@ -31,13 +31,13 @@ class AuthService {
         id: id,
         name: name.trim(),
         passwordHash: CryptoUtils.hashPassword(password),
-        role: role,
+        role: UserRole.levita, // always levita on self-registration
         instrument: instrument,
         createdAt: DateTime.now(),
       );
 
-      await _db.collection(_collection).doc(id).set(user.toFirestore());
-      await LocalStorageService.saveSessionFull(user);
+      await _db.collection(_collection).doc(id).set(user.toFirestoreCreate());
+      await LocalStorageService.saveSession(user);
 
       return (success: true, error: null, user: user);
     } on FirebaseException catch (e) {
@@ -71,8 +71,16 @@ class AuthService {
       }
 
       final user = UserModel.fromFirestore(data);
-      await LocalStorageService.saveSessionFull(user);
 
+      if (user.isBlocked) {
+        return (
+          success: false,
+          error: 'Sua conta foi bloqueada. Fale com o líder do ministério.',
+          user: null
+        );
+      }
+
+      await LocalStorageService.saveSession(user);
       return (success: true, error: null, user: user);
     } on FirebaseException catch (e) {
       return (success: false, error: 'Erro de conexão: ${e.message}', user: null);
@@ -95,7 +103,7 @@ class AuthService {
         'favoriteSongs': user.favoriteSongs,
         'savedTones': user.savedTones,
       });
-      await LocalStorageService.saveSessionFull(user);
+      await LocalStorageService.saveSession(user);
       return true;
     } catch (_) {
       return false;
@@ -114,7 +122,7 @@ class AuthService {
     await _db.collection(_collection).doc(user.id).update({
       'favoriteSongs': favorites,
     });
-    await LocalStorageService.saveSessionFull(updated);
+    await LocalStorageService.saveSession(updated);
     return updated;
   }
 
@@ -127,15 +135,16 @@ class AuthService {
     await _db.collection(_collection).doc(user.id).update({
       'savedTones': tones,
     });
-    await LocalStorageService.saveSessionFull(updated);
+    await LocalStorageService.saveSession(updated);
     return updated;
   }
 
   /// Get all users (admin only)
-  static Stream<List<UserModel>> getAllUsers() {
+  static Stream<List<UserModel>> getAllUsers({int limit = 100}) {
     return _db
         .collection(_collection)
         .orderBy('name')
+        .limit(limit)
         .snapshots()
         .map((snapshot) => snapshot.docs
             .map((doc) => UserModel.fromFirestore(doc.data()))
@@ -150,6 +159,30 @@ class AuthService {
       return UserModel.fromFirestore(doc.data()!);
     } catch (_) {
       return null;
+    }
+  }
+
+  /// Block or unblock a user (admin only).
+  static Future<bool> setUserBlocked(String userId, bool blocked) async {
+    try {
+      await _db.collection(_collection).doc(userId).update({
+        'isBlocked': blocked,
+      });
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Promote or demote a user's role (admin only).
+  static Future<bool> setUserRole(String userId, UserRole role) async {
+    try {
+      await _db.collection(_collection).doc(userId).update({
+        'role': role.name,
+      });
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/songs_provider.dart';
+import '../../widgets/common/error_banner.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/song_model.dart';
@@ -16,12 +17,37 @@ class SongsScreen extends StatefulWidget {
   State<SongsScreen> createState() => _SongsScreenState();
 }
 
-class _SongsScreenState extends State<SongsScreen>
-    with SingleTickerProviderStateMixin {
+class _SongsScreenState extends State<SongsScreen> {
   final _searchCtrl = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Sync favorites whenever the authenticated user's favorites list changes.
+    // Using addPostFrameCallback so the providers are ready on first frame.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final auth = context.read<AuthProvider>();
+      _syncFavorites(auth);
+      auth.addListener(_onAuthChanged);
+    });
+  }
+
+  void _onAuthChanged() {
+    if (!mounted) return;
+    _syncFavorites(context.read<AuthProvider>());
+  }
+
+  void _syncFavorites(AuthProvider auth) {
+    if (auth.user != null) {
+      context.read<SongsProvider>().setFavorites(auth.user!.favoriteSongs);
+    }
+  }
+
+  @override
   void dispose() {
+    // Safe: context is still valid before super.dispose()
+    context.read<AuthProvider>().removeListener(_onAuthChanged);
     _searchCtrl.dispose();
     super.dispose();
   }
@@ -31,13 +57,6 @@ class _SongsScreenState extends State<SongsScreen>
     final auth = context.watch<AuthProvider>();
     final songsProvider = context.watch<SongsProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    // Keep favorites in sync
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (auth.user != null) {
-        songsProvider.setFavorites(auth.user!.favoriteSongs);
-      }
-    });
 
     return Scaffold(
       appBar: AppBar(
@@ -137,6 +156,24 @@ class _SongsScreenState extends State<SongsScreen>
       );
     }
 
+    return Column(
+      children: [
+        if (songs.error != null)
+          ErrorBanner(
+            message: songs.error!,
+            onRetry: () {
+              context.read<SongsProvider>()
+                ..clearError()
+                ..listenToSongs();
+            },
+            onDismiss: () => context.read<SongsProvider>().clearError(),
+          ),
+        Expanded(child: _buildList(songs, isDark)),
+      ],
+    );
+  }
+
+  Widget _buildList(SongsProvider songs, bool isDark) {
     if (songs.songs.isEmpty) {
       return Center(
         child: Column(
@@ -187,7 +224,8 @@ class _FilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
@@ -230,13 +268,14 @@ class _SongListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    final songs = context.watch<SongsProvider>();
-    final isFav = auth.isFavorite(song.id);
-    final isOffline = songs.isOffline(song.id);
+    // Select only the two booleans that matter — tile won't rebuild for
+    // unrelated provider changes.
+    final isFav = context.select<AuthProvider, bool>((a) => a.isFavorite(song.id));
+    final isOffline = context.select<SongsProvider, bool>((s) => s.isOffline(song.id));
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(14),
       onTap: () {
         Navigator.push(
           context,

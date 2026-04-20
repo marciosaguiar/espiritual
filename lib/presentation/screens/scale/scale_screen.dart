@@ -4,6 +4,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/scale_provider.dart';
+import '../../widgets/common/error_banner.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/scale_model.dart';
 import '../../../data/services/firestore_service.dart';
@@ -51,6 +52,16 @@ class _ScaleScreenState extends State<ScaleScreen> {
       ),
       body: Column(
         children: [
+          if (scale.error != null)
+            ErrorBanner(
+              message: scale.error!,
+              onRetry: () {
+                context.read<ScaleProvider>()
+                  ..clearError()
+                  ..listenToScales();
+              },
+              onDismiss: () => context.read<ScaleProvider>().clearError(),
+            ),
           // Calendar
           Container(
             color: isDark ? AppColors.surfaceDark : AppColors.white,

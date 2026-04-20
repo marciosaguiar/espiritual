@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/songs_provider.dart';
 import '../../providers/scale_provider.dart';
+import '../../widgets/common/error_banner.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/message_model.dart';
@@ -26,7 +27,21 @@ class _ChatScreenState extends State<ChatScreen> {
   final _songSearchCtrl = TextEditingController();
 
   @override
+  void initState() {
+    super.initState();
+    // Scroll to bottom when new messages arrive — using a listener instead of
+    // addPostFrameCallback inside build() to avoid accumulating callbacks.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      context.read<ChatProvider>().addListener(_onMessagesChanged);
+    });
+  }
+
+  void _onMessagesChanged() => _scrollToBottom();
+
+  @override
   void dispose() {
+    context.read<ChatProvider>().removeListener(_onMessagesChanged);
     _messageCtrl.dispose();
     _scrollCtrl.dispose();
     _songSearchCtrl.dispose();
@@ -150,9 +165,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final songs = context.watch<SongsProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Scroll to bottom when new messages arrive
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-
     return Scaffold(
       appBar: AppBar(
         title: const Text(AppStrings.groupChat),
@@ -191,6 +203,17 @@ class _ChatScreenState extends State<ChatScreen> {
       ),
       body: Column(
         children: [
+          if (chat.error != null)
+            ErrorBanner(
+              message: chat.error!,
+              onRetry: () {
+                context.read<ChatProvider>()
+                  ..clearError()
+                  ..listenToMessages();
+              },
+              onDismiss: () => context.read<ChatProvider>().clearError(),
+            ),
+
           // Song search panel
           if (_showSongSearch)
             Container(

@@ -170,10 +170,21 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
   }
 
   Future<void> _showAddLevitaDialog() async {
-    final List<UserModel> allUsers =
-        await AuthService.getAllUsers().first;
+    final List<UserModel> allUsers = await AuthService.getAllUsers()
+        .first
+        .timeout(
+          const Duration(seconds: 10),
+          onTimeout: () => [],
+        );
 
     if (!mounted) return;
+
+    if (allUsers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível carregar os usuários. Tente novamente.')),
+      );
+      return;
+    }
 
     final List<String>? selectedIds = await showDialog<List<String>>(
       context: context,

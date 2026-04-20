@@ -79,6 +79,7 @@ class UserModel {
   final List<String> favoriteSongs;
   final Map<String, int> savedTones; // songId -> semitones offset
   final DateTime createdAt;
+  final bool isBlocked;
 
   const UserModel({
     required this.id,
@@ -90,6 +91,7 @@ class UserModel {
     this.favoriteSongs = const [],
     this.savedTones = const {},
     required this.createdAt,
+    this.isBlocked = false,
   });
 
   bool get isAdmin => role == UserRole.admin;
@@ -104,6 +106,7 @@ class UserModel {
     List<String>? favoriteSongs,
     Map<String, int>? savedTones,
     DateTime? createdAt,
+    bool? isBlocked,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -115,34 +118,71 @@ class UserModel {
       favoriteSongs: favoriteSongs ?? this.favoriteSongs,
       savedTones: savedTones ?? this.savedTones,
       createdAt: createdAt ?? this.createdAt,
+      isBlocked: isBlocked ?? this.isBlocked,
     );
   }
 
+  /// JSON-safe map for local storage — uses ISO-8601 string for [createdAt],
+  /// never includes [passwordHash].
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'role': role.name,
+      'instrument': instrument.name,
+      'photoUrl': photoUrl,
+      'favoriteSongs': favoriteSongs,
+      'savedTones': savedTones,
+      'createdAt': createdAt.toIso8601String(),
+      'isBlocked': isBlocked,
+    };
+  }
+
+  /// Public fields only — safe to write on Firestore updates.
   Map<String, dynamic> toFirestore() {
     return {
       'id': id,
       'name': name,
-      'passwordHash': passwordHash,
       'role': role.name,
       'instrument': instrument.name,
       'photoUrl': photoUrl,
       'favoriteSongs': favoriteSongs,
       'savedTones': savedTones,
       'createdAt': Timestamp.fromDate(createdAt),
+      'isBlocked': isBlocked,
     };
+  }
+
+  /// Full Firestore document including the password hash — only used when
+  /// creating a new user document for the first time.
+  Map<String, dynamic> toFirestoreCreate() {
+    return {
+      ...toFirestore(),
+      'passwordHash': passwordHash,
+    };
+  }
+
+  /// Parses [createdAt] from either a Firestore [Timestamp] or an ISO-8601
+  /// string (used when restoring from local JSON storage).
+  static DateTime _parseDateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is String) return DateTime.tryParse(value) ?? DateTime.now();
+    return DateTime.now();
   }
 
   factory UserModel.fromFirestore(Map<String, dynamic> data) {
     return UserModel(
-      id: data['id'] as String,
-      name: data['name'] as String,
-      passwordHash: data['passwordHash'] as String,
+      id: data['id'] as String? ?? '',
+      name: data['name'] as String? ?? '',
+      // passwordHash is intentionally absent from sessions stored locally.
+      passwordHash: data['passwordHash'] as String? ?? '',
       role: UserRoleExtension.fromString(data['role'] as String? ?? 'levita'),
       instrument: UserInstrumentExtension.fromString(data['instrument'] as String? ?? 'other'),
       photoUrl: data['photoUrl'] as String?,
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? []),
       savedTones: Map<String, int>.from(data['savedTones'] ?? {}),
-      createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      createdAt: _parseDateTime(data['createdAt']),
+      isBlocked: data['isBlocked'] as bool? ?? false,
     );
   }
 }

@@ -59,3 +59,6 @@ ios/Flutter/flutter_export_environment.sh
 # env files
 .env
 .env.local
+
+# Firebase generated config — contains API keys
+lib/firebase_options.dart

@@ -32,11 +32,10 @@ class AuthProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Register new user
+  /// Register new user — always as Levita; admin role is assigned by an admin.
   Future<bool> register({
     required String name,
     required String password,
-    UserRole role = UserRole.levita,
     UserInstrument instrument = UserInstrument.other,
   }) async {
     _status = AuthStatus.loading;
@@ -46,7 +45,6 @@ class AuthProvider extends ChangeNotifier {
     final result = await AuthService.register(
       name: name,
       password: password,
-      role: role,
       instrument: instrument,
     );
 
@@ -135,6 +133,16 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
     }
     return success;
+  }
+
+  /// Block or unblock a member (admin only).
+  Future<bool> setUserBlocked(String userId, bool blocked) async {
+    return AuthService.setUserBlocked(userId, blocked);
+  }
+
+  /// Promote a levita to admin or demote back (admin only).
+  Future<bool> setUserRole(String userId, UserRole role) async {
+    return AuthService.setUserRole(userId, role);
   }
 
   void clearError() {

@@ -8,12 +8,14 @@ import '../../providers/songs_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/scale_model.dart';
-import '../songs/songs_screen.dart';
-import '../scale/scale_screen.dart';
 import '../songs/song_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  /// Callback to switch tabs in the parent [MainScreen].
+  /// Index: 1 = Músicas, 2 = Escala, 3 = Chat.
+  final void Function(int tabIndex)? onNavigate;
+
+  const HomeScreen({super.key, this.onNavigate});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -40,7 +42,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: CustomScrollView(
         slivers: [
-          // App Bar
+          // ── App Bar ──────────────────────────────────────────────────────
           SliverAppBar(
             expandedHeight: 120,
             floating: false,
@@ -59,11 +61,14 @@ class _HomeScreenState extends State<HomeScreen> {
                       fontFamily: 'Poppins',
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight,
                     ),
                   ),
                   Text(
-                    DateFormat('EEEE, d \'de\' MMMM', 'pt_BR').format(DateTime.now()),
+                    DateFormat('EEEE, d \'de\' MMMM', 'pt_BR')
+                        .format(DateTime.now()),
                     style: const TextStyle(
                       fontFamily: 'Poppins',
                       fontSize: 11,
@@ -101,19 +106,12 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Verse of the Day Card
                   _VerseCard(verse: AppStrings.verses[_verseIndex]),
                   const SizedBox(height: 20),
-
-                  // Next Service Card
-                  _NextServiceCard(scale: nextScale, songs: songs),
+                  _NextServiceCard(scale: nextScale),
                   const SizedBox(height: 20),
-
-                  // Quick Actions
-                  _QuickActionsSection(songs: songs),
+                  _QuickActionsSection(onNavigate: widget.onNavigate),
                   const SizedBox(height: 20),
-
-                  // Suggested repertoire
                   _SuggestionSection(songs: songs),
                   const SizedBox(height: 100),
                 ],
@@ -125,6 +123,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+// ── Verse Card ────────────────────────────────────────────────────────────────
 
 class _VerseCard extends StatelessWidget {
   final String verse;
@@ -152,7 +152,8 @@ class _VerseCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
                   color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(8),
@@ -168,7 +169,8 @@ class _VerseCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              GestureDetector(
+              InkWell(
+                borderRadius: BorderRadius.circular(8),
                 onTap: () {
                   Clipboard.setData(ClipboardData(text: verse));
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -211,11 +213,11 @@ class _VerseCard extends StatelessWidget {
   }
 }
 
+// ── Next Service Card ─────────────────────────────────────────────────────────
+
 class _NextServiceCard extends StatelessWidget {
   final ScaleModel? scale;
-  final SongsProvider songs;
-
-  const _NextServiceCard({this.scale, required this.songs});
+  const _NextServiceCard({this.scale});
 
   @override
   Widget build(BuildContext context) {
@@ -243,7 +245,8 @@ class _NextServiceCard extends StatelessWidget {
                   color: AppColors.yellow.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: const Icon(Icons.church_rounded, color: AppColors.yellow, size: 22),
+                child: const Icon(Icons.church_rounded,
+                    color: AppColors.yellow, size: 22),
               ),
               const SizedBox(width: 12),
               Text(
@@ -252,7 +255,9 @@ class _NextServiceCard extends StatelessWidget {
                   fontFamily: 'Poppins',
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimaryLight,
                 ),
               ),
             ],
@@ -264,18 +269,19 @@ class _NextServiceCard extends StatelessWidget {
               style: TextStyle(
                 fontFamily: 'Poppins',
                 fontSize: 13,
-                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
               ),
             )
           else ...[
-            // Date
             _InfoRow(
               icon: Icons.calendar_today_rounded,
-              text: DateFormat('EEEE, d \'de\' MMMM', 'pt_BR').format(scale!.date),
+              text: DateFormat('EEEE, d \'de\' MMMM', 'pt_BR')
+                  .format(scale!.date),
               color: AppColors.blue,
             ),
             const SizedBox(height: 8),
-            // Service type
             _InfoRow(
               icon: Icons.church_rounded,
               text: scale!.serviceType,
@@ -289,33 +295,37 @@ class _NextServiceCard extends StatelessWidget {
                   fontFamily: 'Poppins',
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondaryLight,
                 ),
               ),
               const SizedBox(height: 6),
-              ...scale!.songs.take(3).map((s) => Padding(
-                    padding: const EdgeInsets.only(bottom: 4),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.music_note_rounded,
-                            size: 14, color: AppColors.blue),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            '${s.songName} • ${s.artist}',
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              fontSize: 12,
-                              color: isDark
-                                  ? AppColors.textPrimaryDark
-                                  : AppColors.textPrimaryLight,
+              ...scale!.songs.take(3).map(
+                    (s) => Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.music_note_rounded,
+                              size: 14, color: AppColors.blue),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '${s.songName} • ${s.artist}',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 12,
+                                color: isDark
+                                    ? AppColors.textPrimaryDark
+                                    : AppColors.textPrimaryLight,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            overflow: TextOverflow.ellipsis,
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  )),
+                  ),
               if (scale!.songs.length > 3)
                 Text(
                   '+ ${scale!.songs.length - 3} músicas',
@@ -334,7 +344,9 @@ class _NextServiceCard extends StatelessWidget {
                   fontFamily: 'Poppins',
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondaryLight,
                 ),
               ),
               const SizedBox(height: 8),
@@ -392,7 +404,8 @@ class _InfoRow extends StatelessWidget {
   final String text;
   final Color color;
 
-  const _InfoRow({required this.icon, required this.text, required this.color});
+  const _InfoRow(
+      {required this.icon, required this.text, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -407,7 +420,9 @@ class _InfoRow extends StatelessWidget {
             style: TextStyle(
               fontFamily: 'Poppins',
               fontSize: 13,
-              color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+              color: isDark
+                  ? AppColors.textPrimaryDark
+                  : AppColors.textPrimaryLight,
             ),
           ),
         ),
@@ -416,9 +431,11 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
+// ── Quick Actions ─────────────────────────────────────────────────────────────
+
 class _QuickActionsSection extends StatelessWidget {
-  final SongsProvider songs;
-  const _QuickActionsSection({required this.songs});
+  final void Function(int)? onNavigate;
+  const _QuickActionsSection({this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
@@ -432,7 +449,9 @@ class _QuickActionsSection extends StatelessWidget {
             fontFamily: 'Poppins',
             fontSize: 16,
             fontWeight: FontWeight.w600,
-            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+            color: isDark
+                ? AppColors.textPrimaryDark
+                : AppColors.textPrimaryLight,
           ),
         ),
         const SizedBox(height: 12),
@@ -443,9 +462,7 @@ class _QuickActionsSection extends StatelessWidget {
                 icon: Icons.search_rounded,
                 label: 'Buscar\nMúsica',
                 color: AppColors.blue,
-                onTap: () {
-                  // Navigate to songs tab
-                },
+                onTap: () => onNavigate?.call(AppStrings.tabSongs),
               ),
             ),
             const SizedBox(width: 12),
@@ -454,9 +471,7 @@ class _QuickActionsSection extends StatelessWidget {
                 icon: Icons.calendar_month_rounded,
                 label: 'Ver\nEscala',
                 color: AppColors.red,
-                onTap: () {
-                  // Navigate to scale tab
-                },
+                onTap: () => onNavigate?.call(AppStrings.tabScale),
               ),
             ),
             const SizedBox(width: 12),
@@ -465,9 +480,7 @@ class _QuickActionsSection extends StatelessWidget {
                 icon: Icons.chat_bubble_rounded,
                 label: 'Chat do\nMinistério',
                 color: AppColors.yellow,
-                onTap: () {
-                  // Navigate to chat tab
-                },
+                onTap: () => onNavigate?.call(AppStrings.tabChat),
               ),
             ),
           ],
@@ -493,7 +506,8 @@ class _QuickActionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
+    return InkWell(
+      borderRadius: BorderRadius.circular(16),
       onTap: onTap,
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -513,7 +527,9 @@ class _QuickActionButton extends StatelessWidget {
                 fontFamily: 'Poppins',
                 fontSize: 11,
                 fontWeight: FontWeight.w500,
-                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight,
               ),
             ),
           ],
@@ -522,6 +538,8 @@ class _QuickActionButton extends StatelessWidget {
     );
   }
 }
+
+// ── Suggestion Section ────────────────────────────────────────────────────────
 
 class _SuggestionSection extends StatelessWidget {
   final SongsProvider songs;
@@ -548,22 +566,22 @@ class _SuggestionSection extends StatelessWidget {
                 fontFamily: 'Poppins',
                 fontSize: 16,
                 fontWeight: FontWeight.w600,
-                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight,
               ),
             ),
           ],
         ),
         const SizedBox(height: 12),
         ...suggested.map(
-          (song) => GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => SongDetailScreen(song: song),
-                ),
-              );
-            },
+          (song) => InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                  builder: (_) => SongDetailScreen(song: song)),
+            ),
             child: Container(
               margin: const EdgeInsets.only(bottom: 8),
               padding: const EdgeInsets.all(14),
@@ -571,7 +589,8 @@ class _SuggestionSection extends StatelessWidget {
                 color: isDark ? AppColors.cardDark : AppColors.cardLight,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+                  color:
+                      isDark ? Colors.grey.shade800 : Colors.grey.shade100,
                 ),
               ),
               child: Row(
