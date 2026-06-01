@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../data/models/scale_model.dart';
 import '../../data/services/firestore_service.dart';
@@ -8,19 +9,29 @@ class ScaleProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
+  StreamSubscription<List<ScaleModel>>? _scalesSub;
+
   List<ScaleModel> get scales => _scales;
   ScaleModel? get selectedScale => _selectedScale;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
   void listenToScales() {
-    FirestoreService.watchScales().listen((scales) {
+    if (_scalesSub != null) return;
+    _scalesSub = FirestoreService.watchScales().listen((scales) {
       _scales = scales;
+      _error = null;
       notifyListeners();
     }, onError: (e) {
       _error = 'Erro ao carregar escalas';
       notifyListeners();
     });
+  }
+
+  @override
+  void dispose() {
+    _scalesSub?.cancel();
+    super.dispose();
   }
 
   Future<void> loadScales() async {

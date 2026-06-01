@@ -5,7 +5,6 @@ import '../../providers/songs_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/song_model.dart';
-import '../../../data/services/firestore_service.dart';
 import 'song_detail_screen.dart';
 import 'add_song_screen.dart';
 
@@ -32,12 +31,8 @@ class _SongsScreenState extends State<SongsScreen>
     final songsProvider = context.watch<SongsProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Keep favorites in sync
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (auth.user != null) {
-        songsProvider.setFavorites(auth.user!.favoriteSongs);
-      }
-    });
+    // Favorites are kept in sync by MainScreen (reactively, outside build),
+    // so there is no per-frame work here anymore.
 
     return Scaffold(
       appBar: AppBar(
@@ -230,10 +225,12 @@ class _SongListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    final songs = context.watch<SongsProvider>();
-    final isFav = auth.isFavorite(song.id);
-    final isOffline = songs.isOffline(song.id);
+    // Each tile only rebuilds when ITS own favorite/offline status changes,
+    // instead of rebuilding the whole list on any provider update.
+    final isFav =
+        context.select<AuthProvider, bool>((a) => a.isFavorite(song.id));
+    final isOffline =
+        context.select<SongsProvider, bool>((s) => s.isOffline(song.id));
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return GestureDetector(

@@ -38,6 +38,11 @@ class _ScaleScreenState extends State<ScaleScreen> {
         ? scale.getScaleForDay(_selectedDay!)
         : null;
 
+    // Precompute the days that have a service for the focused month so the
+    // calendar's per-cell lookup is O(1) instead of scanning all scales.
+    final serviceDays =
+        scale.getDaysWithServices(_focusedDay.year, _focusedDay.month);
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Escala'),
@@ -73,7 +78,8 @@ class _ScaleScreenState extends State<ScaleScreen> {
                 setState(() => _focusedDay = focused);
               },
               eventLoader: (day) {
-                final hasService = scale.hasDayService(day);
+                final hasService =
+                    serviceDays.contains(DateTime(day.year, day.month, day.day));
                 return hasService ? [day] : [];
               },
               calendarStyle: CalendarStyle(

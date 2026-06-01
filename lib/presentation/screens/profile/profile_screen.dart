@@ -130,6 +130,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
             actions: [
               IconButton(
+                tooltip: _isEditing ? 'Salvar alterações' : 'Editar perfil',
                 icon: Icon(_isEditing ? Icons.check_rounded : Icons.edit_rounded),
                 color: isDark ? Colors.white : AppColors.textPrimaryLight,
                 onPressed: () async {
@@ -167,6 +168,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         fontFamily: 'Poppins',
                         fontSize: 14,
                         fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Escolha seu instrumento e toque em ✓ para salvar',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 12,
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondaryLight,
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -227,7 +239,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(width: 12),
                       _StatCard(
                         label: 'Offline',
-                        value: '0',
+                        value: '${songs.offlineCount}',
                         icon: Icons.download_done_rounded,
                         color: AppColors.success,
                       ),

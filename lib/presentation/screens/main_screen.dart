@@ -21,13 +21,14 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
+  AuthProvider? _auth;
 
-  final List<Widget> _screens = const [
-    HomeScreen(),
-    SongsScreen(),
-    ScaleScreen(),
-    ChatScreen(),
-    ProfileScreen(),
+  late final List<Widget> _screens = [
+    HomeScreen(onNavigateTab: _goToTab),
+    const SongsScreen(),
+    const ScaleScreen(),
+    const ChatScreen(),
+    const ProfileScreen(),
   ];
 
   @override
@@ -36,21 +37,42 @@ class _MainScreenState extends State<MainScreen> {
     _initData();
   }
 
+  void _goToTab(int index) {
+    if (index < 0 || index >= _screens.length) return;
+    setState(() => _currentIndex = index);
+  }
+
   void _initData() {
-    final auth = context.read<AuthProvider>();
+    _auth = context.read<AuthProvider>();
     final songs = context.read<SongsProvider>();
     final scale = context.read<ScaleProvider>();
     final chat = context.read<ChatProvider>();
 
     // Set favorites in songs provider from user data
-    if (auth.user != null) {
-      songs.setFavorites(auth.user!.favoriteSongs);
+    if (_auth!.user != null) {
+      songs.setFavorites(_auth!.user!.favoriteSongs);
     }
+    // Keep favorites in sync reactively (outside of build) so toggling a
+    // favorite anywhere updates the Songs filter without a rebuild loop.
+    _auth!.addListener(_syncFavorites);
 
     // Start real-time listeners
     songs.listenToSongs();
     scale.listenToScales();
     chat.listenToMessages();
+  }
+
+  void _syncFavorites() {
+    if (!mounted) return;
+    context
+        .read<SongsProvider>()
+        .setFavorites(_auth?.user?.favoriteSongs ?? const []);
+  }
+
+  @override
+  void dispose() {
+    _auth?.removeListener(_syncFavorites);
+    super.dispose();
   }
 
   @override

@@ -10,7 +10,6 @@ import '../../../core/constants/app_strings.dart';
 import '../../../data/models/message_model.dart';
 import '../../../data/models/song_model.dart';
 import '../../../data/models/scale_model.dart';
-import '../../../data/services/firestore_service.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -25,8 +24,30 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _showSongSearch = false;
   final _songSearchCtrl = TextEditingController();
 
+  ChatProvider? _chat;
+  int _lastMessageCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _chat = context.read<ChatProvider>();
+    _lastMessageCount = _chat!.messages.length;
+    // Scroll to the bottom only when a new message actually arrives,
+    // instead of on every rebuild.
+    _chat!.addListener(_onMessagesChanged);
+  }
+
+  void _onMessagesChanged() {
+    final count = _chat?.messages.length ?? 0;
+    if (count != _lastMessageCount) {
+      _lastMessageCount = count;
+      _scrollToBottom();
+    }
+  }
+
   @override
   void dispose() {
+    _chat?.removeListener(_onMessagesChanged);
     _messageCtrl.dispose();
     _scrollCtrl.dispose();
     _songSearchCtrl.dispose();
@@ -150,9 +171,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final songs = context.watch<SongsProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Scroll to bottom when new messages arrive
-    WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-
     return Scaffold(
       appBar: AppBar(
         title: const Text(AppStrings.groupChat),
@@ -176,7 +194,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 ),
                 const SizedBox(width: 5),
                 const Text(
-                  'Online',
+                  'Tempo real',
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 11,
@@ -218,6 +236,19 @@ class _ChatScreenState extends State<ChatScreen> {
                         child: const Icon(Icons.close_rounded, size: 18),
                       ),
                     ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    auth.isAdmin
+                        ? 'Enviar no chat ou adicionar à escala'
+                        : 'Encontre e compartilhe uma música no chat',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 11,
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondaryLight,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   TextField(
@@ -261,27 +292,35 @@ class _ChatScreenState extends State<ChatScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     // Share in chat
-                                    GestureDetector(
-                                      onTap: () {
-                                        _sendMessage(
-                                          linkedSongId: song.id,
-                                          linkedSongName: song.name,
-                                        );
-                                      },
-                                      child: const Icon(Icons.send_rounded,
-                                          size: 18, color: AppColors.blue),
+                                    Tooltip(
+                                      message: 'Enviar no chat',
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          _sendMessage(
+                                            linkedSongId: song.id,
+                                            linkedSongName: song.name,
+                                          );
+                                        },
+                                        child: const Icon(Icons.send_rounded,
+                                            size: 18, color: AppColors.blue),
+                                      ),
                                     ),
-                                    const SizedBox(width: 12),
-                                    // Add to scale
-                                    GestureDetector(
-                                      onTap: () {
-                                        _showInsertSongInScaleDialog(song);
-                                      },
-                                      child: const Icon(
-                                          Icons.calendar_month_rounded,
-                                          size: 18,
-                                          color: AppColors.red),
-                                    ),
+                                    // Add to scale (admins only)
+                                    if (auth.isAdmin) ...[
+                                      const SizedBox(width: 12),
+                                      Tooltip(
+                                        message: 'Adicionar à escala',
+                                        child: GestureDetector(
+                                          onTap: () {
+                                            _showInsertSongInScaleDialog(song);
+                                          },
+                                          child: const Icon(
+                                              Icons.calendar_month_rounded,
+                                              size: 18,
+                                              color: AppColors.red),
+                                        ),
+                                      ),
+                                    ],
                                   ],
                                 ),
                               ))
@@ -370,25 +409,28 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Row(
               children: [
                 // Song search toggle
-                GestureDetector(
-                  onTap: () {
-                    setState(() => _showSongSearch = !_showSongSearch);
-                  },
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: _showSongSearch
-                          ? AppColors.blue.withOpacity(0.15)
-                          : Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Icon(
-                      Icons.music_note_rounded,
-                      size: 20,
-                      color: _showSongSearch
-                          ? AppColors.blue
-                          : AppColors.textSecondaryLight,
+                Tooltip(
+                  message: 'Buscar e compartilhar música',
+                  child: GestureDetector(
+                    onTap: () {
+                      setState(() => _showSongSearch = !_showSongSearch);
+                    },
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _showSongSearch
+                            ? AppColors.blue.withOpacity(0.15)
+                            : Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Icon(
+                        Icons.music_note_rounded,
+                        size: 20,
+                        color: _showSongSearch
+                            ? AppColors.blue
+                            : AppColors.textSecondaryLight,
+                      ),
                     ),
                   ),
                 ),
