@@ -58,7 +58,8 @@ class _ScaleScreenState extends State<ScaleScreen> {
         children: [
           // Calendar
           Container(
-            color: isDark ? AppColors.surfaceDark : AppColors.white,
+            color:
+                isDark ? const Color(0x73141019) : Colors.white.withOpacity(0.50),
             child: TableCalendar(
               firstDay: DateTime.utc(2024, 1, 1),
               lastDay: DateTime.utc(2027, 12, 31),

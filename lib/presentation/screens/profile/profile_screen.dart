@@ -206,7 +206,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           SliverAppBar(
             expandedHeight: 240,
             pinned: true,
-            backgroundColor: isDark ? AppColors.surfaceDark : AppColors.white,
+            backgroundColor:
+                isDark ? const Color(0x8C141019) : Colors.white.withOpacity(0.55),
             surfaceTintColor: Colors.transparent,
             flexibleSpace: FlexibleSpaceBar(
               background: Container(

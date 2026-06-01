@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../../../core/constants/app_colors.dart';
 
 /// A reusable frosted-glass ("Liquid Glass") surface: a real backdrop blur
 /// clipped to rounded corners, with a translucent gradient fill, a hairline
@@ -74,6 +75,108 @@ class GlassContainer extends StatelessWidget {
             ),
             child: child,
           ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Faux-glass card: a translucent surface (no backdrop blur) that reads as
+/// frosted glass over the app's gradient backdrop. Cheap enough for lists.
+class GlassCard extends StatelessWidget {
+  final Widget child;
+  final EdgeInsetsGeometry? padding;
+  final EdgeInsetsGeometry? margin;
+  final double radius;
+  final VoidCallback? onTap;
+
+  const GlassCard({
+    super.key,
+    required this.child,
+    this.padding,
+    this.margin,
+    this.radius = 16,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final card = Container(
+      margin: margin,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withOpacity(0.06)
+            : Colors.white.withOpacity(0.55),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withOpacity(0.10)
+              : Colors.white.withOpacity(0.65),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.22 : 0.06),
+            blurRadius: 14,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: child,
+    );
+    if (onTap == null) return card;
+    return GestureDetector(onTap: onTap, child: card);
+  }
+}
+
+/// The app-wide frosted backdrop: a soft brand gradient with a few blurred
+/// colour "blobs" so translucent glass surfaces have something to refract.
+/// Wrap the whole app with this (via MaterialApp.builder).
+class GlassBackdrop extends StatelessWidget {
+  final Widget child;
+  const GlassBackdrop({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: isDark
+            ? AppColors.glassBackgroundDark
+            : AppColors.glassBackgroundLight,
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            top: -90,
+            left: -70,
+            child: _blob(AppColors.blue.withOpacity(isDark ? 0.20 : 0.16), 260),
+          ),
+          Positioned(
+            bottom: -110,
+            right: -80,
+            child: _blob(AppColors.red.withOpacity(isDark ? 0.18 : 0.13), 280),
+          ),
+          Positioned(
+            top: 240,
+            right: -100,
+            child: _blob(AppColors.yellow.withOpacity(0.12), 220),
+          ),
+          Positioned.fill(child: child),
+        ],
+      ),
+    );
+  }
+
+  Widget _blob(Color color, double size) {
+    return IgnorePointer(
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: RadialGradient(colors: [color, color.withOpacity(0)]),
         ),
       ),
     );

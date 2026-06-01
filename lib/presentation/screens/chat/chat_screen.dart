@@ -12,28 +12,30 @@ import '../../../data/models/message_model.dart';
 import '../../../data/models/song_model.dart';
 import '../../../data/models/scale_model.dart';
 
-/// WhatsApp-like color palette, scoped to the chat screen so the rest of the
-/// app keeps its own (Quadrangular) identity.
+/// Liquid Glass chat palette (translucent surfaces over the app backdrop).
 class _Wa {
-  static const headerLight = Color(0xFF008069);
-  static const headerDark = Color(0xFF1F2C34);
-  static const bgLight = Color(0xFFEFEAE2);
-  static const bgDark = Color(0xFF0B141A);
-  static const inBubbleLight = Color(0xFFFFFFFF);
-  static const inBubbleDark = Color(0xFF202C33);
-  static const outBubbleLight = Color(0xFFD9FDD3);
-  static const outBubbleDark = Color(0xFF005C4B);
-  static const textLight = Color(0xFF111B21);
-  static const textDark = Color(0xFFE9EDEF);
-  static const metaLight = Color(0xFF667781);
-  static const metaDark = Color(0xFF8696A0);
-  static const sendGreen = Color(0xFF00A884);
-  static const pillLight = Color(0xFFFFFFFF);
-  static const pillDark = Color(0xFF2A3942);
-  static const dateChipLight = Color(0xFFFFFFFF);
-  static const dateChipDark = Color(0xFF182229);
-  static const noticeLight = Color(0xFFFFF4D2);
-  static const noticeDark = Color(0xFF182433);
+  // Frosted, translucent header surfaces.
+  static const headerLight = Color(0x9EFFFFFF); // white ~62%
+  static const headerDark = Color(0x8C141019); // dark  ~55%
+  static const bgLight = Color(0x00000000);
+  static const bgDark = Color(0x00000000);
+  // Glass bubbles.
+  static const inBubbleLight = Color(0xCCFFFFFF); // white 80%
+  static const inBubbleDark = Color(0x1FFFFFFF); // white 12%
+  static const outBubbleLight = Color(0x3D1565C0); // brand blue ~24%
+  static const outBubbleDark = Color(0x4D5E92F3); // blue light  ~30%
+  static const textLight = Color(0xFF14202B);
+  static const textDark = Color(0xFFEAF0F6);
+  static const metaLight = Color(0xFF5B6B7A);
+  static const metaDark = Color(0xFF9FB0BF);
+  // Accent (send button, highlights). Brand blue instead of WhatsApp green.
+  static const sendGreen = AppColors.blue;
+  static const pillLight = Color(0x8CFFFFFF); // white 55%
+  static const pillDark = Color(0x14FFFFFF); // white 8%
+  static const dateChipLight = Color(0xCCFFFFFF);
+  static const dateChipDark = Color(0x59141019);
+  static const noticeLight = Color(0xE6FFF4D2);
+  static const noticeDark = Color(0x33FFE08A);
 
   /// Per-sender name colors used above incoming bubbles (group chat).
   static const nameColors = [
@@ -267,7 +269,6 @@ class _ChatScreenState extends State<ChatScreen> {
     final songs = context.watch<SongsProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final bg = isDark ? _Wa.bgDark : _Wa.bgLight;
     final headerColor = isDark ? _Wa.headerDark : _Wa.headerLight;
 
     // Who is typing right now (fresh and excluding myself).
@@ -294,29 +295,23 @@ class _ChatScreenState extends State<ChatScreen> {
         : chat.messages;
 
     return Scaffold(
-      backgroundColor: bg,
+      backgroundColor: Colors.transparent,
       appBar: _searchMode
-          ? _buildSearchAppBar(headerColor)
+          ? _buildSearchAppBar(headerColor, isDark)
           : _buildNormalAppBar(
-              headerColor, typingLabel, chat.messages.isNotEmpty),
-      body: Stack(
+              headerColor, typingLabel, chat.messages.isNotEmpty, isDark),
+      body: Column(
         children: [
-          // Wallpaper (doodle pattern) behind everything
-          Positioned.fill(child: _ChatWallpaper(isDark: isDark)),
-          Column(
-            children: [
-              if (_showSongSearch && !_searchMode)
-                _buildSongSearchPanel(auth, songs, isDark),
-              Expanded(
-                child: chat.isLoading
-                    ? const Center(
-                        child: CircularProgressIndicator(color: _Wa.sendGreen))
-                    : _buildMessages(visible, auth, songs, isDark,
-                        showNotice: !searching, searching: searching),
-              ),
-              if (!_searchMode) _buildInputBar(isDark),
-            ],
+          if (_showSongSearch && !_searchMode)
+            _buildSongSearchPanel(auth, songs, isDark),
+          Expanded(
+            child: chat.isLoading
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.blue))
+                : _buildMessages(visible, auth, songs, isDark,
+                    showNotice: !searching, searching: searching),
           ),
+          if (!_searchMode) _buildInputBar(isDark),
         ],
       ),
     );
@@ -331,23 +326,26 @@ class _ChatScreenState extends State<ChatScreen> {
     return 'várias pessoas estão digitando…';
   }
 
-  PreferredSizeWidget _buildNormalAppBar(
-      Color headerColor, String? typingLabel, bool hasMessages) {
+  PreferredSizeWidget _buildNormalAppBar(Color headerColor, String? typingLabel,
+      bool hasMessages, bool isDark) {
+    final fg = isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
+    final sub = isDark ? _Wa.metaDark : _Wa.metaLight;
     return AppBar(
       backgroundColor: headerColor,
-      foregroundColor: Colors.white,
-      surfaceTintColor: headerColor,
+      foregroundColor: fg,
+      surfaceTintColor: Colors.transparent,
       elevation: 0,
       titleSpacing: 0,
       centerTitle: false,
-      systemOverlayStyle: SystemUiOverlayStyle.light,
+      systemOverlayStyle:
+          isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       title: Row(
         children: [
           CircleAvatar(
             radius: 18,
-            backgroundColor: Colors.white.withOpacity(0.22),
+            backgroundColor: AppColors.blue.withOpacity(0.15),
             child: const Icon(Icons.groups_rounded,
-                color: Colors.white, size: 22),
+                color: AppColors.blue, size: 22),
           ),
           const SizedBox(width: 10),
           Expanded(
@@ -355,13 +353,13 @@ class _ChatScreenState extends State<ChatScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Text(
+                Text(
                   'Ministério de Louvor',
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: Colors.white,
+                    color: fg,
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -370,7 +368,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 11.5,
-                    color: typingLabel != null ? Colors.white : Colors.white70,
+                    color: typingLabel != null ? AppColors.blue : sub,
                     fontStyle: typingLabel != null
                         ? FontStyle.italic
                         : FontStyle.normal,
@@ -393,14 +391,17 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  PreferredSizeWidget _buildSearchAppBar(Color headerColor) {
+  PreferredSizeWidget _buildSearchAppBar(Color headerColor, bool isDark) {
+    final fg = isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
+    final sub = isDark ? _Wa.metaDark : _Wa.metaLight;
     return AppBar(
       backgroundColor: headerColor,
-      foregroundColor: Colors.white,
-      surfaceTintColor: headerColor,
+      foregroundColor: fg,
+      surfaceTintColor: Colors.transparent,
       elevation: 0,
       titleSpacing: 0,
-      systemOverlayStyle: SystemUiOverlayStyle.light,
+      systemOverlayStyle:
+          isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark,
       leading: IconButton(
         icon: const Icon(Icons.arrow_back_rounded),
         onPressed: _exitSearch,
@@ -408,13 +409,12 @@ class _ChatScreenState extends State<ChatScreen> {
       title: TextField(
         controller: _searchCtrl,
         autofocus: true,
-        cursorColor: Colors.white,
-        style: const TextStyle(
-            fontFamily: 'Poppins', fontSize: 16, color: Colors.white),
-        decoration: const InputDecoration(
+        cursorColor: AppColors.blue,
+        style: TextStyle(fontFamily: 'Poppins', fontSize: 16, color: fg),
+        decoration: InputDecoration(
           hintText: 'Buscar mensagens…',
-          hintStyle: TextStyle(
-              fontFamily: 'Poppins', color: Colors.white70, fontSize: 16),
+          hintStyle:
+              TextStyle(fontFamily: 'Poppins', color: sub, fontSize: 16),
           border: InputBorder.none,
         ),
       ),
@@ -628,7 +628,9 @@ class _ChatScreenState extends State<ChatScreen> {
     }).toList();
 
     return Material(
-      color: isDark ? _Wa.inBubbleDark : Colors.white,
+      color: isDark
+          ? const Color(0xF21A1016)
+          : Colors.white.withOpacity(0.92),
       elevation: 2,
       child: Padding(
         padding: const EdgeInsets.all(12),
@@ -1123,10 +1125,17 @@ class _BubblePainter extends CustomPainter {
       path.close();
     }
 
-    // Subtle drop shadow like WhatsApp.
-    canvas.drawShadow(path, Colors.black.withOpacity(isDark ? 0.5 : 0.28),
-        1.0, false);
+    // Soft shadow + translucent fill + hairline glass border.
+    canvas.drawShadow(
+        path, Colors.black.withOpacity(isDark ? 0.35 : 0.16), 1.0, false);
     canvas.drawPath(path, Paint()..color = color);
+    canvas.drawPath(
+      path,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1
+        ..color = Colors.white.withOpacity(isDark ? 0.12 : 0.55),
+    );
   }
 
   @override
@@ -1134,96 +1143,5 @@ class _BubblePainter extends CustomPainter {
       old.color != color ||
       old.isMe != isMe ||
       old.showTail != showTail ||
-      old.isDark != isDark;
-}
-
-// ─── Wallpaper ─────────────────────────────────────────────────────────────
-
-class _ChatWallpaper extends StatelessWidget {
-  final bool isDark;
-  const _ChatWallpaper({required this.isDark});
-
-  @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: CustomPaint(
-        size: Size.infinite,
-        painter: _WallpaperPainter(isDark: isDark),
-      ),
-    );
-  }
-}
-
-class _WallpaperPainter extends CustomPainter {
-  final bool isDark;
-  _WallpaperPainter({required this.isDark});
-
-  static const _icons = [
-    Icons.music_note_rounded,
-    Icons.favorite_rounded,
-    Icons.church_rounded,
-    Icons.star_rounded,
-    Icons.headphones_rounded,
-    Icons.queue_music_rounded,
-    Icons.mic_none_rounded,
-    Icons.auto_awesome_rounded,
-  ];
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Base fill.
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = isDark ? _Wa.bgDark : _Wa.bgLight,
-    );
-
-    final doodle = (isDark ? Colors.white : Colors.black)
-        .withOpacity(isDark ? 0.03 : 0.035);
-
-    const step = 76.0;
-    const iconSize = 30.0;
-    int n = 0;
-    for (double y = 8; y < size.height + step; y += step) {
-      // Offset alternating rows for a more organic look.
-      final rowOffset = ((y ~/ step) % 2 == 0) ? 0.0 : step / 2;
-      for (double x = 8; x < size.width + step; x += step) {
-        final icon = _icons[n % _icons.length];
-        // Deterministic small rotation per cell.
-        final angle = ((n % 5) - 2) * 0.18;
-        _paintIcon(
-          canvas,
-          icon,
-          Offset(x + rowOffset, y),
-          iconSize,
-          doodle,
-          angle,
-        );
-        n++;
-      }
-    }
-  }
-
-  void _paintIcon(Canvas canvas, IconData icon, Offset pos, double size,
-      Color color, double angle) {
-    final tp = TextPainter(textDirection: TextDirection.ltr);
-    tp.text = TextSpan(
-      text: String.fromCharCode(icon.codePoint),
-      style: TextStyle(
-        fontSize: size,
-        fontFamily: icon.fontFamily,
-        package: icon.fontPackage,
-        color: color,
-      ),
-    );
-    tp.layout();
-    canvas.save();
-    canvas.translate(pos.dx, pos.dy);
-    canvas.rotate(angle);
-    tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
-    canvas.restore();
-  }
-
-  @override
-  bool shouldRepaint(covariant _WallpaperPainter old) =>
       old.isDark != isDark;
 }

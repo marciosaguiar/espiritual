@@ -22,8 +22,25 @@ class AppColors {
   static const Color backgroundDark = Color(0xFF121212);
   static const Color surfaceLight = Color(0xFFFFFFFF);
   static const Color surfaceDark = Color(0xFF1E1E1E);
-  static const Color cardLight = Color(0xFFFFFFFF);
-  static const Color cardDark = Color(0xFF2C2C2C);
+
+  // Glass card surfaces (translucent so the gradient backdrop shows through).
+  static const Color cardLight = Color(0x8CFFFFFF); // white  ~55%
+  static const Color cardDark = Color(0x14FFFFFF); // white  ~8%
+
+  // Frosted "Liquid Glass" backdrop gradients used behind every screen.
+  static const LinearGradient glassBackgroundLight = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFFE9F1FC), Color(0xFFF6F5FA), Color(0xFFFCEDEE)],
+    stops: [0.0, 0.5, 1.0],
+  );
+
+  static const LinearGradient glassBackgroundDark = LinearGradient(
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
+    colors: [Color(0xFF0E1622), Color(0xFF141019), Color(0xFF1A1016)],
+    stops: [0.0, 0.5, 1.0],
+  );
 
   // Text
   static const Color textPrimaryLight = Color(0xFF1A1A1A);

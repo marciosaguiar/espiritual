@@ -15,6 +15,7 @@ import 'presentation/providers/scale_provider.dart';
 import 'presentation/providers/chat_provider.dart';
 import 'presentation/screens/auth/login_screen.dart';
 import 'presentation/screens/main_screen.dart';
+import 'presentation/widgets/common/glass.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,6 +61,9 @@ class LevitaSyncApp extends StatelessWidget {
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,
+            // Frosted "Liquid Glass" backdrop behind every route.
+            builder: (context, child) =>
+                GlassBackdrop(child: child ?? const SizedBox.shrink()),
             home: const _AppEntry(),
           );
         },

@@ -174,7 +174,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           // Controls bar
           Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            color: isDark ? AppColors.surfaceDark : AppColors.white,
+            color:
+                isDark ? const Color(0x8C141019) : Colors.white.withOpacity(0.55),
             child: Column(
               children: [
                 // Key and transpose — Wrap prevents overflow on small screens

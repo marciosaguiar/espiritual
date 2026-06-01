@@ -46,7 +46,8 @@ class _HomeScreenState extends State<HomeScreen> {
             expandedHeight: 120,
             floating: false,
             pinned: true,
-            backgroundColor: isDark ? AppColors.surfaceDark : AppColors.white,
+            backgroundColor:
+                isDark ? const Color(0x8C141019) : Colors.white.withOpacity(0.55),
             surfaceTintColor: Colors.transparent,
             flexibleSpace: FlexibleSpaceBar(
               titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
