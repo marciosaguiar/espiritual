@@ -19,6 +19,170 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isEditing = false;
   UserInstrument? _editInstrument;
 
+  void _showHelpSheet(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: isDark ? AppColors.surfaceDark : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        const items = [
+          (Icons.home_rounded, 'Início',
+              'Versículo do dia, próximo culto e atalhos rápidos.'),
+          (Icons.music_note_rounded, 'Músicas',
+              'Busque cifras, transponha o tom e salve offline.'),
+          (Icons.calendar_month_rounded, 'Escala',
+              'Veja os cultos, confirme presença e monte o repertório.'),
+          (Icons.chat_bubble_rounded, 'Chat',
+              'Converse com o ministério e compartilhe músicas.'),
+          (Icons.person_rounded, 'Perfil',
+              'Seu instrumento, favoritas, tons salvos e o tema.'),
+        ];
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade400,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Como usar o LevitaSync',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Um guia rápido das 5 áreas do app:',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 13,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondaryLight,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ...items.map(
+                  (it) => Padding(
+                    padding: const EdgeInsets.only(bottom: 14),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: AppColors.blue.withOpacity(0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child:
+                              Icon(it.$1, color: AppColors.blue, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                it.$2,
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: isDark
+                                      ? AppColors.textPrimaryDark
+                                      : AppColors.textPrimaryLight,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                it.$3,
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 12,
+                                  height: 1.3,
+                                  color: isDark
+                                      ? AppColors.textSecondaryDark
+                                      : AppColors.textSecondaryLight,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 4),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.blue,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                    ),
+                    child: const Text('Entendi'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAboutSheet(BuildContext context) {
+    showAboutDialog(
+      context: context,
+      applicationName: 'LevitaSync',
+      applicationVersion: 'Versão 1.0.0',
+      applicationIcon: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          gradient: AppColors.primaryGradient,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: const Icon(Icons.music_note_rounded, color: Colors.white),
+      ),
+      children: const [
+        SizedBox(height: 8),
+        Text(
+          'O super app do ministério de louvor: músicas com cifras, '
+          'escalas, chat e organização — tudo em um só lugar.',
+          style: TextStyle(fontFamily: 'Poppins', fontSize: 13, height: 1.4),
+        ),
+        SizedBox(height: 12),
+        Text(
+          'Feito com ❤️ para a glória de Deus.',
+          style: TextStyle(fontFamily: 'Poppins', fontSize: 12),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -248,7 +412,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                   const SizedBox(height: 24),
 
-                  // Theme toggle
+                  // Settings group
+                  Text(
+                    'Configurações',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
                   _SettingRow(
                     icon: isDark
                         ? Icons.light_mode_rounded
@@ -260,6 +436,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       activeColor: AppColors.blue,
                     ),
                     onTap: () => theme.toggleTheme(),
+                  ),
+                  const SizedBox(height: 8),
+                  _SettingRow(
+                    icon: Icons.help_outline_rounded,
+                    label: 'Como usar o app',
+                    trailing: const Icon(Icons.chevron_right_rounded,
+                        color: AppColors.textSecondaryLight),
+                    onTap: () => _showHelpSheet(context),
+                  ),
+                  const SizedBox(height: 8),
+                  _SettingRow(
+                    icon: Icons.info_outline_rounded,
+                    label: 'Sobre o LevitaSync',
+                    trailing: const Icon(Icons.chevron_right_rounded,
+                        color: AppColors.textSecondaryLight),
+                    onTap: () => _showAboutSheet(context),
                   ),
 
                   const SizedBox(height: 8),
@@ -423,6 +615,57 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     }),
                   ],
 
+                  // Favorites empty hint
+                  if (favoriteSongs.isEmpty) ...[
+                    const SizedBox(height: 20),
+                    Text(
+                      AppStrings.myFavorites,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: isDark ? AppColors.cardDark : AppColors.cardLight,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color:
+                              isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.favorite_border_rounded,
+                              size: 20,
+                              color: isDark
+                                  ? AppColors.textSecondaryDark
+                                  : AppColors.textSecondaryLight),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Toque no ♥ em uma música para salvá-la nas favoritas.',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 12.5,
+                                color: isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondaryLight,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
                   const SizedBox(height: 28),
 
                   // Logout
@@ -505,12 +748,19 @@ class _StatCard extends StatelessWidget {
         padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
         decoration: BoxDecoration(
           color: color.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withOpacity(0.2)),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: color.withOpacity(0.18)),
+          boxShadow: [
+            BoxShadow(
+              color: color.withOpacity(0.10),
+              blurRadius: 10,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 22),
+            Icon(icon, color: color, size: 24),
             const SizedBox(height: 6),
             Text(
               value,

@@ -3,16 +3,23 @@ import 'package:flutter/foundation.dart';
 import '../../data/models/message_model.dart';
 import '../../data/services/firestore_service.dart';
 
+typedef TypingUser = ({String userId, String userName, DateTime updatedAt});
+
 class ChatProvider extends ChangeNotifier {
   List<MessageModel> _messages = [];
   bool _isLoading = false;
   String? _error;
+  List<TypingUser> _typing = [];
 
   StreamSubscription<List<MessageModel>>? _messagesSub;
+  StreamSubscription<List<TypingUser>>? _typingSub;
 
   List<MessageModel> get messages => _messages;
   bool get isLoading => _isLoading;
   String? get error => _error;
+
+  /// Users currently typing (best-effort, filtered for freshness by callers).
+  List<TypingUser> get typing => _typing;
 
   void listenToMessages() {
     if (_messagesSub != null) return;
@@ -29,9 +36,32 @@ class ChatProvider extends ChangeNotifier {
     });
   }
 
+  void listenToTyping() {
+    if (_typingSub != null) return;
+    _typingSub = FirestoreService.watchTyping().listen((list) {
+      _typing = list;
+      notifyListeners();
+    }, onError: (e) {
+      // Presence is best-effort; ignore.
+    });
+  }
+
+  Future<void> setTyping({
+    required String userId,
+    required String userName,
+    required bool typing,
+  }) {
+    return FirestoreService.setTyping(
+      userId: userId,
+      userName: userName,
+      typing: typing,
+    );
+  }
+
   @override
   void dispose() {
     _messagesSub?.cancel();
+    _typingSub?.cancel();
     super.dispose();
   }
 

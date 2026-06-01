@@ -254,4 +254,43 @@ class FirestoreService {
       timestamp: DateTime.now(),
     );
   }
+
+  // ─── TYPING (presence) ──────────────────────────────────────────────────────
+
+  static const String _typing = 'typing';
+
+  /// Broadcasts whether [userId] is currently typing in the group chat.
+  static Future<void> setTyping({
+    required String userId,
+    required String userName,
+    required bool typing,
+  }) async {
+    try {
+      await _db.collection(_typing).doc(userId).set({
+        'userId': userId,
+        'userName': userName,
+        'typing': typing,
+        'updatedAt': Timestamp.now(),
+      });
+    } catch (_) {
+      // Presence is best-effort; ignore failures.
+    }
+  }
+
+  static Stream<List<({String userId, String userName, DateTime updatedAt})>>
+      watchTyping() {
+    return _db
+        .collection(_typing)
+        .where('typing', isEqualTo: true)
+        .snapshots()
+        .map((snap) => snap.docs.map((doc) {
+              final data = doc.data();
+              return (
+                userId: data['userId'] as String? ?? doc.id,
+                userName: data['userName'] as String? ?? '',
+                updatedAt:
+                    (data['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+              );
+            }).toList());
+  }
 }

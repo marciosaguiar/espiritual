@@ -60,6 +60,7 @@ class _MainScreenState extends State<MainScreen> {
     songs.listenToSongs();
     scale.listenToScales();
     chat.listenToMessages();
+    chat.listenToTyping();
   }
 
   void _syncFavorites() {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -67,17 +68,30 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _showSongSearch = false;
   final _songSearchCtrl = TextEditingController();
 
+  // In-chat message search
+  bool _searchMode = false;
+  final _searchCtrl = TextEditingController();
+
   ChatProvider? _chat;
+  AuthProvider? _auth;
   int _lastMessageCount = 0;
+
+  // "typing…" presence broadcast
+  Timer? _typingStopTimer;
+  bool _broadcasting = false;
 
   @override
   void initState() {
     super.initState();
     _chat = context.read<ChatProvider>();
+    _auth = context.read<AuthProvider>();
     _lastMessageCount = _chat!.messages.length;
-    // Scroll to the bottom only when a new message actually arrives,
-    // instead of on every rebuild.
+    // Scroll to the bottom only when a new message actually arrives.
     _chat!.addListener(_onMessagesChanged);
+    // Broadcast typing presence as the user types.
+    _messageCtrl.addListener(_handleTyping);
+    // Re-filter results as the search query changes.
+    _searchCtrl.addListener(_onSearchChanged);
   }
 
   void _onMessagesChanged() {
@@ -88,12 +102,50 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _onSearchChanged() => setState(() {});
+
+  void _handleTyping() {
+    final u = _auth?.user;
+    if (u == null) return;
+    if (!_broadcasting) {
+      _broadcasting = true;
+      _chat?.setTyping(userId: u.id, userName: u.name, typing: true);
+    }
+    _typingStopTimer?.cancel();
+    _typingStopTimer = Timer(const Duration(seconds: 3), _stopTyping);
+  }
+
+  void _stopTyping() {
+    _typingStopTimer?.cancel();
+    if (!_broadcasting) return;
+    _broadcasting = false;
+    final u = _auth?.user;
+    if (u != null) {
+      _chat?.setTyping(userId: u.id, userName: u.name, typing: false);
+    }
+  }
+
+  void _enterSearch() => setState(() {
+        _searchMode = true;
+        _showSongSearch = false;
+      });
+
+  void _exitSearch() => setState(() {
+        _searchMode = false;
+        _searchCtrl.clear();
+      });
+
   @override
   void dispose() {
     _chat?.removeListener(_onMessagesChanged);
+    _messageCtrl.removeListener(_handleTyping);
+    _searchCtrl.removeListener(_onSearchChanged);
+    _typingStopTimer?.cancel();
+    _stopTyping();
     _messageCtrl.dispose();
     _scrollCtrl.dispose();
     _songSearchCtrl.dispose();
+    _searchCtrl.dispose();
     super.dispose();
   }
 
@@ -115,6 +167,7 @@ class _ChatScreenState extends State<ChatScreen> {
     );
 
     _messageCtrl.clear();
+    _stopTyping();
     setState(() => _showSongSearch = false);
     _scrollToBottom();
   }
@@ -217,69 +270,51 @@ class _ChatScreenState extends State<ChatScreen> {
     final bg = isDark ? _Wa.bgDark : _Wa.bgLight;
     final headerColor = isDark ? _Wa.headerDark : _Wa.headerLight;
 
+    // Who is typing right now (fresh and excluding myself).
+    final me = auth.user?.id;
+    final now = DateTime.now();
+    final typingNames = chat.typing
+        .where((t) =>
+            t.userId != me &&
+            t.userName.isNotEmpty &&
+            now.difference(t.updatedAt).inSeconds < 6)
+        .map((t) => t.userName)
+        .toList();
+    final typingLabel = _typingLabel(typingNames);
+
+    // In-chat search filtering.
+    final query = _searchCtrl.text.trim().toLowerCase();
+    final searching = _searchMode && query.isNotEmpty;
+    final visible = searching
+        ? chat.messages
+            .where((m) =>
+                m.text.toLowerCase().contains(query) ||
+                (m.linkedSongName?.toLowerCase().contains(query) ?? false))
+            .toList()
+        : chat.messages;
+
     return Scaffold(
       backgroundColor: bg,
-      appBar: AppBar(
-        backgroundColor: headerColor,
-        foregroundColor: Colors.white,
-        surfaceTintColor: headerColor,
-        elevation: 0,
-        titleSpacing: 0,
-        centerTitle: false,
-        systemOverlayStyle: SystemUiOverlayStyle.light,
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: Colors.white.withOpacity(0.22),
-              child: const Icon(Icons.groups_rounded,
-                  color: Colors.white, size: 22),
-            ),
-            const SizedBox(width: 10),
-            const Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    'Ministério de Louvor',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    'mensagens em tempo real',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 11.5,
-                      color: Colors.white70,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
+      appBar: _searchMode
+          ? _buildSearchAppBar(headerColor)
+          : _buildNormalAppBar(
+              headerColor, typingLabel, chat.messages.isNotEmpty),
       body: Stack(
         children: [
           // Wallpaper (doodle pattern) behind everything
           Positioned.fill(child: _ChatWallpaper(isDark: isDark)),
           Column(
             children: [
-              if (_showSongSearch) _buildSongSearchPanel(auth, songs, isDark),
+              if (_showSongSearch && !_searchMode)
+                _buildSongSearchPanel(auth, songs, isDark),
               Expanded(
                 child: chat.isLoading
                     ? const Center(
                         child: CircularProgressIndicator(color: _Wa.sendGreen))
-                    : _buildMessages(chat, auth, songs, isDark),
+                    : _buildMessages(visible, auth, songs, isDark,
+                        showNotice: !searching, searching: searching),
               ),
-              _buildInputBar(isDark),
+              if (!_searchMode) _buildInputBar(isDark),
             ],
           ),
         ],
@@ -287,9 +322,128 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
-  Widget _buildMessages(ChatProvider chat, AuthProvider auth,
-      SongsProvider songs, bool isDark) {
-    if (chat.messages.isEmpty) {
+  String? _typingLabel(List<String> names) {
+    if (names.isEmpty) return null;
+    if (names.length == 1) return '${names.first} está digitando…';
+    if (names.length == 2) {
+      return '${names[0]} e ${names[1]} estão digitando…';
+    }
+    return 'várias pessoas estão digitando…';
+  }
+
+  PreferredSizeWidget _buildNormalAppBar(
+      Color headerColor, String? typingLabel, bool hasMessages) {
+    return AppBar(
+      backgroundColor: headerColor,
+      foregroundColor: Colors.white,
+      surfaceTintColor: headerColor,
+      elevation: 0,
+      titleSpacing: 0,
+      centerTitle: false,
+      systemOverlayStyle: SystemUiOverlayStyle.light,
+      title: Row(
+        children: [
+          CircleAvatar(
+            radius: 18,
+            backgroundColor: Colors.white.withOpacity(0.22),
+            child: const Icon(Icons.groups_rounded,
+                color: Colors.white, size: 22),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Text(
+                  'Ministério de Louvor',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: Colors.white,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+                Text(
+                  typingLabel ?? 'mensagens em tempo real',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 11.5,
+                    color: typingLabel != null ? Colors.white : Colors.white70,
+                    fontStyle: typingLabel != null
+                        ? FontStyle.italic
+                        : FontStyle.normal,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        if (hasMessages)
+          IconButton(
+            tooltip: 'Buscar mensagens',
+            icon: const Icon(Icons.search_rounded),
+            onPressed: _enterSearch,
+          ),
+      ],
+    );
+  }
+
+  PreferredSizeWidget _buildSearchAppBar(Color headerColor) {
+    return AppBar(
+      backgroundColor: headerColor,
+      foregroundColor: Colors.white,
+      surfaceTintColor: headerColor,
+      elevation: 0,
+      titleSpacing: 0,
+      systemOverlayStyle: SystemUiOverlayStyle.light,
+      leading: IconButton(
+        icon: const Icon(Icons.arrow_back_rounded),
+        onPressed: _exitSearch,
+      ),
+      title: TextField(
+        controller: _searchCtrl,
+        autofocus: true,
+        cursorColor: Colors.white,
+        style: const TextStyle(
+            fontFamily: 'Poppins', fontSize: 16, color: Colors.white),
+        decoration: const InputDecoration(
+          hintText: 'Buscar mensagens…',
+          hintStyle: TextStyle(
+              fontFamily: 'Poppins', color: Colors.white70, fontSize: 16),
+          border: InputBorder.none,
+        ),
+      ),
+      actions: [
+        if (_searchCtrl.text.isNotEmpty)
+          IconButton(
+            icon: const Icon(Icons.close_rounded),
+            onPressed: () => _searchCtrl.clear(),
+          ),
+      ],
+    );
+  }
+
+  Widget _buildMessages(List<MessageModel> messages, AuthProvider auth,
+      SongsProvider songs, bool isDark,
+      {bool showNotice = true, bool searching = false}) {
+    if (messages.isEmpty) {
+      if (searching) {
+        return Center(
+          child: Text(
+            'Nenhuma mensagem encontrada',
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 13,
+              color: isDark ? _Wa.metaDark : _Wa.metaLight,
+            ),
+          ),
+        );
+      }
       return Center(
         child: SingleChildScrollView(
           child: Column(
@@ -317,20 +471,20 @@ class _ChatScreenState extends State<ChatScreen> {
       );
     }
 
-    final messages = chat.messages;
+    final headerCount = showNotice ? 1 : 0;
     return ListView.builder(
       controller: _scrollCtrl,
       padding: const EdgeInsets.fromLTRB(6, 10, 6, 8),
-      itemCount: messages.length + 1,
+      itemCount: messages.length + headerCount,
       itemBuilder: (ctx, index) {
         // First item: WhatsApp-style "encryption" notice.
-        if (index == 0) {
+        if (showNotice && index == 0) {
           return const Padding(
             padding: EdgeInsets.only(bottom: 8),
             child: _EncryptionNotice(),
           );
         }
-        final i = index - 1;
+        final i = index - headerCount;
         final msg = messages[i];
         final prev = i > 0 ? messages[i - 1] : null;
         final next = i < messages.length - 1 ? messages[i + 1] : null;
