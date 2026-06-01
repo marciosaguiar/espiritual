@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
@@ -206,10 +207,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
           SliverAppBar(
             expandedHeight: 240,
             pinned: true,
-            backgroundColor:
-                isDark ? const Color(0x8C141019) : Colors.white.withOpacity(0.55),
+            backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
-            flexibleSpace: FlexibleSpaceBar(
+            flexibleSpace: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Frosted glass that shows once the gradient header collapses.
+                ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    child: Container(
+                      color: isDark
+                          ? const Color(0x8C141019)
+                          : Colors.white.withOpacity(0.55),
+                    ),
+                  ),
+                ),
+                FlexibleSpaceBar(
               background: Container(
                 decoration: const BoxDecoration(
                   gradient: AppColors.primaryGradient,
@@ -292,6 +306,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
               ),
+            ),
+              ],
             ),
             actions: [
               IconButton(

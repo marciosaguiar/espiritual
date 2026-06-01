@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -46,34 +47,52 @@ class _HomeScreenState extends State<HomeScreen> {
             expandedHeight: 120,
             floating: false,
             pinned: true,
-            backgroundColor:
-                isDark ? const Color(0x8C141019) : Colors.white.withOpacity(0.55),
+            backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
-              title: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Olá, ${auth.user?.name.split(' ').first ?? 'Levita'}! 👋',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+            flexibleSpace: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Real frosted blur of the content scrolling behind the header.
+                ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    child: Container(
+                      color: isDark
+                          ? const Color(0x8C141019)
+                          : Colors.white.withOpacity(0.55),
                     ),
                   ),
-                  Text(
-                    DateFormat('EEEE, d \'de\' MMMM', 'pt_BR').format(DateTime.now()),
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 11,
-                      color: AppColors.textSecondaryLight,
-                    ),
+                ),
+                FlexibleSpaceBar(
+                  titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
+                  title: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Olá, ${auth.user?.name.split(' ').first ?? 'Levita'}! 👋',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: isDark
+                              ? AppColors.textPrimaryDark
+                              : AppColors.textPrimaryLight,
+                        ),
+                      ),
+                      Text(
+                        DateFormat('EEEE, d \'de\' MMMM', 'pt_BR')
+                            .format(DateTime.now()),
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 11,
+                          color: AppColors.textSecondaryLight,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
             actions: [
               Padding(
