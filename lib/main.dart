@@ -86,7 +86,11 @@ class _AppEntryState extends State<_AppEntry> {
   @override
   void initState() {
     super.initState();
-    _checkAuth();
+    // Run after the first frame so the initial notifyListeners() inside
+    // checkSession() doesn't fire during build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkAuth();
+    });
   }
 
   Future<void> _checkAuth() async {

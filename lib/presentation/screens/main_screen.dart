@@ -35,7 +35,11 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
-    _initData();
+    // Defer to after the first frame so provider notifyListeners() (favorites
+    // sync, preview seed data) don't fire during build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _initData();
+    });
   }
 
   void _goToTab(int index) {
