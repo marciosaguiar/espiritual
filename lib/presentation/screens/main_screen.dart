@@ -123,7 +123,7 @@ class _GlassNavBar extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
         child: GlassContainer(
-          blur: 22,
+          blur: 28,
           radius: 28,
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
           child: Row(

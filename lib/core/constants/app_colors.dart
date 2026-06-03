@@ -31,14 +31,14 @@ class AppColors {
   static const LinearGradient glassBackgroundLight = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFFE9F1FC), Color(0xFFF6F5FA), Color(0xFFFCEDEE)],
+    colors: [Color(0xFFD2E2FB), Color(0xFFECEDF8), Color(0xFFFBD8DF)],
     stops: [0.0, 0.5, 1.0],
   );
 
   static const LinearGradient glassBackgroundDark = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
-    colors: [Color(0xFF0E1622), Color(0xFF141019), Color(0xFF1A1016)],
+    colors: [Color(0xFF101F37), Color(0xFF181020), Color(0xFF26121D)],
     stops: [0.0, 0.5, 1.0],
   );
 

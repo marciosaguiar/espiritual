@@ -45,7 +45,7 @@ class _SongsScreenState extends State<SongsScreen>
         backgroundColor: Colors.transparent,
         flexibleSpace: ClipRect(
           child: BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
             child: Container(
               color: isDark
                   ? const Color(0x8C141019)

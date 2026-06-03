@@ -55,7 +55,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 // Real frosted blur of the content scrolling behind the header.
                 ClipRect(
                   child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                    filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
                     child: Container(
                       color: isDark
                           ? const Color(0x8C141019)

@@ -20,7 +20,7 @@ class GlassContainer extends StatelessWidget {
   const GlassContainer({
     super.key,
     required this.child,
-    this.blur = 18,
+    this.blur = 24,
     this.radius = 24,
     this.padding,
     this.margin,
@@ -58,19 +58,19 @@ class GlassContainer extends StatelessWidget {
                 end: Alignment.bottomRight,
                 colors: isDark
                     ? [
-                        Colors.white.withOpacity(0.12),
-                        Colors.white.withOpacity(0.04),
+                        Colors.white.withOpacity(0.18),
+                        Colors.white.withOpacity(0.06),
                       ]
                     : [
-                        Colors.white.withOpacity(0.65),
-                        Colors.white.withOpacity(0.35),
+                        Colors.white.withOpacity(0.74),
+                        Colors.white.withOpacity(0.46),
                       ],
               ),
               border: Border.all(
                 color: isDark
-                    ? Colors.white.withOpacity(0.14)
-                    : Colors.white.withOpacity(0.70),
-                width: 1,
+                    ? Colors.white.withOpacity(0.22)
+                    : Colors.white.withOpacity(0.85),
+                width: 1.2,
               ),
             ),
             child: child,
@@ -149,19 +149,24 @@ class GlassBackdrop extends StatelessWidget {
       child: Stack(
         children: [
           Positioned(
-            top: -90,
-            left: -70,
-            child: _blob(AppColors.blue.withOpacity(isDark ? 0.20 : 0.16), 260),
+            top: -100,
+            left: -80,
+            child: _blob(AppColors.blue.withOpacity(isDark ? 0.30 : 0.24), 320),
           ),
           Positioned(
-            bottom: -110,
-            right: -80,
-            child: _blob(AppColors.red.withOpacity(isDark ? 0.18 : 0.13), 280),
+            bottom: -120,
+            right: -90,
+            child: _blob(AppColors.red.withOpacity(isDark ? 0.26 : 0.20), 340),
           ),
           Positioned(
-            top: 240,
-            right: -100,
-            child: _blob(AppColors.yellow.withOpacity(0.12), 220),
+            top: 220,
+            right: -110,
+            child: _blob(AppColors.yellow.withOpacity(isDark ? 0.18 : 0.18), 260),
+          ),
+          Positioned(
+            bottom: 150,
+            left: -100,
+            child: _blob(AppColors.blue.withOpacity(isDark ? 0.18 : 0.14), 260),
           ),
           Positioned.fill(child: child),
         ],
