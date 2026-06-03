@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'firebase_options.dart';
+import 'core/preview.dart';
 import 'core/theme/app_theme.dart';
 import 'data/services/local_storage_service.dart';
 import 'presentation/providers/auth_provider.dart';
@@ -26,10 +27,12 @@ void main() async {
   // Initialize local storage
   await LocalStorageService.init();
 
-  // Initialize Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Initialize Firebase. Skipped in web preview mode (no real project there).
+  if (!kPreviewMode) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  }
 
   // Set preferred orientations
   await SystemChrome.setPreferredOrientations([

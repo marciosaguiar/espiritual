@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../../core/preview.dart';
 import '../../data/models/scale_model.dart';
 import '../../data/services/firestore_service.dart';
 
@@ -17,6 +18,11 @@ class ScaleProvider extends ChangeNotifier {
   String? get error => _error;
 
   void listenToScales() {
+    if (kPreviewMode) {
+      _scales = PreviewData.scales;
+      notifyListeners();
+      return;
+    }
     if (_scalesSub != null) return;
     _scalesSub = FirestoreService.watchScales().listen((scales) {
       _scales = scales;

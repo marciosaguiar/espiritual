@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import '../../core/preview.dart';
 import '../../data/models/song_model.dart';
 import '../../data/services/firestore_service.dart';
 import '../../data/services/local_storage_service.dart';
@@ -37,6 +38,13 @@ class SongsProvider extends ChangeNotifier {
   }
 
   void listenToSongs() {
+    if (kPreviewMode) {
+      _songs = PreviewData.songs;
+      _isLoading = false;
+      _applyFilter();
+      notifyListeners();
+      return;
+    }
     // Guard against stacking multiple subscriptions (e.g. re-login).
     if (_songsSub != null) return;
     _isLoading = true;

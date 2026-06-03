@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../../core/preview.dart';
 import '../../data/models/message_model.dart';
 import '../../data/services/firestore_service.dart';
 
@@ -22,6 +23,12 @@ class ChatProvider extends ChangeNotifier {
   List<TypingUser> get typing => _typing;
 
   void listenToMessages() {
+    if (kPreviewMode) {
+      _messages = PreviewData.messages;
+      _isLoading = false;
+      notifyListeners();
+      return;
+    }
     if (_messagesSub != null) return;
     _isLoading = true;
     _messagesSub = FirestoreService.watchMessages().listen((messages) {
@@ -37,6 +44,7 @@ class ChatProvider extends ChangeNotifier {
   }
 
   void listenToTyping() {
+    if (kPreviewMode) return;
     if (_typingSub != null) return;
     _typingSub = FirestoreService.watchTyping().listen((list) {
       _typing = list;
@@ -51,6 +59,7 @@ class ChatProvider extends ChangeNotifier {
     required String userName,
     required bool typing,
   }) {
+    if (kPreviewMode) return Future.value();
     return FirestoreService.setTyping(
       userId: userId,
       userName: userName,
@@ -81,6 +90,12 @@ class ChatProvider extends ChangeNotifier {
       linkedSongId: linkedSongId,
       linkedSongName: linkedSongName,
     );
+
+    if (kPreviewMode) {
+      _messages = [..._messages, message];
+      notifyListeners();
+      return true;
+    }
 
     return FirestoreService.sendMessage(message);
   }
