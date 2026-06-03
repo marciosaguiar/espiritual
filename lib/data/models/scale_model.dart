@@ -94,11 +94,11 @@ class ScaleModel {
     required this.createdAt,
   });
 
-  bool get hasUserConfirmed(String userId) {
+  bool hasUserConfirmed(String userId) {
     return levitas.any((l) => l.userId == userId && l.confirmed);
   }
 
-  bool get isUserInScale(String userId) {
+  bool isUserInScale(String userId) {
     return levitas.any((l) => l.userId == userId);
   }
 
