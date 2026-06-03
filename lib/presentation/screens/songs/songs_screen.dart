@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
@@ -34,8 +35,24 @@ class _SongsScreenState extends State<SongsScreen>
     // Favorites are kept in sync by MainScreen (reactively, outside build),
     // so there is no per-frame work here anymore.
 
+    // Body extends behind the frosted app bar so the list blurs underneath it.
+    final topInset =
+        MediaQuery.of(context).padding.top + kToolbarHeight + 120;
+
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              color: isDark
+                  ? const Color(0x8C141019)
+                  : Colors.white.withOpacity(0.55),
+            ),
+          ),
+        ),
         title: const Text(AppStrings.songs),
         actions: [
           if (auth.isAdmin)
@@ -121,11 +138,11 @@ class _SongsScreenState extends State<SongsScreen>
           ),
         ),
       ),
-      body: _buildBody(songsProvider, isDark),
+      body: _buildBody(songsProvider, isDark, topInset),
     );
   }
 
-  Widget _buildBody(SongsProvider songs, bool isDark) {
+  Widget _buildBody(SongsProvider songs, bool isDark, double topInset) {
     if (songs.isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: AppColors.blue),
@@ -157,7 +174,7 @@ class _SongsScreenState extends State<SongsScreen>
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+      padding: EdgeInsets.fromLTRB(16, topInset + 8, 16, 100),
       itemCount: songs.songs.length,
       itemBuilder: (ctx, i) {
         final song = songs.songs[i];

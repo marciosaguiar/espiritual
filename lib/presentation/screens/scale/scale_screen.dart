@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -45,6 +46,17 @@ class _ScaleScreenState extends State<ScaleScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+            child: Container(
+              color: isDark
+                  ? const Color(0x8C141019)
+                  : Colors.white.withOpacity(0.55),
+            ),
+          ),
+        ),
         title: const Text('Escala'),
         actions: [
           if (auth.isAdmin)
