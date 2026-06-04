@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../../core/preview.dart';
 import '../../data/models/user_model.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/local_storage_service.dart';
@@ -21,6 +22,13 @@ class AuthProvider extends ChangeNotifier {
   Future<void> checkSession() async {
     _status = AuthStatus.loading;
     notifyListeners();
+
+    if (kPreviewMode) {
+      _user = PreviewData.demoUser;
+      _status = AuthStatus.authenticated;
+      notifyListeners();
+      return;
+    }
 
     final savedUser = LocalStorageService.getSession();
     if (savedUser != null) {
@@ -96,6 +104,13 @@ class AuthProvider extends ChangeNotifier {
   /// Toggle favorite song
   Future<void> toggleFavorite(String songId) async {
     if (_user == null) return;
+    if (kPreviewMode) {
+      final favs = List<String>.from(_user!.favoriteSongs);
+      favs.contains(songId) ? favs.remove(songId) : favs.add(songId);
+      _user = _user!.copyWith(favoriteSongs: favs);
+      notifyListeners();
+      return;
+    }
     final updated = await AuthService.toggleFavorite(_user!, songId);
     _user = updated;
     notifyListeners();
@@ -109,6 +124,13 @@ class AuthProvider extends ChangeNotifier {
   /// Save preferred tone for a song
   Future<void> saveSongTone(String songId, int semitones) async {
     if (_user == null) return;
+    if (kPreviewMode) {
+      final tones = Map<String, int>.from(_user!.savedTones);
+      tones[songId] = semitones;
+      _user = _user!.copyWith(savedTones: tones);
+      notifyListeners();
+      return;
+    }
     final updated = await AuthService.saveSongTone(_user!, songId, semitones);
     _user = updated;
     notifyListeners();
@@ -129,6 +151,11 @@ class AuthProvider extends ChangeNotifier {
       instrument: instrument,
       photoUrl: photoUrl,
     );
+    if (kPreviewMode) {
+      _user = updated;
+      notifyListeners();
+      return true;
+    }
     final success = await AuthService.updateUser(updated);
     if (success) {
       _user = updated;

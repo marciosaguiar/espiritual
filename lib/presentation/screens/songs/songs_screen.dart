@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
@@ -5,7 +6,6 @@ import '../../providers/songs_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/song_model.dart';
-import '../../../data/services/firestore_service.dart';
 import 'song_detail_screen.dart';
 import 'add_song_screen.dart';
 
@@ -32,15 +32,27 @@ class _SongsScreenState extends State<SongsScreen>
     final songsProvider = context.watch<SongsProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    // Keep favorites in sync
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (auth.user != null) {
-        songsProvider.setFavorites(auth.user!.favoriteSongs);
-      }
-    });
+    // Favorites are kept in sync by MainScreen (reactively, outside build),
+    // so there is no per-frame work here anymore.
+
+    // Body extends behind the frosted app bar so the list blurs underneath it.
+    final topInset =
+        MediaQuery.of(context).padding.top + kToolbarHeight + 120;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+            child: Container(
+              color: isDark
+                  ? const Color(0x8C141019)
+                  : Colors.white.withOpacity(0.55),
+            ),
+          ),
+        ),
         title: const Text(AppStrings.songs),
         actions: [
           if (auth.isAdmin)
@@ -126,11 +138,11 @@ class _SongsScreenState extends State<SongsScreen>
           ),
         ),
       ),
-      body: _buildBody(songsProvider, isDark),
+      body: _buildBody(songsProvider, isDark, topInset),
     );
   }
 
-  Widget _buildBody(SongsProvider songs, bool isDark) {
+  Widget _buildBody(SongsProvider songs, bool isDark, double topInset) {
     if (songs.isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: AppColors.blue),
@@ -162,7 +174,7 @@ class _SongsScreenState extends State<SongsScreen>
     }
 
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 100),
+      padding: EdgeInsets.fromLTRB(16, topInset + 8, 16, 100),
       itemCount: songs.songs.length,
       itemBuilder: (ctx, i) {
         final song = songs.songs[i];
@@ -230,10 +242,12 @@ class _SongListTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final auth = context.watch<AuthProvider>();
-    final songs = context.watch<SongsProvider>();
-    final isFav = auth.isFavorite(song.id);
-    final isOffline = songs.isOffline(song.id);
+    // Each tile only rebuilds when ITS own favorite/offline status changes,
+    // instead of rebuilding the whole list on any provider update.
+    final isFav =
+        context.select<AuthProvider, bool>((a) => a.isFavorite(song.id));
+    final isOffline =
+        context.select<SongsProvider, bool>((s) => s.isOffline(song.id));
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return GestureDetector(

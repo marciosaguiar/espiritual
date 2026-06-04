@@ -174,11 +174,15 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           // Controls bar
           Container(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            color: isDark ? AppColors.surfaceDark : AppColors.white,
+            color:
+                isDark ? const Color(0x8C141019) : Colors.white.withOpacity(0.55),
             child: Column(
               children: [
-                // Key and transpose
-                Row(
+                // Key and transpose — Wrap prevents overflow on small screens
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 10,
+                  runSpacing: 8,
                   children: [
                     // Key display
                     Container(
@@ -198,31 +202,34 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    // Transpose buttons
-                    _TransposeButton(
-                      label: '−',
-                      onTap: () => setState(() => _semitones--),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        ChordTransposer.getTransposeDisplay(_semitones),
-                        style: TextStyle(
-                          fontFamily: 'Poppins',
-                          fontSize: 13,
-                          fontWeight: FontWeight.w600,
-                          color: isDark
-                              ? AppColors.textPrimaryDark
-                              : AppColors.textPrimaryLight,
+                    // Transpose cluster kept together
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _TransposeButton(
+                          label: '−',
+                          onTap: () => setState(() => _semitones--),
                         ),
-                      ),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Text(
+                            ChordTransposer.getTransposeDisplay(_semitones),
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: isDark
+                                  ? AppColors.textPrimaryDark
+                                  : AppColors.textPrimaryLight,
+                            ),
+                          ),
+                        ),
+                        _TransposeButton(
+                          label: '+',
+                          onTap: () => setState(() => _semitones++),
+                        ),
+                      ],
                     ),
-                    _TransposeButton(
-                      label: '+',
-                      onTap: () => setState(() => _semitones++),
-                    ),
-                    const SizedBox(width: 8),
                     // Reset
                     if (_semitones != 0)
                       GestureDetector(
@@ -244,7 +251,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           ),
                         ),
                       ),
-                    const Spacer(),
                     // Save tone
                     if (_semitones != 0)
                       GestureDetector(
@@ -257,6 +263,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: const Row(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
                               Icon(Icons.save_rounded,
                                   size: 14, color: AppColors.blue),
@@ -277,8 +284,10 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                   ],
                 ),
                 const SizedBox(height: 10),
-                // Mode toggles
-                Row(
+                // Mode toggles — Wrap prevents overflow on small screens
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
                   children: [
                     // Chords toggle
                     _ToggleChip(
@@ -292,7 +301,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       onTap: () =>
                           setState(() => _showChords = !_showChords),
                     ),
-                    const SizedBox(width: 8),
                     // Worship mode
                     _ToggleChip(
                       label: 'Modo Culto',
@@ -300,7 +308,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       isActive: false,
                       onTap: () => setState(() => _isWorshipMode = true),
                     ),
-                    const SizedBox(width: 8),
                     // Offline
                     _ToggleChip(
                       label: isOffline ? 'Remover offline' : 'Salvar offline',
@@ -310,8 +317,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       isActive: isOffline,
                       onTap: _toggleOffline,
                     ),
-                    if (widget.song.youtubeUrl != null) ...[
-                      const SizedBox(width: 8),
+                    if (widget.song.youtubeUrl != null)
                       _ToggleChip(
                         label: 'YouTube',
                         icon: Icons.play_circle_outline_rounded,
@@ -319,7 +325,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         activeColor: AppColors.red,
                         onTap: _openYoutube,
                       ),
-                    ],
                   ],
                 ),
               ],

@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -8,12 +9,13 @@ import '../../providers/songs_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/scale_model.dart';
-import '../songs/songs_screen.dart';
-import '../scale/scale_screen.dart';
 import '../songs/song_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  /// Switches the bottom-nav tab (0=Início, 1=Músicas, 2=Escala, 3=Chat).
+  final void Function(int index)? onNavigateTab;
+
+  const HomeScreen({super.key, this.onNavigateTab});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -45,33 +47,52 @@ class _HomeScreenState extends State<HomeScreen> {
             expandedHeight: 120,
             floating: false,
             pinned: true,
-            backgroundColor: isDark ? AppColors.surfaceDark : AppColors.white,
+            backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
-            flexibleSpace: FlexibleSpaceBar(
-              titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
-              title: Column(
-                mainAxisAlignment: MainAxisAlignment.end,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Olá, ${auth.user?.name.split(' ').first ?? 'Levita'}! 👋',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+            flexibleSpace: Stack(
+              fit: StackFit.expand,
+              children: [
+                // Real frosted blur of the content scrolling behind the header.
+                ClipRect(
+                  child: BackdropFilter(
+                    filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+                    child: Container(
+                      color: isDark
+                          ? const Color(0x8C141019)
+                          : Colors.white.withOpacity(0.55),
                     ),
                   ),
-                  Text(
-                    DateFormat('EEEE, d \'de\' MMMM', 'pt_BR').format(DateTime.now()),
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 11,
-                      color: AppColors.textSecondaryLight,
-                    ),
+                ),
+                FlexibleSpaceBar(
+                  titlePadding: const EdgeInsets.only(left: 20, bottom: 16),
+                  title: Column(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Olá, ${auth.user?.name.split(' ').first ?? 'Levita'}! 👋',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          color: isDark
+                              ? AppColors.textPrimaryDark
+                              : AppColors.textPrimaryLight,
+                        ),
+                      ),
+                      Text(
+                        DateFormat('EEEE, d \'de\' MMMM', 'pt_BR')
+                            .format(DateTime.now()),
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 11,
+                          color: AppColors.textSecondaryLight,
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
             actions: [
               Padding(
@@ -110,7 +131,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 20),
 
                   // Quick Actions
-                  _QuickActionsSection(songs: songs),
+                  _QuickActionsSection(onNavigateTab: widget.onNavigateTab),
                   const SizedBox(height: 20),
 
                   // Suggested repertoire
@@ -417,8 +438,8 @@ class _InfoRow extends StatelessWidget {
 }
 
 class _QuickActionsSection extends StatelessWidget {
-  final SongsProvider songs;
-  const _QuickActionsSection({required this.songs});
+  final void Function(int index)? onNavigateTab;
+  const _QuickActionsSection({this.onNavigateTab});
 
   @override
   Widget build(BuildContext context) {
@@ -443,9 +464,7 @@ class _QuickActionsSection extends StatelessWidget {
                 icon: Icons.search_rounded,
                 label: 'Buscar\nMúsica',
                 color: AppColors.blue,
-                onTap: () {
-                  // Navigate to songs tab
-                },
+                onTap: () => onNavigateTab?.call(1),
               ),
             ),
             const SizedBox(width: 12),
@@ -454,9 +473,7 @@ class _QuickActionsSection extends StatelessWidget {
                 icon: Icons.calendar_month_rounded,
                 label: 'Ver\nEscala',
                 color: AppColors.red,
-                onTap: () {
-                  // Navigate to scale tab
-                },
+                onTap: () => onNavigateTab?.call(2),
               ),
             ),
             const SizedBox(width: 12),
@@ -465,9 +482,7 @@ class _QuickActionsSection extends StatelessWidget {
                 icon: Icons.chat_bubble_rounded,
                 label: 'Chat do\nMinistério',
                 color: AppColors.yellow,
-                onTap: () {
-                  // Navigate to chat tab
-                },
+                onTap: () => onNavigateTab?.call(3),
               ),
             ),
           ],

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'firebase_options.dart';
+import 'core/preview.dart';
 import 'core/theme/app_theme.dart';
 import 'data/services/local_storage_service.dart';
 import 'presentation/providers/auth_provider.dart';
@@ -15,6 +16,7 @@ import 'presentation/providers/scale_provider.dart';
 import 'presentation/providers/chat_provider.dart';
 import 'presentation/screens/auth/login_screen.dart';
 import 'presentation/screens/main_screen.dart';
+import 'presentation/widgets/common/glass.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,10 +27,12 @@ void main() async {
   // Initialize local storage
   await LocalStorageService.init();
 
-  // Initialize Firebase
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Initialize Firebase. Skipped in web preview mode (no real project there).
+  if (!kPreviewMode) {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  }
 
   // Set preferred orientations
   await SystemChrome.setPreferredOrientations([
@@ -60,6 +64,9 @@ class LevitaSyncApp extends StatelessWidget {
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,
+            // Frosted "Liquid Glass" backdrop behind every route.
+            builder: (context, child) =>
+                GlassBackdrop(child: child ?? const SizedBox.shrink()),
             home: const _AppEntry(),
           );
         },
@@ -79,7 +86,11 @@ class _AppEntryState extends State<_AppEntry> {
   @override
   void initState() {
     super.initState();
-    _checkAuth();
+    // Run after the first frame so the initial notifyListeners() inside
+    // checkSession() doesn't fire during build.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _checkAuth();
+    });
   }
 
   Future<void> _checkAuth() async {

@@ -192,7 +192,7 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                   final u = allUsers[i];
                   final checked = currentIds.contains(u.id);
                   return CheckboxListTile(
-                    leading: CircleAvatar(
+                    secondary: CircleAvatar(
                       radius: 16,
                       backgroundColor: AppColors.blue.withOpacity(0.15),
                       child: Text(

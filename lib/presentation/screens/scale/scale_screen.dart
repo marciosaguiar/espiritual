@@ -1,3 +1,4 @@
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -38,8 +39,24 @@ class _ScaleScreenState extends State<ScaleScreen> {
         ? scale.getScaleForDay(_selectedDay!)
         : null;
 
+    // Precompute the days that have a service for the focused month so the
+    // calendar's per-cell lookup is O(1) instead of scanning all scales.
+    final serviceDays =
+        scale.getDaysWithServices(_focusedDay.year, _focusedDay.month);
+
     return Scaffold(
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        flexibleSpace: ClipRect(
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+            child: Container(
+              color: isDark
+                  ? const Color(0x8C141019)
+                  : Colors.white.withOpacity(0.55),
+            ),
+          ),
+        ),
         title: const Text('Escala'),
         actions: [
           if (auth.isAdmin)
@@ -53,7 +70,8 @@ class _ScaleScreenState extends State<ScaleScreen> {
         children: [
           // Calendar
           Container(
-            color: isDark ? AppColors.surfaceDark : AppColors.white,
+            color:
+                isDark ? const Color(0x73141019) : Colors.white.withOpacity(0.50),
             child: TableCalendar(
               firstDay: DateTime.utc(2024, 1, 1),
               lastDay: DateTime.utc(2027, 12, 31),
@@ -73,7 +91,8 @@ class _ScaleScreenState extends State<ScaleScreen> {
                 setState(() => _focusedDay = focused);
               },
               eventLoader: (day) {
-                final hasService = scale.hasDayService(day);
+                final hasService =
+                    serviceDays.contains(DateTime(day.year, day.month, day.day));
                 return hasService ? [day] : [];
               },
               calendarStyle: CalendarStyle(

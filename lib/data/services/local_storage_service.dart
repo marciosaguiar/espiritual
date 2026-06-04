@@ -10,8 +10,13 @@ class LocalStorageService {
 
   static SharedPreferences? _prefs;
 
+  /// In-memory cache of offline songs so we never decode JSON from disk
+  /// inside hot paths (e.g. list item builds). Loaded once on [init].
+  static Map<String, SongModel> _offlineCache = {};
+
   static Future<void> init() async {
     _prefs = await SharedPreferences.getInstance();
+    _loadOfflineCache();
   }
 
   static SharedPreferences get prefs {
@@ -62,41 +67,49 @@ class LocalStorageService {
 
   // ─── Offline Songs ────────────────────────────────────────────────────────
 
-  static Future<void> saveSongOffline(SongModel song) async {
-    final songs = getOfflineSongs();
-    songs[song.id] = song;
-    final json = jsonEncode(
-      songs.map((k, v) => MapEntry(k, v.toJson())),
-    );
-    await prefs.setString(_offlineSongsKey, json);
-  }
-
-  static Future<void> removeSongOffline(String songId) async {
-    final songs = getOfflineSongs();
-    songs.remove(songId);
-    final json = jsonEncode(
-      songs.map((k, v) => MapEntry(k, v.toJson())),
-    );
-    await prefs.setString(_offlineSongsKey, json);
-  }
-
-  static Map<String, SongModel> getOfflineSongs() {
+  static void _loadOfflineCache() {
     final json = prefs.getString(_offlineSongsKey);
-    if (json == null) return {};
+    if (json == null) {
+      _offlineCache = {};
+      return;
+    }
     try {
       final data = Map<String, dynamic>.from(jsonDecode(json) as Map);
-      return data.map(
-        (k, v) => MapEntry(k, SongModel.fromJson(Map<String, dynamic>.from(v as Map))),
+      _offlineCache = data.map(
+        (k, v) =>
+            MapEntry(k, SongModel.fromJson(Map<String, dynamic>.from(v as Map))),
       );
     } catch (_) {
-      return {};
+      _offlineCache = {};
     }
   }
 
-  static bool isSongOffline(String songId) {
-    return getOfflineSongs().containsKey(songId);
+  static Future<void> _persistOffline() async {
+    final json = jsonEncode(
+      _offlineCache.map((k, v) => MapEntry(k, v.toJson())),
+    );
+    await prefs.setString(_offlineSongsKey, json);
   }
 
+  static Future<void> saveSongOffline(SongModel song) async {
+    _offlineCache[song.id] = song;
+    await _persistOffline();
+  }
+
+  static Future<void> removeSongOffline(String songId) async {
+    _offlineCache.remove(songId);
+    await _persistOffline();
+  }
+
+  /// Returns a copy of the cached offline songs (cheap, no disk/JSON work).
+  static Map<String, SongModel> getOfflineSongs() =>
+      Map<String, SongModel>.from(_offlineCache);
+
+  static bool isSongOffline(String songId) =>
+      _offlineCache.containsKey(songId);
+
+  static int get offlineCount => _offlineCache.length;
+
   static List<SongModel> get offlineSongsList =>
-      getOfflineSongs().values.toList();
+      _offlineCache.values.toList();
 }
