@@ -6,6 +6,7 @@ name: Deploy web preview to GitHub Pages
 on:
   push:
     branches:
+      - claude/levitasync-worship-app-TL9nC
       - claude/magical-goodall-RnnCy
   workflow_dispatch:
 
