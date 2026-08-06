@@ -1,0 +1,35 @@
+name: CI
+
+# Guards against the failure mode this project already hit: code sitting in the
+# repository for months without compiling. Runs on every push and pull request.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  check:
+    name: Análise e testes
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      # Fails on real errors (the "it does not compile" case).
+      # Warnings and lint hints are reported but do not block yet — tighten by
+      # dropping these flags once the existing hints are cleaned up.
+      - name: Analisar
+        run: flutter analyze --no-fatal-warnings --no-fatal-infos
+
+      - name: Testes
+        run: flutter test

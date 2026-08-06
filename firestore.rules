@@ -1,0 +1,106 @@
+rules_version = '2';
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LevitaSync — regras de segurança do Firestore
+//
+// ATENÇÃO — proteção PARCIAL.
+//
+// O app hoje faz a conferência de senha no próprio celular: para entrar, ele
+// precisa ler o cadastro do usuário e comparar a senha. Isso significa que a
+// coleção `users` precisa continuar legível, e que o banco não tem como saber
+// QUEM está fazendo cada pedido. Sem essa identidade, nenhuma regra consegue
+// impedir que alguém de fora escreva nas coleções.
+//
+// Estas regras fazem o que é possível nesse cenário: cortam a exclusão de
+// contas, limitam o tamanho dos documentos (evita abuso e custo) e bloqueiam
+// coleções desconhecidas. Elas são muito melhores do que liberar tudo, mas
+// NÃO substituem autenticação de verdade.
+//
+// A proteção completa vem quando o login passar a ser verificado no servidor
+// (Firebase Authentication). Aí estas regras devem ser trocadas por regras
+// baseadas em `request.auth.uid` e na função de líder.
+//
+// Como aplicar: Firebase Console → Firestore Database → Regras → colar → Publicar.
+// ─────────────────────────────────────────────────────────────────────────────
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function texto(campo, maximo) {
+      return !(campo in request.resource.data)
+             || (request.resource.data[campo] is string
+                 && request.resource.data[campo].size() <= maximo);
+    }
+
+    function documentoRazoavel() {
+      return request.resource.data.keys().size() <= 30;
+    }
+
+    // ── Usuários ────────────────────────────────────────────────────────────
+    // Leitura liberada porque o login atual acontece no celular. É justamente
+    // esta linha que deixa de ser necessária com autenticação no servidor.
+    match /users/{userId} {
+      allow get, list: if true;
+
+      allow create: if documentoRazoavel()
+                    && request.resource.data.name is string
+                    && request.resource.data.name.size() > 0
+                    && request.resource.data.name.size() <= 60
+                    && texto('passwordHash', 200);
+
+      allow update: if documentoRazoavel()
+                    && texto('name', 60)
+                    && texto('photoUrl', 500);
+
+      // Ninguém apaga contas pelo app.
+      allow delete: if false;
+    }
+
+    // ── Músicas ─────────────────────────────────────────────────────────────
+    match /songs/{songId} {
+      allow read: if true;
+
+      allow create, update: if documentoRazoavel()
+                            && texto('name', 150)
+                            && texto('artist', 150)
+                            && texto('lyrics', 20000)
+                            && texto('chords', 20000)
+                            && texto('youtubeUrl', 500);
+
+      allow delete: if true;
+    }
+
+    // ── Escalas / cultos ────────────────────────────────────────────────────
+    match /scales/{scaleId} {
+      allow read: if true;
+
+      allow create, update: if documentoRazoavel()
+                            && texto('serviceType', 60)
+                            && texto('observations', 5000);
+
+      allow delete: if true;
+    }
+
+    // ── Chat ────────────────────────────────────────────────────────────────
+    match /messages/{messageId} {
+      allow read: if true;
+
+      allow create: if documentoRazoavel()
+                    && request.resource.data.text is string
+                    && request.resource.data.text.size() > 0
+                    && request.resource.data.text.size() <= 2000
+                    && texto('userName', 60);
+
+      // Mensagem enviada não se altera nem some.
+      allow update, delete: if false;
+    }
+
+    // ── "Está digitando…" ───────────────────────────────────────────────────
+    match /typing/{userId} {
+      allow read: if true;
+      allow write: if documentoRazoavel() && texto('userName', 60);
+    }
+
+    // Qualquer outra coleção fica bloqueada por não ter regra definida.
+  }
+}

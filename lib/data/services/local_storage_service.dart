@@ -28,16 +28,12 @@ class LocalStorageService {
 
   // ─── Session ─────────────────────────────────────────────────────────────
 
+  /// Persists the signed-in user. Uses [UserModel.toJson], which omits the
+  /// password hash and encodes dates as ISO strings — the Firestore map is not
+  /// JSON-encodable (its `Timestamp` throws), which previously made every
+  /// login fail and the session impossible to restore.
   static Future<void> saveSession(UserModel user) async {
-    final json = jsonEncode(user.toFirestore()
-      ..remove('passwordHash')); // don't store hash in prefs
-    await prefs.setString(_sessionKey, json);
-  }
-
-  static Future<void> saveSessionFull(UserModel user) async {
-    final data = user.toFirestore();
-    final json = jsonEncode(data);
-    await prefs.setString(_sessionKey, json);
+    await prefs.setString(_sessionKey, jsonEncode(user.toJson()));
   }
 
   static UserModel? getSession() {
@@ -45,7 +41,7 @@ class LocalStorageService {
     if (json == null) return null;
     try {
       final data = Map<String, dynamic>.from(jsonDecode(json) as Map);
-      return UserModel.fromFirestore(data);
+      return UserModel.fromJson(data);
     } catch (_) {
       return null;
     }

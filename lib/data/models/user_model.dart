@@ -83,7 +83,7 @@ class UserModel {
   const UserModel({
     required this.id,
     required this.name,
-    required this.passwordHash,
+    this.passwordHash = '',
     this.role = UserRole.levita,
     this.instrument = UserInstrument.other,
     this.photoUrl,
@@ -118,10 +118,16 @@ class UserModel {
     );
   }
 
+  /// Normalized name used for case-insensitive lookups ("Márcio" == "márcio").
+  static String normalizeName(String name) => name.trim().toLowerCase();
+
+  String get nameLower => normalizeName(name);
+
   Map<String, dynamic> toFirestore() {
     return {
       'id': id,
-      'name': name,
+      'name': name.trim(),
+      'nameLower': nameLower,
       'passwordHash': passwordHash,
       'role': role.name,
       'instrument': instrument.name,
@@ -136,13 +142,46 @@ class UserModel {
     return UserModel(
       id: data['id'] as String,
       name: data['name'] as String,
-      passwordHash: data['passwordHash'] as String,
+      passwordHash: data['passwordHash'] as String? ?? '',
       role: UserRoleExtension.fromString(data['role'] as String? ?? 'levita'),
       instrument: UserInstrumentExtension.fromString(data['instrument'] as String? ?? 'other'),
       photoUrl: data['photoUrl'] as String?,
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? []),
       savedTones: Map<String, int>.from(data['savedTones'] ?? {}),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+    );
+  }
+
+  /// Plain-JSON form used for the local session.
+  ///
+  /// Deliberately excludes [passwordHash] — the device never needs it — and
+  /// stores the date as an ISO string, since Firestore's `Timestamp` is not
+  /// JSON-encodable (encoding it throws and used to break login entirely).
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'role': role.name,
+      'instrument': instrument.name,
+      'photoUrl': photoUrl,
+      'favoriteSongs': favoriteSongs,
+      'savedTones': savedTones,
+      'createdAt': createdAt.toIso8601String(),
+    };
+  }
+
+  factory UserModel.fromJson(Map<String, dynamic> data) {
+    return UserModel(
+      id: data['id'] as String,
+      name: data['name'] as String,
+      role: UserRoleExtension.fromString(data['role'] as String? ?? 'levita'),
+      instrument:
+          UserInstrumentExtension.fromString(data['instrument'] as String? ?? 'other'),
+      photoUrl: data['photoUrl'] as String?,
+      favoriteSongs: List<String>.from(data['favoriteSongs'] ?? const []),
+      savedTones: Map<String, int>.from(data['savedTones'] ?? const {}),
+      createdAt:
+          DateTime.tryParse(data['createdAt'] as String? ?? '') ?? DateTime.now(),
     );
   }
 }

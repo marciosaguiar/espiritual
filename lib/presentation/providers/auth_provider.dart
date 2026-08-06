@@ -44,7 +44,6 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> register({
     required String name,
     required String password,
-    UserRole role = UserRole.levita,
     UserInstrument instrument = UserInstrument.other,
   }) async {
     _status = AuthStatus.loading;
@@ -54,7 +53,6 @@ class AuthProvider extends ChangeNotifier {
     final result = await AuthService.register(
       name: name,
       password: password,
-      role: role,
       instrument: instrument,
     );
 

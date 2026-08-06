@@ -8,6 +8,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/user_model.dart';
 import '../songs/song_detail_screen.dart';
+import 'members_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -454,6 +455,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     onTap: () => theme.toggleTheme(),
                   ),
+                  if (auth.isAdmin) ...[
+                    const SizedBox(height: 8),
+                    _SettingRow(
+                      icon: Icons.groups_rounded,
+                      label: 'Membros do ministério',
+                      trailing: const Icon(Icons.chevron_right_rounded,
+                          color: AppColors.textSecondaryLight),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const MembersScreen()),
+                      ),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   _SettingRow(
                     icon: Icons.help_outline_rounded,

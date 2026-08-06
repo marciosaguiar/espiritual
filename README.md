@@ -91,32 +91,21 @@ No Firebase Console, crie as coleções:
 - `songs` — músicas
 - `scales` — escalas
 - `messages` — mensagens do chat
+- `typing` — indicador "está digitando…"
 
-**Regras de segurança sugeridas (Firestore):**
-```javascript
-rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /users/{userId} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /songs/{songId} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /scales/{scaleId} {
-      allow read: if true;
-      allow write: if true;
-    }
-    match /messages/{messageId} {
-      allow read: if true;
-      allow write: if true;
-    }
-  }
-}
-```
-> ⚠️ Ajuste as regras conforme sua necessidade de segurança para produção.
+**Regras de segurança:** use o arquivo [`firestore.rules`](firestore.rules) deste
+repositório — Firebase Console → Firestore Database → Regras → colar → Publicar.
+
+> ⚠️ **Leia antes de publicar o app.** A conferência de senha acontece hoje no
+> próprio celular, então o banco não sabe quem está fazendo cada pedido e a
+> coleção `users` precisa continuar legível. As regras do arquivo cortam o que
+> é possível nesse cenário (exclusão de contas, documentos gigantes, coleções
+> desconhecidas), mas **não substituem autenticação de verdade**.
+>
+> Enquanto o login não for verificado no servidor (Firebase Authentication),
+> trate os dados como semipúblicos e **não** cadastre informação sensível.
+> Nunca use `allow read, write: if true`: isso permite que qualquer pessoa leia
+> e apague tudo, inclusive a lista de usuários.
 
 ### 4. Adicionar fontes Poppins
 

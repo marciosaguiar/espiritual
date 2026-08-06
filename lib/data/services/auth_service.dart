@@ -7,24 +7,47 @@ class AuthService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
   static const String _collection = 'users';
 
-  /// Register a new user
+  /// Looks a user up by name, ignoring case and surrounding spaces.
+  ///
+  /// Falls back to the exact-name field so accounts created before
+  /// `nameLower` existed keep working.
+  static Future<Map<String, dynamic>?> _findByName(String name) async {
+    final trimmed = name.trim();
+    final lower = UserModel.normalizeName(trimmed);
+
+    final byLower = await _db
+        .collection(_collection)
+        .where('nameLower', isEqualTo: lower)
+        .limit(1)
+        .get();
+    if (byLower.docs.isNotEmpty) return byLower.docs.first.data();
+
+    final byExact = await _db
+        .collection(_collection)
+        .where('name', isEqualTo: trimmed)
+        .limit(1)
+        .get();
+    if (byExact.docs.isNotEmpty) return byExact.docs.first.data();
+
+    return null;
+  }
+
+  /// Register a new user.
+  ///
+  /// The role is decided by the server state, never by the sign-up form: the
+  /// first person to join leads the ministry, everyone after joins as a levita
+  /// and can be promoted by a leader.
   static Future<({bool success, String? error, UserModel? user})> register({
     required String name,
     required String password,
-    UserRole role = UserRole.levita,
     UserInstrument instrument = UserInstrument.other,
   }) async {
     try {
-      // Check if name is already taken
-      final existing = await _db
-          .collection(_collection)
-          .where('name', isEqualTo: name.trim())
-          .limit(1)
-          .get();
-
-      if (existing.docs.isNotEmpty) {
+      if (await _findByName(name) != null) {
         return (success: false, error: 'Este nome já está em uso', user: null);
       }
+
+      final role = await hasAdmin() ? UserRole.levita : UserRole.admin;
 
       final id = CryptoUtils.generateId();
       final user = UserModel(
@@ -37,7 +60,7 @@ class AuthService {
       );
 
       await _db.collection(_collection).doc(id).set(user.toFirestore());
-      await LocalStorageService.saveSessionFull(user);
+      await LocalStorageService.saveSession(user);
 
       return (success: true, error: null, user: user);
     } on FirebaseException catch (e) {
@@ -53,17 +76,12 @@ class AuthService {
     required String password,
   }) async {
     try {
-      final snapshot = await _db
-          .collection(_collection)
-          .where('name', isEqualTo: name.trim())
-          .limit(1)
-          .get();
+      final data = await _findByName(name);
 
-      if (snapshot.docs.isEmpty) {
+      if (data == null) {
         return (success: false, error: 'Nome ou senha incorretos', user: null);
       }
 
-      final data = snapshot.docs.first.data();
       final storedHash = data['passwordHash'] as String?;
 
       if (storedHash == null || !CryptoUtils.verifyPassword(password, storedHash)) {
@@ -71,7 +89,7 @@ class AuthService {
       }
 
       final user = UserModel.fromFirestore(data);
-      await LocalStorageService.saveSessionFull(user);
+      await LocalStorageService.saveSession(user);
 
       return (success: true, error: null, user: user);
     } on FirebaseException catch (e) {
@@ -95,7 +113,7 @@ class AuthService {
         'favoriteSongs': user.favoriteSongs,
         'savedTones': user.savedTones,
       });
-      await LocalStorageService.saveSessionFull(user);
+      await LocalStorageService.saveSession(user);
       return true;
     } catch (_) {
       return false;
@@ -114,7 +132,7 @@ class AuthService {
     await _db.collection(_collection).doc(user.id).update({
       'favoriteSongs': favorites,
     });
-    await LocalStorageService.saveSessionFull(updated);
+    await LocalStorageService.saveSession(updated);
     return updated;
   }
 
@@ -127,7 +145,7 @@ class AuthService {
     await _db.collection(_collection).doc(user.id).update({
       'savedTones': tones,
     });
-    await LocalStorageService.saveSessionFull(updated);
+    await LocalStorageService.saveSession(updated);
     return updated;
   }
 
@@ -161,5 +179,42 @@ class AuthService {
         .limit(1)
         .get();
     return snap.docs.isNotEmpty;
+  }
+
+  /// How many leaders the ministry has. Used to refuse removing the last one,
+  /// which would lock everybody out of the admin features.
+  static Future<int> adminCount() async {
+    final snap = await _db
+        .collection(_collection)
+        .where('role', isEqualTo: 'admin')
+        .get();
+    return snap.docs.length;
+  }
+
+  /// Promote or demote a member. Leaders only (enforced by the UI and, once
+  /// server-side auth is in place, by the security rules).
+  static Future<({bool success, String? error})> setUserRole(
+    UserModel user,
+    UserRole role,
+  ) async {
+    if (user.role == role) return (success: true, error: null);
+
+    try {
+      if (role == UserRole.levita && await adminCount() <= 1) {
+        return (
+          success: false,
+          error: 'O ministério precisa de pelo menos um líder.'
+        );
+      }
+      await _db
+          .collection(_collection)
+          .doc(user.id)
+          .update({'role': role.name});
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: 'Erro de conexão: ${e.message}');
+    } catch (e) {
+      return (success: false, error: 'Não foi possível alterar a função: $e');
+    }
   }
 }
