@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 import '../models/user_model.dart';
 import '../../core/utils/crypto_utils.dart';
 import 'local_storage_service.dart';
@@ -53,7 +54,8 @@ class AuthService {
       final user = UserModel(
         id: id,
         name: name.trim(),
-        passwordHash: CryptoUtils.hashPassword(password),
+        // Hashing is deliberately slow; run it off the UI thread.
+        passwordHash: await compute(hashPasswordWorker, password),
         role: role,
         instrument: instrument,
         createdAt: DateTime.now(),
@@ -84,11 +86,32 @@ class AuthService {
 
       final storedHash = data['passwordHash'] as String?;
 
-      if (storedHash == null || !CryptoUtils.verifyPassword(password, storedHash)) {
+      if (storedHash == null || storedHash.isEmpty) {
+        return (success: false, error: 'Nome ou senha incorretos', user: null);
+      }
+
+      final matches =
+          await compute(verifyPasswordWorker, <String>[password, storedHash]);
+      if (!matches) {
         return (success: false, error: 'Nome ou senha incorretos', user: null);
       }
 
       final user = UserModel.fromFirestore(data);
+
+      // Silently move accounts off the old unsalted hash the first time they
+      // sign in. Failure here must never block the login.
+      if (CryptoUtils.needsUpgrade(storedHash)) {
+        try {
+          final upgraded = await compute(hashPasswordWorker, password);
+          await _db
+              .collection(_collection)
+              .doc(user.id)
+              .update({'passwordHash': upgraded});
+        } catch (_) {
+          // Keeps working with the old hash until the next sign-in.
+        }
+      }
+
       await LocalStorageService.saveSession(user);
 
       return (success: true, error: null, user: user);
@@ -102,6 +125,76 @@ class AuthService {
   /// Logout current user
   static Future<void> logout() async {
     await LocalStorageService.clearSession();
+  }
+
+  /// Minimum the app accepts. Kept in one place so every screen agrees.
+  static const int minPasswordLength = 6;
+
+  /// Sets a new password for [user], no old password required.
+  ///
+  /// This is how a forgotten password gets solved: the leader sets a temporary
+  /// one and passes it on. Since sign-in uses only a name, there is no e-mail
+  /// to send a reset link to.
+  static Future<({bool success, String? error})> resetPassword(
+    UserModel user,
+    String newPassword,
+  ) async {
+    if (newPassword.length < minPasswordLength) {
+      return (
+        success: false,
+        error: 'A senha precisa ter no mínimo $minPasswordLength caracteres.'
+      );
+    }
+
+    try {
+      final hash = await compute(hashPasswordWorker, newPassword);
+      await _db
+          .collection(_collection)
+          .doc(user.id)
+          .update({'passwordHash': hash});
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: 'Erro de conexão: ${e.message}');
+    } catch (e) {
+      return (success: false, error: 'Não foi possível alterar a senha: $e');
+    }
+  }
+
+  /// Changes the signed-in user's own password, checking the current one.
+  static Future<({bool success, String? error})> changePassword({
+    required UserModel user,
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    if (newPassword.length < minPasswordLength) {
+      return (
+        success: false,
+        error: 'A nova senha precisa ter no mínimo $minPasswordLength caracteres.'
+      );
+    }
+
+    try {
+      // Read the stored hash fresh: the session copy no longer carries it.
+      final doc = await _db.collection(_collection).doc(user.id).get();
+      final stored = doc.data()?['passwordHash'] as String? ?? '';
+
+      final matches =
+          await compute(verifyPasswordWorker, <String>[currentPassword, stored]);
+      if (!matches) {
+        return (success: false, error: 'A senha atual está incorreta.');
+      }
+
+      final hash = await compute(hashPasswordWorker, newPassword);
+      await _db
+          .collection(_collection)
+          .doc(user.id)
+          .update({'passwordHash': hash});
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: 'Erro de conexão: ${e.message}');
+    } catch (e) {
+      return (success: false, error: 'Não foi possível alterar a senha: $e');
+    }
   }
 
   /// Update user profile

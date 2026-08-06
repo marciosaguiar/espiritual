@@ -10,9 +10,13 @@ LevitaSync centraliza tudo que um ministério de louvor precisa: músicas com ci
 
 ### 🔐 Autenticação
 - Login/cadastro por nome + senha (sem dependências de terceiros)
-- Senha hasheada com SHA-256
+- Senha protegida com PBKDF2-HMAC-SHA256 e sal por usuário (contas antigas em
+  SHA-256 são migradas sozinhas no primeiro login)
 - Sessão persistente (não precisa logar sempre)
-- Perfis: **Admin (Líder)** e **Levita**
+- Perfis: **Admin (Líder)** e **Levita** — quem cria o ministério é o líder e
+  promove os demais em *Perfil → Membros do ministério*
+- Esqueceu a senha? O líder redefine em *Membros do ministério*; cada pessoa
+  troca a sua em *Perfil → Alterar minha senha*
 
 ### 🏠 Início
 - Versículo do dia (15 versículos gospel em rodízio)

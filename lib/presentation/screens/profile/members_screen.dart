@@ -149,6 +149,81 @@ class _MemberRowState extends State<_MemberRow> {
     );
   }
 
+  /// Leader sets a temporary password and passes it on in person. Sign-in uses
+  /// only a name, so there is no e-mail to send a reset link to.
+  Future<void> _resetPassword() async {
+    final controller = TextEditingController();
+    final formKey = GlobalKey<FormState>();
+
+    final novaSenha = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Redefinir senha de ${widget.member.name}'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Escolha uma senha provisória e combine com a pessoa. '
+                'Ela pode trocar depois no Perfil.',
+                style: TextStyle(fontFamily: 'Poppins', fontSize: 13),
+              ),
+              const SizedBox(height: 14),
+              TextFormField(
+                controller: controller,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  labelText: 'Nova senha',
+                  hintText: 'Mínimo 6 caracteres',
+                ),
+                validator: (v) => (v == null ||
+                        v.length < AuthService.minPasswordLength)
+                    ? 'Mínimo ${AuthService.minPasswordLength} caracteres'
+                    : null,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (formKey.currentState?.validate() ?? false) {
+                Navigator.pop(ctx, controller.text);
+              }
+            },
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.blue),
+            child: const Text('Redefinir'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+    if (novaSenha == null || !mounted) return;
+
+    setState(() => _saving = true);
+    final result = await AuthService.resetPassword(widget.member, novaSenha);
+    if (!mounted) return;
+    setState(() => _saving = false);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          result.success
+              ? 'Senha de ${widget.member.name} redefinida. Avise a pessoa.'
+              : result.error ?? 'Não foi possível redefinir a senha.',
+        ),
+        backgroundColor: result.success ? AppColors.success : AppColors.red,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final m = widget.member;
@@ -236,7 +311,7 @@ class _MemberRowState extends State<_MemberRow> {
             ),
           ),
           if (widget.canManage) ...[
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
             if (_saving)
               const SizedBox(
                 width: 20,
@@ -244,18 +319,43 @@ class _MemberRowState extends State<_MemberRow> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               )
             else
-              TextButton(
-                onPressed: () => _changeRole(
-                  m.isAdmin ? UserRole.levita : UserRole.admin,
-                ),
-                child: Text(
-                  m.isAdmin ? 'Tornar levita' : 'Tornar líder',
-                  style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
+              PopupMenuButton<String>(
+                tooltip: 'Opções',
+                icon: const Icon(Icons.more_vert_rounded, size: 20),
+                onSelected: (value) {
+                  if (value == 'role') {
+                    _changeRole(m.isAdmin ? UserRole.levita : UserRole.admin);
+                  } else if (value == 'password') {
+                    _resetPassword();
+                  }
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(
+                    value: 'role',
+                    child: Row(
+                      children: [
+                        Icon(
+                          m.isAdmin
+                              ? Icons.person_outline_rounded
+                              : Icons.workspace_premium_outlined,
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Text(m.isAdmin ? 'Tornar levita' : 'Tornar líder'),
+                      ],
+                    ),
                   ),
-                ),
+                  const PopupMenuItem(
+                    value: 'password',
+                    child: Row(
+                      children: [
+                        Icon(Icons.key_outlined, size: 18),
+                        SizedBox(width: 10),
+                        Text('Redefinir senha'),
+                      ],
+                    ),
+                  ),
+                ],
               ),
           ],
         ],

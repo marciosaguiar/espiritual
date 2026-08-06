@@ -7,6 +7,7 @@ import '../../providers/theme_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/user_model.dart';
+import '../../../data/services/auth_service.dart';
 import '../songs/song_detail_screen.dart';
 import 'members_screen.dart';
 
@@ -153,6 +154,115 @@ class _ProfileScreenState extends State<ProfileScreen> {
         );
       },
     );
+  }
+
+  Future<void> _showChangePasswordSheet(
+      BuildContext context, UserModel user) async {
+    final formKey = GlobalKey<FormState>();
+    final atualCtrl = TextEditingController();
+    final novaCtrl = TextEditingController();
+    final confirmaCtrl = TextEditingController();
+    var salvando = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialog) => AlertDialog(
+          title: const Text('Alterar minha senha'),
+          content: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextFormField(
+                  controller: atualCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(labelText: 'Senha atual'),
+                  validator: (v) =>
+                      (v == null || v.isEmpty) ? 'Informe a senha atual' : null,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: novaCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Nova senha',
+                    hintText: 'Mínimo 6 caracteres',
+                  ),
+                  validator: (v) =>
+                      (v == null || v.length < AuthService.minPasswordLength)
+                          ? 'Mínimo ${AuthService.minPasswordLength} caracteres'
+                          : null,
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: confirmaCtrl,
+                  obscureText: true,
+                  decoration:
+                      const InputDecoration(labelText: 'Repita a nova senha'),
+                  validator: (v) =>
+                      v != novaCtrl.text ? 'As senhas não coincidem' : null,
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: salvando ? null : () => Navigator.pop(ctx),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: salvando
+                  ? null
+                  : () async {
+                      if (!(formKey.currentState?.validate() ?? false)) return;
+                      setDialog(() => salvando = true);
+
+                      final result = await AuthService.changePassword(
+                        user: user,
+                        currentPassword: atualCtrl.text,
+                        newPassword: novaCtrl.text,
+                      );
+
+                      if (!ctx.mounted) return;
+                      setDialog(() => salvando = false);
+
+                      if (result.success) {
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Senha alterada!'),
+                            backgroundColor: AppColors.success,
+                          ),
+                        );
+                      } else {
+                        ScaffoldMessenger.of(ctx).showSnackBar(
+                          SnackBar(
+                            content: Text(result.error ??
+                                'Não foi possível alterar a senha.'),
+                            backgroundColor: AppColors.red,
+                          ),
+                        );
+                      }
+                    },
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.blue),
+              child: salvando
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white),
+                    )
+                  : const Text('Salvar'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    atualCtrl.dispose();
+    novaCtrl.dispose();
+    confirmaCtrl.dispose();
   }
 
   void _showAboutSheet(BuildContext context) {
@@ -469,6 +579,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                   ],
+                  const SizedBox(height: 8),
+                  _SettingRow(
+                    icon: Icons.key_outlined,
+                    label: 'Alterar minha senha',
+                    trailing: const Icon(Icons.chevron_right_rounded,
+                        color: AppColors.textSecondaryLight),
+                    onTap: () => _showChangePasswordSheet(context, user),
+                  ),
                   const SizedBox(height: 8),
                   _SettingRow(
                     icon: Icons.help_outline_rounded,
