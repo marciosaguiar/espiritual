@@ -72,7 +72,9 @@ extension UserInstrumentExtension on UserInstrument {
 class UserModel {
   final String id;
   final String name;
-  final String passwordHash;
+  /// Internal address used for Firebase Authentication, derived from [name].
+  /// Never shown to the user, who signs in with the name alone.
+  final String email;
   final UserRole role;
   final UserInstrument instrument;
   final String? photoUrl;
@@ -83,7 +85,7 @@ class UserModel {
   const UserModel({
     required this.id,
     required this.name,
-    this.passwordHash = '',
+    this.email = '',
     this.role = UserRole.levita,
     this.instrument = UserInstrument.other,
     this.photoUrl,
@@ -97,7 +99,7 @@ class UserModel {
   UserModel copyWith({
     String? id,
     String? name,
-    String? passwordHash,
+    String? email,
     UserRole? role,
     UserInstrument? instrument,
     String? photoUrl,
@@ -108,7 +110,7 @@ class UserModel {
     return UserModel(
       id: id ?? this.id,
       name: name ?? this.name,
-      passwordHash: passwordHash ?? this.passwordHash,
+      email: email ?? this.email,
       role: role ?? this.role,
       instrument: instrument ?? this.instrument,
       photoUrl: photoUrl ?? this.photoUrl,
@@ -123,12 +125,52 @@ class UserModel {
 
   String get nameLower => normalizeName(name);
 
+  /// Domain of the internal addresses. Not a real mail domain: nothing is ever
+  /// sent to it. It exists because Firebase Authentication identifies people by
+  /// e-mail, while this ministry signs in with a name.
+  static const String emailDomain = 'levitas.app';
+
+  /// Builds the internal address for [name]: accents dropped, spaces turned
+  /// into dots, everything else removed.
+  ///
+  ///     'Márcio Aguiar'  ->  'marcio.aguiar@levitas.app'
+  ///     'João 2'         ->  'joao.2@levitas.app'
+  ///
+  /// Dropping accents is deliberate: whoever registers as "Márcio" must still
+  /// get in after typing "Marcio", and an address with an accent is not valid
+  /// for Firebase anyway.
+  static String emailForName(String name) {
+    const accented = 'áàâãäéèêëíìîïóòôõöúùûüçñ';
+    const plain = 'aaaaaeeeeiiiiooooouuuucn';
+
+    final buffer = StringBuffer();
+    for (final rune in normalizeName(name).runes) {
+      final char = String.fromCharCode(rune);
+      final i = accented.indexOf(char);
+      buffer.write(i >= 0 ? plain[i] : char);
+    }
+
+    var slug = buffer
+        .toString()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '.')
+        .replaceAll(RegExp(r'^\.+|\.+$'), '');
+
+    // A name of nothing but symbols would leave an empty address.
+    if (slug.isEmpty) slug = 'levita';
+    // Keeps the local part inside the 64-character limit.
+    if (slug.length > 48) slug = slug.substring(0, 48);
+
+    return '$slug@$emailDomain';
+  }
+
+  String get derivedEmail => emailForName(name);
+
   Map<String, dynamic> toFirestore() {
     return {
       'id': id,
       'name': name.trim(),
       'nameLower': nameLower,
-      'passwordHash': passwordHash,
+      'email': email,
       'role': role.name,
       'instrument': instrument.name,
       'photoUrl': photoUrl,
@@ -142,7 +184,7 @@ class UserModel {
     return UserModel(
       id: data['id'] as String,
       name: data['name'] as String,
-      passwordHash: data['passwordHash'] as String? ?? '',
+      email: data['email'] as String? ?? '',
       role: UserRoleExtension.fromString(data['role'] as String? ?? 'levita'),
       instrument: UserInstrumentExtension.fromString(data['instrument'] as String? ?? 'other'),
       photoUrl: data['photoUrl'] as String?,
@@ -154,8 +196,7 @@ class UserModel {
 
   /// Plain-JSON form used for the local session.
   ///
-  /// Deliberately excludes [passwordHash] — the device never needs it — and
-  /// stores the date as an ISO string, since Firestore's `Timestamp` is not
+  /// Stores the date as an ISO string, since Firestore's `Timestamp` is not
   /// JSON-encodable (encoding it throws and used to break login entirely).
   Map<String, dynamic> toJson() {
     return {

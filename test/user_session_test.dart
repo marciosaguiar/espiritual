@@ -11,7 +11,6 @@ void main() {
   final user = UserModel(
     id: 'u1',
     name: 'Márcio',
-    passwordHash: 'nao-deve-vazar',
     role: UserRole.admin,
     instrument: UserInstrument.keyboard,
     favoriteSongs: const ['s1', 's2'],
@@ -28,6 +27,7 @@ void main() {
       final json = jsonEncode(user.toJson());
       expect(json.contains('nao-deve-vazar'), isFalse);
       expect(user.toJson().containsKey('passwordHash'), isFalse);
+      expect(user.toJson().containsKey('email'), isFalse);
     });
 
     test('ida e volta preserva os dados do usuário', () {
@@ -45,9 +45,12 @@ void main() {
       expect(restored.isAdmin, isTrue);
     });
 
-    test('sessão restaurada não carrega a senha', () {
-      final restored = UserModel.fromJson(user.toJson());
-      expect(restored.passwordHash, isEmpty);
+    test('a sessão local não guarda credencial nenhuma', () {
+      // A senha agora é do Firebase; o aparelho só guarda o perfil.
+      final json = user.toJson();
+      expect(json.containsKey('passwordHash'), isFalse);
+      expect(json.containsKey('email'), isFalse);
+      expect(json.values.whereType<String>().join(' ').contains('@'), isFalse);
     });
   });
 
@@ -63,7 +66,7 @@ void main() {
   });
 
   group('leitura do Firestore', () {
-    test('usuário sem passwordHash não quebra a leitura', () {
+    test('usuário sem e-mail gravado não quebra a leitura', () {
       final restored = UserModel.fromFirestore({
         'id': 'u2',
         'name': 'Ana',
@@ -72,7 +75,6 @@ void main() {
       });
 
       expect(restored.name, 'Ana');
-      expect(restored.passwordHash, isEmpty);
       expect(restored.isAdmin, isFalse);
     });
   });

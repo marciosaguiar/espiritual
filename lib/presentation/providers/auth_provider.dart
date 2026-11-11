@@ -17,18 +17,39 @@ class AuthProvider extends ChangeNotifier {
   bool get isAdmin => _user?.isAdmin ?? false;
   bool get isLoading => _status == AuthStatus.loading;
 
-  /// Check persisted session on app start
+  /// Restores the session on app start.
+  ///
+  /// Firebase keeps the signed-in account on the device, so it — not the local
+  /// copy — decides whether someone is logged in. The local copy is only used
+  /// to fill the screens while offline, when the profile cannot be fetched.
   Future<void> checkSession() async {
     _status = AuthStatus.loading;
     notifyListeners();
 
-    final savedUser = LocalStorageService.getSession();
-    if (savedUser != null) {
-      _user = savedUser;
-      _status = AuthStatus.authenticated;
-    } else {
+    final account = AuthService.currentAuthUser;
+    if (account == null) {
+      // No account: drop any profile left over from an older version.
+      await LocalStorageService.clearSession();
+      _user = null;
       _status = AuthStatus.unauthenticated;
+      notifyListeners();
+      return;
     }
+
+    final profile = await AuthService.getUserById(account.uid) ??
+        LocalStorageService.getSession();
+
+    if (profile == null) {
+      // Signed in, but the profile could not be read and nothing is cached.
+      _errorMessage = 'Não foi possível carregar seu perfil. Verifique a internet.';
+      _status = AuthStatus.unauthenticated;
+      notifyListeners();
+      return;
+    }
+
+    _user = profile;
+    _status = AuthStatus.authenticated;
+    await LocalStorageService.saveSession(profile);
     notifyListeners();
   }
 

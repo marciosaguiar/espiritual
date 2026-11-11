@@ -149,77 +149,26 @@ class _MemberRowState extends State<_MemberRow> {
     );
   }
 
-  /// Leader sets a temporary password and passes it on in person. Sign-in uses
-  /// only a name, so there is no e-mail to send a reset link to.
-  Future<void> _resetPassword() async {
-    final controller = TextEditingController();
-    final formKey = GlobalKey<FormState>();
-
-    final novaSenha = await showDialog<String>(
+  /// Explains why the app cannot set someone else's password any more.
+  ///
+  /// Sign-in moved to Firebase Authentication, which only lets an account
+  /// change its own password. Doing it for another person needs the Admin SDK
+  /// running on a server, which an app cannot do.
+  void _explainPasswordReset() {
+    showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Redefinir senha de ${widget.member.name}'),
-        content: Form(
-          key: formKey,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Escolha uma senha provisória e combine com a pessoa. '
-                'Ela pode trocar depois no Perfil.',
-                style: TextStyle(fontFamily: 'Poppins', fontSize: 13),
-              ),
-              const SizedBox(height: 14),
-              TextFormField(
-                controller: controller,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  labelText: 'Nova senha',
-                  hintText: 'Mínimo 6 caracteres',
-                ),
-                validator: (v) => (v == null ||
-                        v.length < AuthService.minPasswordLength)
-                    ? 'Mínimo ${AuthService.minPasswordLength} caracteres'
-                    : null,
-              ),
-            ],
-          ),
+        title: Text('Senha de ${widget.member.name}'),
+        content: const Text(
+          AuthService.leaderResetUnavailable,
+          style: TextStyle(fontFamily: 'Poppins', fontSize: 13, height: 1.5),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancelar'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (formKey.currentState?.validate() ?? false) {
-                Navigator.pop(ctx, controller.text);
-              }
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.blue),
-            child: const Text('Redefinir'),
+            child: const Text('Entendi'),
           ),
         ],
-      ),
-    );
-
-    controller.dispose();
-    if (novaSenha == null || !mounted) return;
-
-    setState(() => _saving = true);
-    final result = await AuthService.resetPassword(widget.member, novaSenha);
-    if (!mounted) return;
-    setState(() => _saving = false);
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          result.success
-              ? 'Senha de ${widget.member.name} redefinida. Avise a pessoa.'
-              : result.error ?? 'Não foi possível redefinir a senha.',
-        ),
-        backgroundColor: result.success ? AppColors.success : AppColors.red,
       ),
     );
   }
@@ -326,7 +275,7 @@ class _MemberRowState extends State<_MemberRow> {
                   if (value == 'role') {
                     _changeRole(m.isAdmin ? UserRole.levita : UserRole.admin);
                   } else if (value == 'password') {
-                    _resetPassword();
+                    _explainPasswordReset();
                   }
                 },
                 itemBuilder: (_) => [
@@ -349,9 +298,9 @@ class _MemberRowState extends State<_MemberRow> {
                     value: 'password',
                     child: Row(
                       children: [
-                        Icon(Icons.key_outlined, size: 18),
+                        Icon(Icons.help_outline_rounded, size: 18),
                         SizedBox(width: 10),
-                        Text('Redefinir senha'),
+                        Text('Senha esquecida?'),
                       ],
                     ),
                   ),

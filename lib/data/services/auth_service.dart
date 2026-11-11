@@ -1,166 +1,149 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter/foundation.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+
 import '../models/user_model.dart';
-import '../../core/utils/crypto_utils.dart';
 import 'local_storage_service.dart';
 
+/// Sign-in, sign-up and the user profile.
+///
+/// The password is handled entirely by Firebase Authentication: it never
+/// reaches this code and no hash is stored in Firestore. Because Firebase
+/// identifies people by e-mail and this ministry signs in with a name, the
+/// address is derived from the name — see [UserModel.emailForName]. The login
+/// screen still asks only for a name and a password.
 class AuthService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
+  static final FirebaseAuth _auth = FirebaseAuth.instance;
   static const String _collection = 'users';
 
-  /// Looks a user up by name, ignoring case and surrounding spaces.
+  /// Minimum the app accepts. Firebase itself requires 6.
+  static const int minPasswordLength = 6;
+
+  /// The signed-in account, or null.
+  static User? get currentAuthUser => _auth.currentUser;
+
+  /// Fires on sign-in, sign-out and token refresh.
+  static Stream<User?> authStateChanges() => _auth.authStateChanges();
+
+  // ─── Register ─────────────────────────────────────────────────────────────
+
+  /// Creates an account.
   ///
-  /// Falls back to the exact-name field so accounts created before
-  /// `nameLower` existed keep working.
-  static Future<Map<String, dynamic>?> _findByName(String name) async {
-    final trimmed = name.trim();
-    final lower = UserModel.normalizeName(trimmed);
-
-    final byLower = await _db
-        .collection(_collection)
-        .where('nameLower', isEqualTo: lower)
-        .limit(1)
-        .get();
-    if (byLower.docs.isNotEmpty) return byLower.docs.first.data();
-
-    final byExact = await _db
-        .collection(_collection)
-        .where('name', isEqualTo: trimmed)
-        .limit(1)
-        .get();
-    if (byExact.docs.isNotEmpty) return byExact.docs.first.data();
-
-    return null;
-  }
-
-  /// Register a new user.
-  ///
-  /// The role is decided by the server state, never by the sign-up form: the
-  /// first person to join leads the ministry, everyone after joins as a levita
-  /// and can be promoted by a leader.
+  /// The role comes from the state of the ministry, never from the sign-up
+  /// form: whoever creates it leads, everyone after joins as a levita and can
+  /// be promoted by a leader.
   static Future<({bool success, String? error, UserModel? user})> register({
     required String name,
     required String password,
     UserInstrument instrument = UserInstrument.other,
   }) async {
+    final trimmed = name.trim();
+    if (trimmed.length < 3) {
+      return (
+        success: false,
+        error: 'O nome precisa ter ao menos 3 letras.',
+        user: null
+      );
+    }
+    if (password.length < minPasswordLength) {
+      return (
+        success: false,
+        error: 'A senha precisa ter no mínimo $minPasswordLength caracteres.',
+        user: null
+      );
+    }
+
+    final email = UserModel.emailForName(trimmed);
+
     try {
-      if (await _findByName(name) != null) {
-        return (success: false, error: 'Este nome já está em uso', user: null);
-      }
+      // Decided before the account exists, so the new user is not counted.
+      final firstEver = !await hasAdmin();
 
-      final role = await hasAdmin() ? UserRole.levita : UserRole.admin;
+      final credential = await _auth.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      final uid = credential.user!.uid;
 
-      final id = CryptoUtils.generateId();
       final user = UserModel(
-        id: id,
-        name: name.trim(),
-        // Hashing is deliberately slow; run it off the UI thread.
-        passwordHash: await compute(hashPasswordWorker, password),
-        role: role,
+        id: uid,
+        name: trimmed,
+        email: email,
+        role: firstEver ? UserRole.admin : UserRole.levita,
         instrument: instrument,
         createdAt: DateTime.now(),
       );
 
-      await _db.collection(_collection).doc(id).set(user.toFirestore());
+      await _db.collection(_collection).doc(uid).set(user.toFirestore());
       await LocalStorageService.saveSession(user);
 
       return (success: true, error: null, user: user);
+    } on FirebaseAuthException catch (e) {
+      return (success: false, error: _messageFor(e), user: null);
     } on FirebaseException catch (e) {
-      return (success: false, error: 'Erro de conexão: ${e.message}', user: null);
-    } catch (e) {
-      return (success: false, error: 'Erro inesperado: $e', user: null);
+      return (
+        success: false,
+        error: 'Não foi possível salvar seu perfil: ${e.message}',
+        user: null
+      );
     }
   }
 
-  /// Login with name and password
+  // ─── Login ────────────────────────────────────────────────────────────────
+
+  /// Signs in with the name and password typed on the login screen.
   static Future<({bool success, String? error, UserModel? user})> login({
     required String name,
     required String password,
   }) async {
+    final email = UserModel.emailForName(name);
+
     try {
-      final data = await _findByName(name);
+      final credential = await _auth.signInWithEmailAndPassword(
+        email: email,
+        password: password,
+      );
+      final uid = credential.user!.uid;
 
-      if (data == null) {
-        return (success: false, error: 'Nome ou senha incorretos', user: null);
-      }
-
-      final storedHash = data['passwordHash'] as String?;
-
-      if (storedHash == null || storedHash.isEmpty) {
-        return (success: false, error: 'Nome ou senha incorretos', user: null);
-      }
-
-      final matches =
-          await compute(verifyPasswordWorker, <String>[password, storedHash]);
-      if (!matches) {
-        return (success: false, error: 'Nome ou senha incorretos', user: null);
-      }
-
-      final user = UserModel.fromFirestore(data);
-
-      // Silently move accounts off the old unsalted hash the first time they
-      // sign in. Failure here must never block the login.
-      if (CryptoUtils.needsUpgrade(storedHash)) {
-        try {
-          final upgraded = await compute(hashPasswordWorker, password);
-          await _db
-              .collection(_collection)
-              .doc(user.id)
-              .update({'passwordHash': upgraded});
-        } catch (_) {
-          // Keeps working with the old hash until the next sign-in.
-        }
+      final user = await getUserById(uid);
+      if (user == null) {
+        // Account exists in Firebase but has no profile document — only
+        // possible if the profile write failed during sign-up. Rebuild it
+        // instead of leaving the person locked out of their own account.
+        final rebuilt = UserModel(
+          id: uid,
+          name: name.trim(),
+          email: email,
+          role: await hasAdmin() ? UserRole.levita : UserRole.admin,
+          createdAt: DateTime.now(),
+        );
+        await _db.collection(_collection).doc(uid).set(rebuilt.toFirestore());
+        await LocalStorageService.saveSession(rebuilt);
+        return (success: true, error: null, user: rebuilt);
       }
 
       await LocalStorageService.saveSession(user);
-
       return (success: true, error: null, user: user);
+    } on FirebaseAuthException catch (e) {
+      return (success: false, error: _messageFor(e), user: null);
     } on FirebaseException catch (e) {
-      return (success: false, error: 'Erro de conexão: ${e.message}', user: null);
-    } catch (e) {
-      return (success: false, error: 'Erro inesperado: $e', user: null);
+      return (
+        success: false,
+        error: 'Erro de conexão: ${e.message}',
+        user: null
+      );
     }
   }
 
-  /// Logout current user
   static Future<void> logout() async {
+    await _auth.signOut();
     await LocalStorageService.clearSession();
   }
 
-  /// Minimum the app accepts. Kept in one place so every screen agrees.
-  static const int minPasswordLength = 6;
+  // ─── Password ─────────────────────────────────────────────────────────────
 
-  /// Sets a new password for [user], no old password required.
-  ///
-  /// This is how a forgotten password gets solved: the leader sets a temporary
-  /// one and passes it on. Since sign-in uses only a name, there is no e-mail
-  /// to send a reset link to.
-  static Future<({bool success, String? error})> resetPassword(
-    UserModel user,
-    String newPassword,
-  ) async {
-    if (newPassword.length < minPasswordLength) {
-      return (
-        success: false,
-        error: 'A senha precisa ter no mínimo $minPasswordLength caracteres.'
-      );
-    }
-
-    try {
-      final hash = await compute(hashPasswordWorker, newPassword);
-      await _db
-          .collection(_collection)
-          .doc(user.id)
-          .update({'passwordHash': hash});
-      return (success: true, error: null);
-    } on FirebaseException catch (e) {
-      return (success: false, error: 'Erro de conexão: ${e.message}');
-    } catch (e) {
-      return (success: false, error: 'Não foi possível alterar a senha: $e');
-    }
-  }
-
-  /// Changes the signed-in user's own password, checking the current one.
+  /// Changes the signed-in user's own password, after confirming the current
+  /// one. This is the only password change an app is allowed to make.
   static Future<({bool success, String? error})> changePassword({
     required UserModel user,
     required String currentPassword,
@@ -173,31 +156,45 @@ class AuthService {
       );
     }
 
-    try {
-      // Read the stored hash fresh: the session copy no longer carries it.
-      final doc = await _db.collection(_collection).doc(user.id).get();
-      final stored = doc.data()?['passwordHash'] as String? ?? '';
+    final account = _auth.currentUser;
+    if (account == null) {
+      return (success: false, error: 'Entre novamente para trocar a senha.');
+    }
 
-      final matches =
-          await compute(verifyPasswordWorker, <String>[currentPassword, stored]);
-      if (!matches) {
+    try {
+      // Firebase requires a recent sign-in before a password change.
+      await account.reauthenticateWithCredential(
+        EmailAuthProvider.credential(
+          email: UserModel.emailForName(user.name),
+          password: currentPassword,
+        ),
+      );
+      await account.updatePassword(newPassword);
+      return (success: true, error: null);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
         return (success: false, error: 'A senha atual está incorreta.');
       }
-
-      final hash = await compute(hashPasswordWorker, newPassword);
-      await _db
-          .collection(_collection)
-          .doc(user.id)
-          .update({'passwordHash': hash});
-      return (success: true, error: null);
-    } on FirebaseException catch (e) {
-      return (success: false, error: 'Erro de conexão: ${e.message}');
-    } catch (e) {
-      return (success: false, error: 'Não foi possível alterar a senha: $e');
+      return (success: false, error: _messageFor(e));
     }
   }
 
-  /// Update user profile
+  /// Why a leader can no longer set someone else's password.
+  ///
+  /// Firebase Authentication only lets an account change its own password; a
+  /// reset for someone else needs the Admin SDK, which must run on a server
+  /// (Cloud Functions) and cannot run inside the app. The addresses here are
+  /// internal (`@levitas.app`), so the e-mail reset link has nowhere to go
+  /// either. Until that server exists, this is the honest answer to show.
+  static const String leaderResetUnavailable =
+      'A troca de senha de outra pessoa não é mais feita pelo app: agora quem '
+      'guarda as senhas é o Firebase, e ele só permite que cada pessoa mude a '
+      'sua. Peça para ela entrar e usar Perfil → Alterar minha senha. Se ela '
+      'não consegue entrar de jeito nenhum, é preciso habilitar a redefinição '
+      'no servidor.';
+
+  // ─── Profile ──────────────────────────────────────────────────────────────
+
   static Future<bool> updateUser(UserModel user) async {
     try {
       await _db.collection(_collection).doc(user.id).update({
@@ -213,7 +210,6 @@ class AuthService {
     }
   }
 
-  /// Toggle favorite song for user
   static Future<UserModel> toggleFavorite(UserModel user, String songId) async {
     final favorites = List<String>.from(user.favoriteSongs);
     if (favorites.contains(songId)) {
@@ -229,7 +225,6 @@ class AuthService {
     return updated;
   }
 
-  /// Save preferred tone for a song
   static Future<UserModel> saveSongTone(
       UserModel user, String songId, int semitones) async {
     final tones = Map<String, int>.from(user.savedTones);
@@ -242,7 +237,6 @@ class AuthService {
     return updated;
   }
 
-  /// Get all users (admin only)
   static Stream<List<UserModel>> getAllUsers() {
     return _db
         .collection(_collection)
@@ -253,7 +247,6 @@ class AuthService {
             .toList());
   }
 
-  /// Get user by ID
   static Future<UserModel?> getUserById(String id) async {
     try {
       final doc = await _db.collection(_collection).doc(id).get();
@@ -264,7 +257,8 @@ class AuthService {
     }
   }
 
-  /// Check if any admin exists (for first-run setup)
+  // ─── Roles ────────────────────────────────────────────────────────────────
+
   static Future<bool> hasAdmin() async {
     final snap = await _db
         .collection(_collection)
@@ -275,7 +269,7 @@ class AuthService {
   }
 
   /// How many leaders the ministry has. Used to refuse removing the last one,
-  /// which would lock everybody out of the admin features.
+  /// which would lock everybody out of the leader-only screens.
   static Future<int> adminCount() async {
     final snap = await _db
         .collection(_collection)
@@ -284,8 +278,6 @@ class AuthService {
     return snap.docs.length;
   }
 
-  /// Promote or demote a member. Leaders only (enforced by the UI and, once
-  /// server-side auth is in place, by the security rules).
   static Future<({bool success, String? error})> setUserRole(
     UserModel user,
     UserRole role,
@@ -306,8 +298,40 @@ class AuthService {
       return (success: true, error: null);
     } on FirebaseException catch (e) {
       return (success: false, error: 'Erro de conexão: ${e.message}');
-    } catch (e) {
-      return (success: false, error: 'Não foi possível alterar a função: $e');
+    }
+  }
+
+  // ─── Errors ───────────────────────────────────────────────────────────────
+
+  /// Turns a Firebase code into something a person can act on.
+  ///
+  /// The codes mention e-mail because that is how Firebase identifies the
+  /// account; the messages say "nome", which is what the person actually typed.
+  static String _messageFor(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'email-already-in-use':
+        return 'Este nome já está em uso. Escolha outro.';
+      case 'invalid-email':
+        return 'Esse nome não pode ser usado. Use letras e números.';
+      case 'weak-password':
+        return 'Senha muito fraca. Use ao menos $minPasswordLength caracteres.';
+      case 'user-not-found':
+      case 'wrong-password':
+      case 'invalid-credential':
+        return 'Nome ou senha incorretos.';
+      case 'user-disabled':
+        return 'Esta conta foi desativada. Fale com o líder do ministério.';
+      case 'too-many-requests':
+        return 'Muitas tentativas. Espere alguns minutos e tente de novo.';
+      case 'network-request-failed':
+        return 'Sem conexão. Verifique a internet e tente de novo.';
+      case 'requires-recent-login':
+        return 'Por segurança, saia e entre novamente antes de trocar a senha.';
+      case 'operation-not-allowed':
+        return 'O login por senha não está habilitado no Firebase '
+            '(Authentication → Sign-in method → E-mail/senha).';
+      default:
+        return e.message ?? 'Não foi possível concluir. Tente novamente.';
     }
   }
 }

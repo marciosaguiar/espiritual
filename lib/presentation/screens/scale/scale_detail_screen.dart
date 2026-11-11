@@ -257,7 +257,6 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
           orElse: () => UserModel(
             id: uid,
             name: uid,
-            passwordHash: '',
             createdAt: DateTime.now(),
           ),
         );
