@@ -2,11 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'firebase_options.dart';
-import 'core/preview.dart';
 import 'core/theme/app_theme.dart';
 import 'data/services/local_storage_service.dart';
 import 'presentation/providers/auth_provider.dart';
@@ -18,6 +16,24 @@ import 'presentation/screens/auth/login_screen.dart';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/widgets/common/glass.dart';
 
+/// Whether [DefaultFirebaseOptions] carries a real project or the placeholder
+/// values that ship with the template.
+///
+/// This check exists because the placeholders used to fail silently: the app
+/// started, every request to the database failed, and the screens simply
+/// stayed empty with no explanation anywhere.
+bool get _firebaseConfigured {
+  try {
+    final o = DefaultFirebaseOptions.currentPlatform;
+    return !o.apiKey.startsWith('YOUR_') &&
+        o.apiKey.length > 20 &&
+        !o.appId.contains('000000000000');
+  } catch (_) {
+    // Platform not configured at all (throws UnsupportedError).
+    return false;
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -27,11 +43,15 @@ void main() async {
   // Initialize local storage
   await LocalStorageService.init();
 
-  // Initialize Firebase. Skipped in web preview mode (no real project there).
-  if (!kPreviewMode) {
-    await Firebase.initializeApp(
-      options: DefaultFirebaseOptions.currentPlatform,
-    );
+  String? startupError;
+  if (_firebaseConfigured) {
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } catch (e) {
+      startupError = '$e';
+    }
   }
 
   // Set preferred orientations
@@ -40,7 +60,129 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
+  if (!_firebaseConfigured || startupError != null) {
+    runApp(_SetupNeededApp(error: startupError));
+    return;
+  }
+
   runApp(const LevitaSyncApp());
+}
+
+/// Shown instead of the app when there is no Firebase project to talk to.
+///
+/// Says what is wrong and what to do about it, rather than leaving every
+/// screen mysteriously empty.
+class _SetupNeededApp extends StatelessWidget {
+  final String? error;
+  const _SetupNeededApp({this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: Scaffold(
+        backgroundColor: const Color(0xFF0E1116),
+        body: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(28),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.cloud_off_rounded,
+                      size: 48, color: Color(0xFFDDA64A)),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Falta conectar o LevitaSync\nao banco de dados',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      height: 1.25,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Text(
+                    error == null
+                        ? 'As chaves do Firebase ainda são as de exemplo, então '
+                            'o app não tem onde guardar os dados. Nada do que '
+                            'você fizer aqui seria salvo.'
+                        : 'O Firebase está configurado, mas não respondeu:',
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 14,
+                      color: Colors.white70,
+                      height: 1.5,
+                    ),
+                  ),
+                  if (error != null) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        error!,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 11,
+                          color: Colors.white60,
+                        ),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.12)),
+                    ),
+                    child: const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Como resolver',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                        SizedBox(height: 10),
+                        Text(
+                          'No computador, dentro da pasta do projeto:\n\n'
+                          'dart pub global activate flutterfire_cli\n'
+                          'flutterfire configure\n\n'
+                          'Marque android, ios e web. O comando preenche as '
+                          'chaves sozinho.',
+                          style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            color: Colors.white70,
+                            height: 1.55,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class LevitaSyncApp extends StatelessWidget {
