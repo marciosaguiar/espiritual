@@ -3,93 +3,177 @@ rules_version = '2';
 // ─────────────────────────────────────────────────────────────────────────────
 // LevitaSync — regras de segurança do Firestore
 //
-// ATENÇÃO — proteção PARCIAL.
+// Agora o login é conferido pelo Firebase Authentication, então o banco sabe
+// QUEM está fazendo cada pedido (request.auth.uid). É isso que permite regras
+// de verdade, e não só limites de tamanho como na versão anterior.
 //
-// O app hoje faz a conferência de senha no próprio celular: para entrar, ele
-// precisa ler o cadastro do usuário e comparar a senha. Isso significa que a
-// coleção `users` precisa continuar legível, e que o banco não tem como saber
-// QUEM está fazendo cada pedido. Sem essa identidade, nenhuma regra consegue
-// impedir que alguém de fora escreva nas coleções.
+// Em resumo:
+//   · nada é legível sem estar logado;
+//   · cada pessoa só edita o próprio perfil, e não a própria função;
+//   · só o líder cria e altera músicas, arranjos e cultos;
+//   · APAGAR qualquer coisa é só do líder;
+//   · suas anotações e tons ficam numa subcoleção que só você acessa;
+//   · mensagem enviada não se altera nem se apaga.
 //
-// Estas regras fazem o que é possível nesse cenário: cortam a exclusão de
-// contas, limitam o tamanho dos documentos (evita abuso e custo) e bloqueiam
-// coleções desconhecidas. Elas são muito melhores do que liberar tudo, mas
-// NÃO substituem autenticação de verdade.
-//
-// A proteção completa vem quando o login passar a ser verificado no servidor
-// (Firebase Authentication). Aí estas regras devem ser trocadas por regras
-// baseadas em `request.auth.uid` e na função de líder.
-//
-// Como aplicar: Firebase Console → Firestore Database → Regras → colar → Publicar.
+// Como publicar:  firebase deploy --only firestore:rules
 // ─────────────────────────────────────────────────────────────────────────────
 
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function texto(campo, maximo) {
-      return !(campo in request.resource.data)
-             || (request.resource.data[campo] is string
-                 && request.resource.data[campo].size() <= maximo);
+    // ── Quem é quem ─────────────────────────────────────────────────────────
+
+    function logado() {
+      return request.auth != null;
     }
 
-    function documentoRazoavel() {
+    function eu() {
+      return request.auth.uid;
+    }
+
+    function souEu(userId) {
+      return logado() && eu() == userId;
+    }
+
+    // Lê a função no próprio cadastro. Atenção: cada uso desta função custa
+    // uma leitura no Firestore (elas são cobradas), por isso ela aparece só
+    // onde é realmente necessária.
+    function ehLider() {
+      return logado()
+        && exists(/databases/$(database)/documents/users/$(eu()))
+        && get(/databases/$(database)/documents/users/$(eu())).data.role == 'admin';
+    }
+
+    // ── Validações ──────────────────────────────────────────────────────────
+
+    function texto(campo, maximo) {
+      return !(campo in request.resource.data)
+        || (request.resource.data[campo] is string
+            && request.resource.data[campo].size() <= maximo);
+    }
+
+    function tamanhoRazoavel() {
       return request.resource.data.keys().size() <= 30;
     }
 
+    // Campos que mudaram nesta escrita.
+    function mudou() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
     // ── Usuários ────────────────────────────────────────────────────────────
-    // Leitura liberada porque o login atual acontece no celular. É justamente
-    // esta linha que deixa de ser necessária com autenticação no servidor.
     match /users/{userId} {
-      allow get, list: if true;
 
-      allow create: if documentoRazoavel()
-                    && request.resource.data.name is string
-                    && request.resource.data.name.size() > 0
-                    && request.resource.data.name.size() <= 60
-                    && texto('passwordHash', 200);
+      // Todo mundo do ministério vê a lista (nomes e instrumentos aparecem na
+      // escala e no chat). Sem login, nada.
+      allow read: if logado();
 
-      allow update: if documentoRazoavel()
-                    && texto('name', 60)
-                    && texto('photoUrl', 500);
+      // Só dá para criar o SEU próprio cadastro, com o id da sua conta, e
+      // sempre como levita.
+      //
+      // Cadastrar-se como líder é proibido de propósito: o endereço do app é
+      // público, e sem esta linha qualquer pessoa poderia se registrar como
+      // administradora. O primeiro líder é promovido uma vez no console do
+      // Firebase; daí em diante os líderes promovem os outros pelo app.
+      allow create: if souEu(userId)
+        && tamanhoRazoavel()
+        && request.resource.data.role == 'levita'
+        && request.resource.data.id == userId
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 3
+        && request.resource.data.name.size() <= 60
+        && texto('photoUrl', 500)
+        && !('passwordHash' in request.resource.data);
+
+      // Você edita o seu perfil, menos a sua função — senão qualquer um se
+      // promoveria a líder.
+      allow update: if tamanhoRazoavel()
+        && texto('name', 60)
+        && texto('photoUrl', 500)
+        && !('passwordHash' in request.resource.data)
+        && (
+          (souEu(userId) && !('role' in mudou()))
+          || ehLider()
+        );
 
       // Ninguém apaga contas pelo app.
       allow delete: if false;
+
+      // ── Minhas preferências por música (tom, anotações) ───────────────────
+      // Particular: nem o líder lê as anotações de outra pessoa.
+      match /songPrefs/{songId} {
+        allow read, write: if souEu(userId)
+          && tamanhoRazoavel()
+          && texto('notes', 2000);
+      }
     }
 
     // ── Músicas ─────────────────────────────────────────────────────────────
     match /songs/{songId} {
-      allow read: if true;
+      allow read: if logado();
 
-      allow create, update: if documentoRazoavel()
-                            && texto('name', 150)
-                            && texto('artist', 150)
-                            && texto('lyrics', 20000)
-                            && texto('chords', 20000)
-                            && texto('youtubeUrl', 500);
+      allow create, update: if ehLider()
+        && tamanhoRazoavel()
+        && texto('name', 150)
+        && texto('artist', 150)
+        && texto('lyrics', 20000)
+        && texto('originalKey', 10);
 
-      allow delete: if true;
+      allow delete: if ehLider();
+
+      // ── Arranjo da igreja ─────────────────────────────────────────────────
+      // Como a NOSSA igreja toca a música: cifra, tom, estrutura, andamento.
+      match /arrangements/{arrangementId} {
+        allow read: if logado();
+
+        allow create, update: if ehLider()
+          && tamanhoRazoavel()
+          && texto('chords', 20000)
+          && texto('churchKey', 10)
+          && texto('notes', 5000);
+
+        allow delete: if ehLider();
+      }
     }
 
-    // ── Escalas / cultos ────────────────────────────────────────────────────
+    // ── Cultos / escalas ────────────────────────────────────────────────────
     match /scales/{scaleId} {
-      allow read: if true;
+      allow read: if logado();
 
-      allow create, update: if documentoRazoavel()
-                            && texto('serviceType', 60)
-                            && texto('observations', 5000);
+      allow create: if ehLider()
+        && tamanhoRazoavel()
+        && texto('serviceType', 60)
+        && texto('observations', 5000);
 
-      allow delete: if true;
+      // O líder edita o culto à vontade. Um levita só pode tocar na lista de
+      // presença — nenhum outro campo.
+      //
+      // Limite conhecido: esta regra garante que o levita mexeu apenas no
+      // campo `levitas`, mas não consegue garantir que mexeu só na própria
+      // linha dentro dele. Garantir isso exigiria uma confirmação por pessoa,
+      // em subcoleção. Como são todos do mesmo ministério e a mudança fica
+      // visível na tela, fica assim por ora.
+      allow update: if tamanhoRazoavel()
+        && (
+          (ehLider() && texto('serviceType', 60) && texto('observations', 5000))
+          || (logado() && mudou().hasOnly(['levitas']))
+        );
+
+      allow delete: if ehLider();
     }
 
     // ── Chat ────────────────────────────────────────────────────────────────
     match /messages/{messageId} {
-      allow read: if true;
+      allow read: if logado();
 
-      allow create: if documentoRazoavel()
-                    && request.resource.data.text is string
-                    && request.resource.data.text.size() > 0
-                    && request.resource.data.text.size() <= 2000
-                    && texto('userName', 60);
+      // Você só envia mensagem em seu próprio nome.
+      allow create: if logado()
+        && tamanhoRazoavel()
+        && request.resource.data.userId == eu()
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && texto('userName', 60);
 
       // Mensagem enviada não se altera nem some.
       allow update, delete: if false;
@@ -97,8 +181,8 @@ service cloud.firestore {
 
     // ── "Está digitando…" ───────────────────────────────────────────────────
     match /typing/{userId} {
-      allow read: if true;
-      allow write: if documentoRazoavel() && texto('userName', 60);
+      allow read: if logado();
+      allow write: if souEu(userId) && texto('userName', 60);
     }
 
     // Qualquer outra coleção fica bloqueada por não ter regra definida.

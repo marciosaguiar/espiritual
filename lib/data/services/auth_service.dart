@@ -29,9 +29,11 @@ class AuthService {
 
   /// Creates an account.
   ///
-  /// The role comes from the state of the ministry, never from the sign-up
-  /// form: whoever creates it leads, everyone after joins as a levita and can
-  /// be promoted by a leader.
+  /// Everyone joins as a levita — the security rules refuse any other role on
+  /// sign-up, because the app's address is public and otherwise a stranger
+  /// could register straight into the leader role through the API. The first
+  /// leader is promoted once in the Firebase console; from then on leaders
+  /// promote the others from the Members screen.
   static Future<({bool success, String? error, UserModel? user})> register({
     required String name,
     required String password,
@@ -56,9 +58,6 @@ class AuthService {
     final email = UserModel.emailForName(trimmed);
 
     try {
-      // Decided before the account exists, so the new user is not counted.
-      final firstEver = !await hasAdmin();
-
       final credential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: password,
@@ -69,7 +68,7 @@ class AuthService {
         id: uid,
         name: trimmed,
         email: email,
-        role: firstEver ? UserRole.admin : UserRole.levita,
+        role: UserRole.levita,
         instrument: instrument,
         createdAt: DateTime.now(),
       );
@@ -114,7 +113,7 @@ class AuthService {
           id: uid,
           name: name.trim(),
           email: email,
-          role: await hasAdmin() ? UserRole.levita : UserRole.admin,
+          role: UserRole.levita,
           createdAt: DateTime.now(),
         );
         await _db.collection(_collection).doc(uid).set(rebuilt.toFirestore());
