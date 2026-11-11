@@ -7,6 +7,8 @@ import '../../providers/songs_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/utils/chord_transposer.dart';
+import '../../../data/models/arrangement_model.dart';
+import '../../../data/services/firestore_service.dart';
 import '../../../data/models/song_model.dart';
 
 class SongDetailScreen extends StatefulWidget {
@@ -23,22 +25,93 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   int _semitones = 0;
   double _fontSize = 16.0;
 
+  /// How this church plays the song. Fetched when the screen opens — it is a
+  /// subcollection of the song, so the chart is not downloaded with the song
+  /// list.
+  ArrangementModel? _arrangement;
+  bool _loadingArrangement = true;
+
   @override
   void initState() {
     super.initState();
-    // Load user's saved tone for this song
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
       final auth = context.read<AuthProvider>();
       final saved = auth.getSavedTone(widget.song.id);
-      if (saved != 0) {
-        setState(() => _semitones = saved);
-      }
+      if (saved != 0) setState(() => _semitones = saved);
+      _loadArrangement();
     });
   }
 
+  Future<void> _loadArrangement() async {
+    final found = await FirestoreService.getArrangement(widget.song.id);
+    if (!mounted) return;
+    setState(() {
+      _arrangement = found;
+      _loadingArrangement = false;
+    });
+  }
+
+  /// Personal note for this song — only this musician sees it.
+  Future<void> _editNotes() async {
+    final auth = context.read<AuthProvider>();
+    final controller =
+        TextEditingController(text: auth.getSongNotes(widget.song.id));
+
+    final saved = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Minha anotação'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Só você vê isto. Nem o líder.',
+              style: TextStyle(fontFamily: 'Poppins', fontSize: 12),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              autofocus: true,
+              maxLines: 4,
+              maxLength: 2000,
+              decoration: const InputDecoration(
+                hintText: 'Ex: entro na segunda voz, capotraste na 2ª casa...',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, controller.text),
+            child: const Text('Salvar'),
+          ),
+        ],
+      ),
+    );
+
+    controller.dispose();
+    if (saved == null || !mounted) return;
+
+    final error = await auth.saveSongNotes(widget.song.id, saved);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error ?? 'Anotação salva.'),
+        backgroundColor: error == null ? AppColors.success : AppColors.red,
+      ),
+    );
+  }
+
   Future<void> _openYoutube() async {
-    if (widget.song.youtubeUrl == null) return;
-    final uri = Uri.parse(widget.song.youtubeUrl!);
+    final url = widget.song.videoUrl;
+    if (url == null) return;
+    final uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -78,16 +151,26 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     }
   }
 
+  /// The chart, when there is one and the user asked for it; otherwise the
+  /// plain words.
   String get _displayText {
-    if (_showChords && widget.song.chords.isNotEmpty) {
-      return ChordTransposer.transposeText(widget.song.chords, _semitones);
+    final chords = _arrangement?.chords ?? '';
+    if (_showChords && chords.isNotEmpty) {
+      return ChordTransposer.transposeText(chords, _semitones);
     }
     return widget.song.lyrics;
   }
 
+  /// Key being shown: the church's arrangement is the starting point, the
+  /// song's recorded key is the fallback.
   String get _currentKey {
-    return ChordTransposer.getKeyName(widget.song.originalKey, _semitones);
+    final base = _arrangement?.churchKey.isNotEmpty == true
+        ? _arrangement!.churchKey
+        : widget.song.originalKey;
+    return ChordTransposer.getKeyName(base, _semitones);
   }
+
+  bool get _hasChords => (_arrangement?.chords ?? '').isNotEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -289,17 +372,41 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                   spacing: 8,
                   runSpacing: 8,
                   children: [
-                    // Chords toggle
+                    // Chart: only offered once we know there is one. The
+                    // chart belongs to the church's arrangement and is
+                    // fetched when this screen opens.
+                    if (_loadingArrangement)
+                      const _ToggleChip(
+                        label: 'Carregando cifra...',
+                        icon: Icons.hourglass_empty_rounded,
+                        isActive: false,
+                      )
+                    else if (_hasChords)
+                      _ToggleChip(
+                        label: _showChords
+                            ? AppStrings.hideChords
+                            : AppStrings.showChords,
+                        icon: _showChords
+                            ? Icons.queue_music_rounded
+                            : Icons.music_note_rounded,
+                        isActive: _showChords,
+                        onTap: () =>
+                            setState(() => _showChords = !_showChords),
+                      )
+                    else
+                      const _ToggleChip(
+                        label: 'Sem cifra ainda',
+                        icon: Icons.music_off_rounded,
+                        isActive: false,
+                      ),
+                    // Personal notes, private to this musician.
                     _ToggleChip(
-                      label: _showChords
-                          ? AppStrings.hideChords
-                          : AppStrings.showChords,
-                      icon: _showChords
-                          ? Icons.queue_music_rounded
-                          : Icons.music_note_rounded,
-                      isActive: _showChords,
-                      onTap: () =>
-                          setState(() => _showChords = !_showChords),
+                      label: auth.getSongNotes(widget.song.id).isEmpty
+                          ? 'Minha anotação'
+                          : 'Minha anotação ✓',
+                      icon: Icons.sticky_note_2_outlined,
+                      isActive: auth.getSongNotes(widget.song.id).isNotEmpty,
+                      onTap: _editNotes,
                     ),
                     // Worship mode
                     _ToggleChip(
@@ -317,7 +424,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       isActive: isOffline,
                       onTap: _toggleOffline,
                     ),
-                    if (widget.song.youtubeUrl != null)
+                    if (widget.song.videoUrl != null)
                       _ToggleChip(
                         label: 'YouTube',
                         icon: Icons.play_circle_outline_rounded,
@@ -395,14 +502,17 @@ class _ToggleChip extends StatelessWidget {
   final String label;
   final IconData icon;
   final bool isActive;
-  final VoidCallback onTap;
+
+  /// Null for a chip that only states something (loading, no chart yet).
+  final VoidCallback? onTap;
+
   final Color? activeColor;
 
   const _ToggleChip({
     required this.label,
     required this.icon,
     required this.isActive,
-    required this.onTap,
+    this.onTap,
     this.activeColor,
   });
 

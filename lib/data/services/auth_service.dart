@@ -200,7 +200,6 @@ class AuthService {
         'instrument': user.instrument.name,
         'photoUrl': user.photoUrl,
         'favoriteSongs': user.favoriteSongs,
-        'savedTones': user.savedTones,
       });
       await LocalStorageService.saveSession(user);
       return true;
@@ -219,18 +218,6 @@ class AuthService {
     final updated = user.copyWith(favoriteSongs: favorites);
     await _db.collection(_collection).doc(user.id).update({
       'favoriteSongs': favorites,
-    });
-    await LocalStorageService.saveSession(updated);
-    return updated;
-  }
-
-  static Future<UserModel> saveSongTone(
-      UserModel user, String songId, int semitones) async {
-    final tones = Map<String, int>.from(user.savedTones);
-    tones[songId] = semitones;
-    final updated = user.copyWith(savedTones: tones);
-    await _db.collection(_collection).doc(user.id).update({
-      'savedTones': tones,
     });
     await LocalStorageService.saveSession(updated);
     return updated;

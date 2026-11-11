@@ -6,6 +6,7 @@ import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_text_field.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../data/models/song_model.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../../core/utils/chord_transposer.dart';
 
@@ -43,19 +44,31 @@ class _AddSongScreenState extends State<AddSongScreen> {
     final auth = context.read<AuthProvider>();
     final songs = context.read<SongsProvider>();
 
+    final link = _youtubeCtrl.text.trim();
     final song = FirestoreService.createSongModel(
       name: _nameCtrl.text.trim(),
       artist: _artistCtrl.text.trim(),
       lyrics: _lyricsCtrl.text.trim(),
-      chords: _chordsCtrl.text.trim(),
       originalKey: _selectedKey,
-      youtubeUrl: _youtubeCtrl.text.trim().isEmpty
-          ? null
-          : _youtubeCtrl.text.trim(),
+      links: link.isEmpty ? const [] : [SongLink(url: link)],
       addedBy: auth.user?.id,
     );
 
     final success = await songs.addSong(song);
+
+    // The chart is the church's arrangement, not part of the song itself, so
+    // it is saved as the song's first arrangement.
+    final chords = _chordsCtrl.text.trim();
+    if (success && chords.isNotEmpty) {
+      await FirestoreService.saveArrangement(
+        FirestoreService.createArrangementModel(
+          songId: song.id,
+          churchKey: _selectedKey,
+          chords: chords,
+          approvedBy: auth.user?.id,
+        ),
+      );
+    }
     if (mounted) {
       setState(() => _isSaving = false);
       if (success) {

@@ -524,7 +524,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       const SizedBox(width: 12),
                       _StatCard(
                         label: 'Tons Salvos',
-                        value: '${user.savedTones.length}',
+                        value: '${auth.songPrefs.length}',
                         icon: Icons.music_note_rounded,
                         color: AppColors.blue,
                       ),
@@ -607,7 +607,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 8),
 
                   // Saved tones
-                  if (user.savedTones.isNotEmpty) ...[
+                  if (auth.songPrefs.isNotEmpty) ...[
                     const SizedBox(height: 16),
                     Text(
                       AppStrings.savedTones,
@@ -621,7 +621,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    ...user.savedTones.entries.map((e) {
+                    ...auth.songPrefs.entries.map((e) {
                       final song = songs.getSongById(e.key);
                       if (song == null) return const SizedBox.shrink();
                       return Container(
@@ -658,7 +658,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
-                                '${song.originalKey} → ${e.value >= 0 ? '+${e.value}' : '${e.value}'}',
+                                '${song.originalKey} → '
+                                '${e.value.semitones >= 0 ? '+' : ''}'
+                                '${e.value.semitones}',
                                 style: const TextStyle(
                                   fontFamily: 'Poppins',
                                   fontSize: 11,

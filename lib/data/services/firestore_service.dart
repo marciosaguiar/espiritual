@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/song_model.dart';
+import '../models/arrangement_model.dart';
 import '../models/scale_model.dart';
 import '../models/message_model.dart';
 import '../../core/utils/crypto_utils.dart';
@@ -80,9 +81,8 @@ class FirestoreService {
     required String name,
     required String artist,
     required String lyrics,
-    required String chords,
     required String originalKey,
-    String? youtubeUrl,
+    List<SongLink> links = const [],
     String? addedBy,
   }) {
     return SongModel(
@@ -90,12 +90,145 @@ class FirestoreService {
       name: name,
       artist: artist,
       lyrics: lyrics,
-      chords: chords,
       originalKey: originalKey,
-      youtubeUrl: youtubeUrl,
+      links: links,
       addedBy: addedBy,
       createdAt: DateTime.now(),
     );
+  }
+
+  // ─── ARRANGEMENTS ─────────────────────────────────────────────────────────
+  // How this church plays a song. A subcollection of the song, so the chart is
+  // fetched only when somebody opens that song.
+
+  static CollectionReference<Map<String, dynamic>> _arrangementsOf(
+          String songId) =>
+      _db.collection(_songs).doc(songId).collection('arrangements');
+
+  static Future<List<ArrangementModel>> getArrangements(String songId) async {
+    try {
+      final snap = await _arrangementsOf(songId).get();
+      return snap.docs
+          .map((d) => ArrangementModel.fromFirestore(d.data()))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// The arrangement to show: the one asked for, else the first available.
+  static Future<ArrangementModel?> getArrangement(
+    String songId, {
+    String arrangementId = '',
+  }) async {
+    try {
+      if (arrangementId.isNotEmpty) {
+        final doc = await _arrangementsOf(songId).doc(arrangementId).get();
+        if (doc.exists) return ArrangementModel.fromFirestore(doc.data()!);
+      }
+      final snap = await _arrangementsOf(songId).limit(1).get();
+      if (snap.docs.isEmpty) return null;
+      return ArrangementModel.fromFirestore(snap.docs.first.data());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<({bool success, String? error, ArrangementModel? arrangement})>
+      saveArrangement(ArrangementModel arrangement) async {
+    try {
+      await _arrangementsOf(arrangement.songId)
+          .doc(arrangement.id)
+          .set(arrangement.toFirestore());
+      return (success: true, error: null, arrangement: arrangement);
+    } on FirebaseException catch (e) {
+      return (
+        success: false,
+        error: _describe(e, 'salvar o arranjo'),
+        arrangement: null
+      );
+    }
+  }
+
+  static ArrangementModel createArrangementModel({
+    required String songId,
+    required String churchKey,
+    String name = 'Padrão',
+    String chords = '',
+    int bpm = 0,
+    String notes = '',
+    String? approvedBy,
+  }) {
+    return ArrangementModel(
+      id: CryptoUtils.generateId(),
+      songId: songId,
+      name: name,
+      churchKey: churchKey,
+      chords: chords,
+      bpm: bpm,
+      notes: notes,
+      approvedBy: approvedBy,
+      updatedAt: DateTime.now(),
+    );
+  }
+
+  // ─── PERSONAL PREFERENCES ─────────────────────────────────────────────────
+  // users/{userId}/songPrefs/{songId} — private to each musician.
+
+  static CollectionReference<Map<String, dynamic>> _prefsOf(String userId) =>
+      _db.collection('users').doc(userId).collection('songPrefs');
+
+  static Future<SongPrefModel?> getSongPref(String userId, String songId) async {
+    try {
+      final doc = await _prefsOf(userId).doc(songId).get();
+      if (!doc.exists) return null;
+      return SongPrefModel.fromFirestore(doc.data()!);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<Map<String, SongPrefModel>> getAllSongPrefs(
+      String userId) async {
+    try {
+      final snap = await _prefsOf(userId).get();
+      return {
+        for (final d in snap.docs)
+          d.id: SongPrefModel.fromFirestore(d.data()),
+      };
+    } catch (_) {
+      return {};
+    }
+  }
+
+  static Future<({bool success, String? error})> saveSongPref(
+    String userId,
+    SongPrefModel pref,
+  ) async {
+    try {
+      if (pref.isEmpty) {
+        await _prefsOf(userId).doc(pref.songId).delete();
+      } else {
+        await _prefsOf(userId).doc(pref.songId).set(pref.toFirestore());
+      }
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: _describe(e, 'salvar sua preferência'));
+    }
+  }
+
+  /// Turns a Firebase failure into a sentence a person can act on.
+  static String _describe(FirebaseException e, String acao) {
+    switch (e.code) {
+      case 'permission-denied':
+        return 'Você não tem permissão para $acao.';
+      case 'unavailable':
+        return 'Sem conexão. Não foi possível $acao.';
+      case 'not-found':
+        return 'O item não existe mais.';
+      default:
+        return 'Não foi possível $acao: ${e.message ?? e.code}';
+    }
   }
 
   // ─── SCALES ───────────────────────────────────────────────────────────────

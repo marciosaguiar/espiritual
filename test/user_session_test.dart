@@ -14,7 +14,6 @@ void main() {
     role: UserRole.admin,
     instrument: UserInstrument.keyboard,
     favoriteSongs: const ['s1', 's2'],
-    savedTones: const {'s1': 2},
     createdAt: DateTime(2026, 3, 14, 9, 30),
   );
 
@@ -40,7 +39,6 @@ void main() {
       expect(restored.role, UserRole.admin);
       expect(restored.instrument, UserInstrument.keyboard);
       expect(restored.favoriteSongs, ['s1', 's2']);
-      expect(restored.savedTones, {'s1': 2});
       expect(restored.createdAt, user.createdAt);
       expect(restored.isAdmin, isTrue);
     });

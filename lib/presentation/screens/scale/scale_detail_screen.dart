@@ -152,14 +152,10 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
     );
 
     if (selected != null && mounted) {
-      final scaleSongs = selected
-          .map((s) => ScaleSong(
-                songId: s.id,
-                songName: s.name,
-                artist: s.artist,
-                key: s.originalKey,
-              ))
-          .toList();
+      // Only the reference is stored: the name, the artist and the key are
+      // looked up from the song itself when the screen draws, so correcting a
+      // song also corrects every service that uses it.
+      final scaleSongs = selected.map((s) => ScaleSong(songId: s.id)).toList();
       final updated = _scale.copyWith(songs: scaleSongs);
       final scaleProvider = context.read<ScaleProvider>();
       final success = await scaleProvider.updateScale(updated);
@@ -671,6 +667,9 @@ class _SongRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    // The service stores only the id; what to show comes from the repertoire.
+    final songs = context.watch<SongsProvider>();
+    final missing = !songs.exists(song);
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -708,16 +707,21 @@ class _SongRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  song.songName,
+                  songs.nameOf(song),
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                    fontStyle: missing ? FontStyle.italic : FontStyle.normal,
+                    color: missing
+                        ? AppColors.textSecondaryLight
+                        : (isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight),
                   ),
                 ),
                 Text(
-                  song.artist,
+                  songs.artistOf(song),
                   style: const TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 11,
@@ -734,7 +738,7 @@ class _SongRow extends StatelessWidget {
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
-              song.key,
+              songs.keyOf(song),
               style: const TextStyle(
                 fontFamily: 'Poppins',
                 fontSize: 11,

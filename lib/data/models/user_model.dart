@@ -79,7 +79,6 @@ class UserModel {
   final UserInstrument instrument;
   final String? photoUrl;
   final List<String> favoriteSongs;
-  final Map<String, int> savedTones; // songId -> semitones offset
   final DateTime createdAt;
 
   const UserModel({
@@ -90,7 +89,6 @@ class UserModel {
     this.instrument = UserInstrument.other,
     this.photoUrl,
     this.favoriteSongs = const [],
-    this.savedTones = const {},
     required this.createdAt,
   });
 
@@ -104,7 +102,6 @@ class UserModel {
     UserInstrument? instrument,
     String? photoUrl,
     List<String>? favoriteSongs,
-    Map<String, int>? savedTones,
     DateTime? createdAt,
   }) {
     return UserModel(
@@ -115,7 +112,6 @@ class UserModel {
       instrument: instrument ?? this.instrument,
       photoUrl: photoUrl ?? this.photoUrl,
       favoriteSongs: favoriteSongs ?? this.favoriteSongs,
-      savedTones: savedTones ?? this.savedTones,
       createdAt: createdAt ?? this.createdAt,
     );
   }
@@ -175,7 +171,6 @@ class UserModel {
       'instrument': instrument.name,
       'photoUrl': photoUrl,
       'favoriteSongs': favoriteSongs,
-      'savedTones': savedTones,
       'createdAt': Timestamp.fromDate(createdAt),
     };
   }
@@ -189,7 +184,6 @@ class UserModel {
       instrument: UserInstrumentExtension.fromString(data['instrument'] as String? ?? 'other'),
       photoUrl: data['photoUrl'] as String?,
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? []),
-      savedTones: Map<String, int>.from(data['savedTones'] ?? {}),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
@@ -206,7 +200,6 @@ class UserModel {
       'instrument': instrument.name,
       'photoUrl': photoUrl,
       'favoriteSongs': favoriteSongs,
-      'savedTones': savedTones,
       'createdAt': createdAt.toIso8601String(),
     };
   }
@@ -220,7 +213,6 @@ class UserModel {
           UserInstrumentExtension.fromString(data['instrument'] as String? ?? 'other'),
       photoUrl: data['photoUrl'] as String?,
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? const []),
-      savedTones: Map<String, int>.from(data['savedTones'] ?? const {}),
       createdAt:
           DateTime.tryParse(data['createdAt'] as String? ?? '') ?? DateTime.now(),
     );

@@ -323,7 +323,7 @@ class _NextServiceCard extends StatelessWidget {
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text(
-                            '${s.songName} • ${s.artist}',
+                            _songLabel(context, s),
                             style: TextStyle(
                               fontFamily: 'Poppins',
                               fontSize: 12,
@@ -656,4 +656,13 @@ class _SuggestionSection extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Label for a song referenced by a service: "Nome • Artista", with the artist
+/// dropped when unknown. Read from the repertoire, never from a stored copy.
+String _songLabel(BuildContext context, ScaleSong ref) {
+  final songs = context.read<SongsProvider>();
+  final artist = songs.artistOf(ref);
+  final name = songs.nameOf(ref);
+  return artist.isEmpty ? name : '$name • $artist';
 }

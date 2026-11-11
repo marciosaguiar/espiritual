@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import '../../data/models/scale_model.dart';
 import '../../data/models/song_model.dart';
 import '../../data/services/firestore_service.dart';
 import '../../data/services/local_storage_service.dart';
@@ -165,6 +166,26 @@ class SongsProvider extends ChangeNotifier {
 
   /// Repertoire suggestion. Seeded by the current day so the list stays
   /// stable across rebuilds (it no longer reshuffles on every frame).
+  // ─── Resolving service references ─────────────────────────────────────────
+  // A service stores only ids, so these turn a reference into what to show.
+  // Correcting a song now corrects every service that uses it.
+
+  /// Name to show for a referenced song.
+  String nameOf(ScaleSong ref) =>
+      getSongById(ref.songId)?.name ?? 'Música removida';
+
+  /// Artist to show, empty when unknown.
+  String artistOf(ScaleSong ref) => getSongById(ref.songId)?.artist ?? '';
+
+  /// Key to show: the service's own key when it sets one, else the song's.
+  String keyOf(ScaleSong ref) {
+    if (ref.keyOverride.isNotEmpty) return ref.keyOverride;
+    return getSongById(ref.songId)?.originalKey ?? '?';
+  }
+
+  /// Whether the referenced song still exists in the repertoire.
+  bool exists(ScaleSong ref) => getSongById(ref.songId) != null;
+
   List<SongModel> suggestRepertoire({int count = 6}) {
     if (_songs.isEmpty) return const [];
     final now = DateTime.now();

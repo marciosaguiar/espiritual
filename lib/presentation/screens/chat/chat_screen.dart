@@ -229,12 +229,7 @@ class _ChatScreenState extends State<ChatScreen> {
                         Navigator.pop(ctx);
                         final scaleP = context.read<ScaleProvider>();
                         final songs = scale.songs.toList();
-                        songs.add(ScaleSong(
-                          songId: song.id,
-                          songName: song.name,
-                          artist: song.artist,
-                          key: song.originalKey,
-                        ));
+                        songs.add(ScaleSong(songId: song.id));
                         final updated = scale.copyWith(songs: songs);
                         await scaleP.updateScale(updated);
                         if (mounted) {

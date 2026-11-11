@@ -1,33 +1,50 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
+/// A song in a service, stored as a *reference*.
+///
+/// It used to copy the name, the artist and the key into the service document.
+/// That froze them: renaming a song left every service already built showing
+/// the old name, with no way to tell why. Now only ids are stored and the
+/// screens look the current values up.
 class ScaleSong {
   final String songId;
-  final String songName;
-  final String artist;
-  final String key;
+
+  /// Which arrangement to play. Empty means "whatever is the default".
+  final String arrangementId;
+
+  /// Key just for this service, when it differs from the arrangement's.
+  /// Empty means "use the arrangement's key".
+  final String keyOverride;
 
   const ScaleSong({
     required this.songId,
-    required this.songName,
-    required this.artist,
-    required this.key,
+    this.arrangementId = '',
+    this.keyOverride = '',
   });
 
   Map<String, dynamic> toMap() {
     return {
       'songId': songId,
-      'songName': songName,
-      'artist': artist,
-      'key': key,
+      'arrangementId': arrangementId,
+      'keyOverride': keyOverride,
     };
   }
 
   factory ScaleSong.fromMap(Map<String, dynamic> data) {
     return ScaleSong(
       songId: data['songId'] as String,
-      songName: data['songName'] as String,
-      artist: data['artist'] as String? ?? '',
-      key: data['key'] as String? ?? 'C',
+      arrangementId: data['arrangementId'] as String? ?? '',
+      // Services written before this change carried `key` with a copied value.
+      keyOverride:
+          data['keyOverride'] as String? ?? data['key'] as String? ?? '',
+    );
+  }
+
+  ScaleSong copyWith({String? arrangementId, String? keyOverride}) {
+    return ScaleSong(
+      songId: songId,
+      arrangementId: arrangementId ?? this.arrangementId,
+      keyOverride: keyOverride ?? this.keyOverride,
     );
   }
 }
