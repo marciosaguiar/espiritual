@@ -98,21 +98,6 @@ class ScaleProvider extends ChangeNotifier {
     return success;
   }
 
-  Future<bool> updateScale(ScaleModel scale) async {
-    final success = await FirestoreService.updateScale(scale);
-    if (success) {
-      final idx = _scales.indexWhere((s) => s.id == scale.id);
-      if (idx >= 0) {
-        _scales[idx] = scale;
-        notifyListeners();
-      }
-      if (_selectedScale?.id == scale.id) {
-        _selectedScale = scale;
-      }
-    }
-    return success;
-  }
-
   Future<bool> deleteScale(String scaleId) async {
     final success = await FirestoreService.deleteScale(scaleId);
     if (success) {
@@ -125,28 +110,90 @@ class ScaleProvider extends ChangeNotifier {
     return success;
   }
 
-  Future<bool> confirmPresence(
+  /// Confirms presence. Returns null on success, or the message to show.
+  Future<String?> confirmPresence(
       String scaleId, String userId, bool confirmed) async {
-    final success =
+    final result =
         await FirestoreService.confirmPresence(scaleId, userId, confirmed);
-    if (success) {
-      final idx = _scales.indexWhere((s) => s.id == scaleId);
-      if (idx >= 0) {
-        final scale = _scales[idx];
-        final levitas = scale.levitas.map((l) {
-          if (l.userId == userId) {
-            return l.copyWith(confirmed: confirmed);
-          }
-          return l;
-        }).toList();
-        _scales[idx] = scale.copyWith(levitas: levitas);
-        if (_selectedScale?.id == scaleId) {
-          _selectedScale = _scales[idx];
-        }
-        notifyListeners();
-      }
-    }
-    return success;
+    if (!result.success) return result.error;
+    _applyLocally(scaleId, (scale) {
+      final levitas = scale.levitas
+          .map((l) => l.userId == userId ? l.copyWith(confirmed: confirmed) : l)
+          .toList();
+      return scale.copyWith(levitas: levitas);
+    });
+    return null;
+  }
+
+  /// Replaces the service's repertoire. Null on success, else the message.
+  Future<String?> setSongs(String scaleId, List<ScaleSong> songs) async {
+    final result = await FirestoreService.setScaleSongs(scaleId, songs);
+    if (!result.success) return result.error;
+    _applyLocally(scaleId, (scale) => scale.copyWith(songs: songs));
+    return null;
+  }
+
+  /// Adds one song to the end of the service's repertoire.
+  Future<String?> addSong(String scaleId, ScaleSong song) async {
+    final result = await FirestoreService.addSongToScale(scaleId, song);
+    if (!result.success) return result.error;
+    _applyLocally(scaleId, (scale) {
+      if (scale.songs.any((s) => s.songId == song.songId)) return scale;
+      return scale.copyWith(songs: [...scale.songs, song]);
+    });
+    return null;
+  }
+
+  /// Replaces who is scheduled, keeping the answers already given.
+  Future<String?> setLevitas(
+      String scaleId, List<ScaleLevita> levitas) async {
+    final result = await FirestoreService.setScaleLevitas(scaleId, levitas);
+    if (!result.success) return result.error;
+    _applyLocally(scaleId, (scale) {
+      final previous = {for (final l in scale.levitas) l.userId: l.confirmed};
+      return scale.copyWith(
+        levitas: levitas
+            .map((l) =>
+                l.copyWith(confirmed: previous[l.userId] ?? l.confirmed))
+            .toList(),
+      );
+    });
+    return null;
+  }
+
+  /// Changes the service's own fields, without touching the lists.
+  Future<String?> updateDetails(
+    String scaleId, {
+    DateTime? date,
+    String? serviceType,
+    String? observations,
+  }) async {
+    final result = await FirestoreService.updateScaleDetails(
+      scaleId,
+      date: date,
+      serviceType: serviceType,
+      observations: observations,
+    );
+    if (!result.success) return result.error;
+    _applyLocally(
+      scaleId,
+      (scale) => scale.copyWith(
+        date: date,
+        serviceType: serviceType,
+        observations: observations,
+      ),
+    );
+    return null;
+  }
+
+  /// Mirrors a confirmed change in the list already on screen, so the user
+  /// does not wait for the realtime listener to come back.
+  void _applyLocally(String scaleId, ScaleModel Function(ScaleModel) change) {
+    final idx = _scales.indexWhere((s) => s.id == scaleId);
+    if (idx < 0) return;
+    _scales[idx] = change(_scales[idx]);
+    if (_selectedScale?.id == scaleId) _selectedScale = _scales[idx];
+    notifyListeners();
   }
 
   /// Check if a day has a service scheduled

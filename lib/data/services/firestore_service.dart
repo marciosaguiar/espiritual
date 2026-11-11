@@ -303,28 +303,157 @@ class FirestoreService {
     }
   }
 
-  static Future<bool> confirmPresence(
-      String scaleId, String userId, bool confirmed) async {
+  /// Confirms or cancels one person's presence, inside a transaction.
+  ///
+  /// This used to read the whole `levitas` list, change one entry and write
+  /// the list back. Between the read and the write anybody else's confirmation
+  /// was lost — on a Sunday morning, with several people confirming at once,
+  /// which is exactly when the screen is used. The transaction re-reads inside
+  /// the write and Firestore retries it if the document changed meanwhile, so
+  /// only this person's entry moves.
+  static Future<({bool success, String? error})> confirmPresence(
+    String scaleId,
+    String userId,
+    bool confirmed,
+  ) async {
+    final ref = _db.collection(_scales).doc(scaleId);
     try {
-      final scale = await _db.collection(_scales).doc(scaleId).get();
-      if (!scale.exists) return false;
-
-      final data = scale.data()!;
-      final levitas = (data['levitas'] as List<dynamic>).map((l) {
-        final levita = Map<String, dynamic>.from(l as Map);
-        if (levita['userId'] == userId) {
-          levita['confirmed'] = confirmed;
+      await _db.runTransaction((tx) async {
+        final snap = await tx.get(ref);
+        if (!snap.exists) {
+          throw FirebaseException(
+            plugin: 'levitasync',
+            code: 'not-found',
+            message: 'culto não encontrado',
+          );
         }
-        return levita;
-      }).toList();
 
-      await _db
-          .collection(_scales)
-          .doc(scaleId)
-          .update({'levitas': levitas});
-      return true;
-    } catch (_) {
-      return false;
+        final scale = ScaleModel.fromFirestore(snap.data()!);
+        if (!scale.isUserInScale(userId)) {
+          throw FirebaseException(
+            plugin: 'levitasync',
+            code: 'not-scheduled',
+            message: 'você não está nesta escala',
+          );
+        }
+
+        final levitas = scale.levitas
+            .map((l) => l.userId == userId
+                ? l.copyWith(confirmed: confirmed)
+                : l)
+            .map((l) => l.toMap())
+            .toList();
+
+        // Only this field is written, so nothing else in the service is
+        // touched, and the security rules allow it for a levita.
+        tx.update(ref, {'levitas': levitas});
+      });
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      if (e.code == 'not-scheduled') {
+        return (success: false, error: 'Você não está escalado neste culto.');
+      }
+      return (success: false, error: _describe(e, 'confirmar sua presença'));
+    }
+  }
+
+  /// Replaces the song list of a service, inside a transaction.
+  ///
+  /// Writes only `songs`, so a leader rearranging the repertoire no longer
+  /// overwrites confirmations somebody is giving at the same moment.
+  static Future<({bool success, String? error})> setScaleSongs(
+    String scaleId,
+    List<ScaleSong> songs,
+  ) async {
+    return _updateScaleField(
+      scaleId,
+      'o repertório do culto',
+      (_) => {'songs': songs.map((s) => s.toMap()).toList()},
+    );
+  }
+
+  /// Adds one song to the end of a service's list, inside a transaction.
+  ///
+  /// Used by the chat's "add to the service". Reading the list inside the
+  /// transaction is what makes two leaders adding at the same time end up with
+  /// both songs instead of one.
+  static Future<({bool success, String? error})> addSongToScale(
+    String scaleId,
+    ScaleSong song,
+  ) async {
+    return _updateScaleField(scaleId, 'adicionar a música ao culto', (scale) {
+      if (scale.songs.any((s) => s.songId == song.songId)) {
+        // Already there: nothing to write.
+        return null;
+      }
+      final songs = [...scale.songs, song];
+      return {'songs': songs.map((s) => s.toMap()).toList()};
+    });
+  }
+
+  /// Replaces who is scheduled, inside a transaction.
+  ///
+  /// Confirmations already given are kept: somebody who stays on the list
+  /// keeps their answer instead of being reset to "not confirmed".
+  static Future<({bool success, String? error})> setScaleLevitas(
+    String scaleId,
+    List<ScaleLevita> levitas,
+  ) async {
+    return _updateScaleField(scaleId, 'a escala de levitas', (scale) {
+      final previous = {for (final l in scale.levitas) l.userId: l.confirmed};
+      final merged = levitas
+          .map((l) => l.copyWith(confirmed: previous[l.userId] ?? l.confirmed))
+          .map((l) => l.toMap())
+          .toList();
+      return {'levitas': merged};
+    });
+  }
+
+  /// Changes the service's own fields (date, type, notes), inside a
+  /// transaction, without touching the song or levita lists.
+  static Future<({bool success, String? error})> updateScaleDetails(
+    String scaleId, {
+    DateTime? date,
+    String? serviceType,
+    String? observations,
+  }) async {
+    return _updateScaleField(scaleId, 'os dados do culto', (_) {
+      final data = <String, dynamic>{};
+      if (date != null) data['date'] = Timestamp.fromDate(date);
+      if (serviceType != null) data['serviceType'] = serviceType;
+      if (observations != null) data['observations'] = observations;
+      return data.isEmpty ? null : data;
+    });
+  }
+
+  /// Shared shape of every change above: read the service inside the
+  /// transaction, work out the fields to write from what is actually stored,
+  /// and write only those.
+  ///
+  /// [build] returning null means "nothing to do".
+  static Future<({bool success, String? error})> _updateScaleField(
+    String scaleId,
+    String acao,
+    Map<String, dynamic>? Function(ScaleModel current) build,
+  ) async {
+    final ref = _db.collection(_scales).doc(scaleId);
+    try {
+      await _db.runTransaction((tx) async {
+        final snap = await tx.get(ref);
+        if (!snap.exists) {
+          throw FirebaseException(
+            plugin: 'levitasync',
+            code: 'not-found',
+            message: 'culto não encontrado',
+          );
+        }
+        final data = build(ScaleModel.fromFirestore(snap.data()!));
+        if (data == null || data.isEmpty) return;
+        tx.update(ref, data);
+      });
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: _describe(e, acao));
     }
   }
 

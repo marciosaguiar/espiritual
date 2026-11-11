@@ -38,43 +38,50 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
   }
 
   Future<void> _confirmPresence(AuthProvider auth) async {
-    if (auth.user == null) return;
-    final isConfirmed = _scale.hasUserConfirmed(auth.user!.id);
-    final scale = context.read<ScaleProvider>();
+    final user = auth.user;
+    if (user == null) return;
 
-    final success = await scale.confirmPresence(
-      _scale.id,
-      auth.user!.id,
-      !isConfirmed,
-    );
+    final isConfirmed = _scale.hasUserConfirmed(user.id);
+    final provider = context.read<ScaleProvider>();
 
-    if (success && mounted) {
-      final updated = scale.scales.firstWhere((s) => s.id == _scale.id,
-          orElse: () => _scale);
+    final error =
+        await provider.confirmPresence(_scale.id, user.id, !isConfirmed);
+    if (!mounted) return;
+
+    if (error == null) {
+      final updated = provider.scales
+          .firstWhere((s) => s.id == _scale.id, orElse: () => _scale);
       setState(() => _scale = updated);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(!isConfirmed
-              ? 'Presença confirmada!'
-              : 'Presença cancelada'),
-          backgroundColor:
-              !isConfirmed ? AppColors.success : AppColors.textSecondaryLight,
-        ),
-      );
     }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error ??
+            (!isConfirmed ? 'Presença confirmada!' : 'Presença cancelada')),
+        backgroundColor: error == null ? AppColors.success : AppColors.red,
+      ),
+    );
   }
 
   Future<void> _saveObservations() async {
     setState(() => _isSaving = true);
-    final scale = context.read<ScaleProvider>();
-    final updated = _scale.copyWith(observations: _observationsCtrl.text);
-    final success = await scale.updateScale(updated);
-    if (mounted) {
-      setState(() {
-        _isSaving = false;
-        if (success) _scale = updated;
-      });
-    }
+    final texto = _observationsCtrl.text;
+    final error = await context
+        .read<ScaleProvider>()
+        .updateDetails(_scale.id, observations: texto);
+
+    if (!mounted) return;
+    setState(() {
+      _isSaving = false;
+      if (error == null) _scale = _scale.copyWith(observations: texto);
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error ?? 'Observações salvas.'),
+        backgroundColor: error == null ? AppColors.success : AppColors.red,
+      ),
+    );
   }
 
   Future<void> _showAddSongDialog() async {
@@ -156,11 +163,17 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
       // looked up from the song itself when the screen draws, so correcting a
       // song also corrects every service that uses it.
       final scaleSongs = selected.map((s) => ScaleSong(songId: s.id)).toList();
-      final updated = _scale.copyWith(songs: scaleSongs);
-      final scaleProvider = context.read<ScaleProvider>();
-      final success = await scaleProvider.updateScale(updated);
-      if (success) {
-        setState(() => _scale = updated);
+      final error = await context
+          .read<ScaleProvider>()
+          .setSongs(_scale.id, scaleSongs);
+
+      if (!mounted) return;
+      if (error == null) {
+        setState(() => _scale = _scale.copyWith(songs: scaleSongs));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: AppColors.red),
+        );
       }
     }
   }
@@ -263,11 +276,18 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
         );
       }).toList();
 
-      final updated = _scale.copyWith(levitas: levitas);
-      final scaleProvider = context.read<ScaleProvider>();
-      final success = await scaleProvider.updateScale(updated);
-      if (success) {
-        setState(() => _scale = updated);
+      final provider = context.read<ScaleProvider>();
+      final error = await provider.setLevitas(_scale.id, levitas);
+
+      if (!mounted) return;
+      if (error == null) {
+        // As confirmações já dadas são preservadas pelo provider.
+        setState(() => _scale = provider.scales
+            .firstWhere((s) => s.id == _scale.id, orElse: () => _scale));
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(error), backgroundColor: AppColors.red),
+        );
       }
     }
   }

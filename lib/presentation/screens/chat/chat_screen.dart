@@ -228,16 +228,21 @@ class _ChatScreenState extends State<ChatScreen> {
                       onTap: () async {
                         Navigator.pop(ctx);
                         final scaleP = context.read<ScaleProvider>();
-                        final songs = scale.songs.toList();
-                        songs.add(ScaleSong(songId: song.id));
-                        final updated = scale.copyWith(songs: songs);
-                        await scaleP.updateScale(updated);
+                        // Acrescenta dentro de uma transação: dois líderes
+                        // adicionando ao mesmo tempo acabam com as duas
+                        // músicas, não com uma só.
+                        final error = await scaleP.addSong(
+                          scale.id,
+                          ScaleSong(songId: song.id),
+                        );
                         if (mounted) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
-                              content: Text(
+                              content: Text(error ??
                                   '${song.name} adicionada ao culto!'),
-                              backgroundColor: AppColors.success,
+                              backgroundColor: error == null
+                                  ? AppColors.success
+                                  : AppColors.red,
                             ),
                           );
                         }
