@@ -5,7 +5,6 @@ import '../../providers/songs_provider.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_text_field.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/app_strings.dart';
 import '../../../data/models/song_model.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../../core/utils/chord_transposer.dart';

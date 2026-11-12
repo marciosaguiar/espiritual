@@ -9,7 +9,6 @@ import '../../../data/models/scale_model.dart';
 import '../../../data/models/song_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/auth_service.dart';
-import '../songs/song_detail_screen.dart';
 
 class ScaleDetailScreen extends StatefulWidget {
   final ScaleModel scale;

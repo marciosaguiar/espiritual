@@ -18,8 +18,6 @@ class _Wa {
   // Frosted, translucent header surfaces.
   static const headerLight = Color(0x9EFFFFFF); // white ~62%
   static const headerDark = Color(0x8C141019); // dark  ~55%
-  static const bgLight = Color(0x00000000);
-  static const bgDark = Color(0x00000000);
   // Glass bubbles.
   static const inBubbleLight = Color(0xCCFFFFFF); // white 80%
   static const inBubbleDark = Color(0x1FFFFFFF); // white 12%
@@ -505,8 +503,10 @@ class _ChatScreenState extends State<ChatScreen> {
 
         final showDate =
             prev == null || !_isSameDay(prev.timestamp, msg.timestamp);
+        // A ordem importa: checar prev antes deixa o analisador saber que
+        // prev não é nulo no resto da expressão.
         final isFirstOfGroup =
-            showDate || prev == null || prev.userId != msg.userId;
+            prev == null || showDate || prev.userId != msg.userId;
         final isLastOfGroup = next == null ||
             next.userId != msg.userId ||
             !_isSameDay(msg.timestamp, next.timestamp);

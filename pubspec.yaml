@@ -10,51 +10,28 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Firebase
+  # Firebase: conta, banco de dados
   firebase_core: ^2.24.0
-  cloud_firestore: ^4.14.0
   firebase_auth: ^4.17.0
+  cloud_firestore: ^4.14.0
 
-  # State management
+  # Estado
   provider: ^6.1.1
 
-  # Local storage
+  # Guarda no aparelho: sessão, tema, músicas offline
   shared_preferences: ^2.2.2
-  hive: ^2.2.3
-  hive_flutter: ^1.1.0
 
-  # Security
-  crypto: ^3.0.3
-
-  # UI
+  # Interface
   table_calendar: ^3.0.9
-  cached_network_image: ^3.3.1
-  shimmer: ^3.0.0
-  flutter_slidable: ^3.0.1
-  image_picker: ^1.0.7
-  flutter_svg: ^2.0.9
 
-  # Utils
+  # Utilidades
   url_launcher: ^6.2.2
-  connectivity_plus: ^5.0.2
   intl: ^0.18.1
-  path_provider: ^2.1.2
-
-  # Notifications
-  flutter_local_notifications: ^16.3.0
-
-  # PDF
-  pdf: ^3.10.7
-  printing: ^5.12.0
-
-  cupertino_icons: ^1.0.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^3.0.0
-  hive_generator: ^2.0.1
-  build_runner: ^2.4.7
 
 flutter:
   uses-material-design: true
