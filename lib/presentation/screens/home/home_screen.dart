@@ -9,6 +9,7 @@ import '../../providers/songs_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/scale_model.dart';
+import '../scale/scale_detail_screen.dart';
 import '../songs/song_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -122,12 +123,28 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Primeira coisa da tela: a pergunta que o ministério mais
+                  // faz. O modelo já sabia responder (isUserInScale,
+                  // hasUserConfirmed) e nada chamava esses métodos.
+                  _MyNextCallCard(scale: nextScale),
+
                   // Verse of the Day Card
                   _VerseCard(verse: AppStrings.verses[_verseIndex]),
                   const SizedBox(height: 20),
 
                   // Next Service Card
-                  _NextServiceCard(scale: nextScale, songs: songs),
+                  GestureDetector(
+                    onTap: nextScale == null
+                        ? null
+                        : () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) =>
+                                    ScaleDetailScreen(scale: nextScale),
+                              ),
+                            ),
+                    child: _NextServiceCard(scale: nextScale, songs: songs),
+                  ),
                   const SizedBox(height: 20),
 
                   // Quick Actions
@@ -292,7 +309,8 @@ class _NextServiceCard extends StatelessWidget {
             // Date
             _InfoRow(
               icon: Icons.calendar_today_rounded,
-              text: DateFormat('EEEE, d \'de\' MMMM', 'pt_BR').format(scale!.date),
+              text: DateFormat("EEEE, d 'de' MMMM', às' HH:mm", 'pt_BR')
+                  .format(scale!.date),
               color: AppColors.blue,
             ),
             const SizedBox(height: 8),
@@ -665,4 +683,190 @@ String _songLabel(BuildContext context, ScaleSong ref) {
   final artist = songs.artistOf(ref);
   final name = songs.nameOf(ref);
   return artist.isEmpty ? name : '$name • $artist';
+}
+
+/// "Você toca domingo às 9h" — the first thing on the screen when this person
+/// is scheduled, with the confirm button right there.
+///
+/// The information existed: [ScaleModel.isUserInScale] and
+/// [ScaleModel.hasUserConfirmed] were written and never called from this
+/// screen, so somebody only found out they were scheduled by opening the
+/// Escala tab and guessing the day. Nothing is shown when they are not
+/// scheduled: an empty promise would be worse than silence.
+class _MyNextCallCard extends StatefulWidget {
+  final ScaleModel? scale;
+  const _MyNextCallCard({this.scale});
+
+  @override
+  State<_MyNextCallCard> createState() => _MyNextCallCardState();
+}
+
+class _MyNextCallCardState extends State<_MyNextCallCard> {
+  bool _saving = false;
+
+  Future<void> _confirm(String userId, bool confirmed) async {
+    setState(() => _saving = true);
+    final error = await context
+        .read<ScaleProvider>()
+        .confirmPresence(widget.scale!.id, userId, confirmed);
+
+    if (!mounted) return;
+    setState(() => _saving = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error ??
+            (confirmed ? 'Presença confirmada!' : 'Presença cancelada')),
+        backgroundColor: error == null ? AppColors.success : AppColors.red,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scale = widget.scale;
+    final user = context.watch<AuthProvider>().user;
+    if (scale == null || user == null || !scale.isUserInScale(user.id)) {
+      return const SizedBox.shrink();
+    }
+
+    // Reads from the live list so the card follows a confirmation given on the
+    // service screen.
+    final live = context.select<ScaleProvider, ScaleModel?>((p) {
+      for (final s in p.scales) {
+        if (s.id == scale.id) return s;
+      }
+      return null;
+    }) ?? scale;
+
+    final confirmed = live.hasUserConfirmed(user.id);
+    final quando =
+        DateFormat("EEEE', às' HH:mm", 'pt_BR').format(live.date);
+    final faltam = _faltam(live.date);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: confirmed
+                ? [const Color(0xFF13694F), const Color(0xFF1B8A68)]
+                : [const Color(0xFF8E0000), const Color(0xFFB3261E)],
+          ),
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  confirmed
+                      ? Icons.check_circle_rounded
+                      : Icons.campaign_rounded,
+                  color: Colors.white,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Você toca $quando',
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '${live.serviceType}$faltam',
+              style: const TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 12.5,
+                color: Colors.white70,
+              ),
+            ),
+            const SizedBox(height: 14),
+            if (_saving)
+              const SizedBox(
+                height: 36,
+                child: Center(
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: Colors.white),
+                  ),
+                ),
+              )
+            else if (confirmed)
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Presença confirmada. Obrigado!',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => _confirm(user.id, false),
+                    child: const Text(
+                      'Não vou poder',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 12,
+                        color: Colors.white70,
+                        decoration: TextDecoration.underline,
+                        decorationColor: Colors.white70,
+                      ),
+                    ),
+                  ),
+                ],
+              )
+            else
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () => _confirm(user.id, true),
+                  icon: const Icon(Icons.check_rounded, size: 18),
+                  label: const Text(
+                    'Confirmar presença',
+                    style: TextStyle(
+                        fontFamily: 'Poppins', fontWeight: FontWeight.w600),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: const Color(0xFF8E0000),
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// " · é hoje", " · amanhã", " · em 3 dias".
+  String _faltam(DateTime quando) {
+    final hoje = DateTime.now();
+    final dias = DateTime(quando.year, quando.month, quando.day)
+        .difference(DateTime(hoje.year, hoje.month, hoje.day))
+        .inDays;
+    if (dias < 0) return '';
+    if (dias == 0) return ' · é hoje';
+    if (dias == 1) return ' · amanhã';
+    return ' · em $dias dias';
+  }
 }

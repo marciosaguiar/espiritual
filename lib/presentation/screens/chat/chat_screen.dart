@@ -232,7 +232,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             fontFamily: 'Poppins', fontSize: 13),
                       ),
                       subtitle: Text(
-                        DateFormat('dd/MM/yyyy').format(scale.date),
+                        DateFormat("dd/MM 'às' HH:mm").format(scale.date),
                         style: const TextStyle(fontFamily: 'Poppins', fontSize: 11),
                       ),
                       leading: const Icon(Icons.church_rounded,

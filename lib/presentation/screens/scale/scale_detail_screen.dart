@@ -63,6 +63,40 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
     );
   }
 
+  /// Leader fixes the service's date and time.
+  Future<void> _editDateTime() async {
+    final data = await showDatePicker(
+      context: context,
+      initialDate: _scale.date,
+      firstDate: DateTime(2024),
+      lastDate: DateTime(2030),
+      helpText: 'Data do culto',
+    );
+    if (data == null || !mounted) return;
+
+    final hora = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_scale.date),
+      helpText: 'A que horas começa?',
+    );
+    if (hora == null || !mounted) return;
+
+    final novo =
+        DateTime(data.year, data.month, data.day, hora.hour, hora.minute);
+    final error =
+        await context.read<ScaleProvider>().updateDetails(_scale.id, date: novo);
+
+    if (!mounted) return;
+    if (error == null) setState(() => _scale = _scale.copyWith(date: novo));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error ?? 'Culto remarcado.'),
+        backgroundColor: error == null ? AppColors.success : AppColors.red,
+      ),
+    );
+  }
+
   Future<void> _saveObservations() async {
     setState(() => _isSaving = true);
     final texto = _observationsCtrl.text;
@@ -304,7 +338,7 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(
-          '${_scale.serviceType} - ${DateFormat('dd/MM', 'pt_BR').format(_scale.date)}',
+          '${_scale.serviceType} - ${DateFormat('dd/MM HH:mm', 'pt_BR').format(_scale.date)}',
         ),
         actions: [
           if (auth.isAdmin)
@@ -366,13 +400,19 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Service info header
-            _SectionHeader(
-              title: DateFormat('EEEE, d \'de\' MMMM \'de\' yyyy', 'pt_BR')
-                  .format(_scale.date),
-              subtitle: _scale.serviceType,
-              icon: Icons.church_rounded,
-              color: AppColors.red,
+            // Service info header. The leader taps it to fix the date or the
+            // time — without this, a wrong time could never be corrected.
+            GestureDetector(
+              onTap: auth.isAdmin ? _editDateTime : null,
+              child: _SectionHeader(
+                title: DateFormat("EEEE, d 'de' MMMM', às' HH:mm", 'pt_BR')
+                    .format(_scale.date),
+                subtitle: auth.isAdmin
+                    ? '${_scale.serviceType} · toque para alterar'
+                    : _scale.serviceType,
+                icon: Icons.church_rounded,
+                color: AppColors.red,
+              ),
             ),
             const SizedBox(height: 20),
 

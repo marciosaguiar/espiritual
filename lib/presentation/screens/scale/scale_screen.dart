@@ -60,6 +60,12 @@ class _ScaleScreenState extends State<ScaleScreen> {
         ),
         title: const Text('Escala'),
         actions: [
+          if (_selectedDay != null)
+            IconButton(
+              tooltip: 'Próximos cultos',
+              icon: const Icon(Icons.format_list_bulleted_rounded),
+              onPressed: () => setState(() => _selectedDay = null),
+            ),
           if (auth.isAdmin)
             IconButton(
               icon: const Icon(Icons.add_rounded),
@@ -82,7 +88,11 @@ class _ScaleScreenState extends State<ScaleScreen> {
               selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
               onDaySelected: (selected, focused) {
                 setState(() {
-                  _selectedDay = selected;
+                  // Tocar de novo no mesmo dia desmarca e devolve a lista dos
+                  // próximos cultos. Antes, depois do primeiro toque não havia
+                  // mais como voltar a ela sem sair da aba.
+                  _selectedDay =
+                      isSameDay(_selectedDay, selected) ? null : selected;
                   _focusedDay = focused;
                 });
               },
@@ -227,6 +237,10 @@ class _ScaleScreenState extends State<ScaleScreen> {
       context: context,
       builder: (ctx) {
         String serviceType = 'Culto';
+        // Sem isto, todo culto nascia à meia-noite e "domingo" nunca dizia se
+        // era o da manhã ou o da noite.
+        TimeOfDay time = const TimeOfDay(hour: 9, minute: 0);
+
         return AlertDialog(
           title: Text(
             'Criar Culto - ${DateFormat('dd/MM/yyyy').format(_selectedDay!)}',
@@ -235,18 +249,71 @@ class _ScaleScreenState extends State<ScaleScreen> {
           content: StatefulBuilder(builder: (ctx2, setDialogState) {
             return Column(
               mainAxisSize: MainAxisSize.min,
-              children: ['Culto', 'Ensaio', 'Especial'].map((type) {
-                return RadioListTile<String>(
-                  title: Text(type,
-                      style: const TextStyle(fontFamily: 'Poppins')),
-                  value: type,
-                  groupValue: serviceType,
-                  activeColor: AppColors.blue,
-                  onChanged: (v) {
-                    setDialogState(() => serviceType = v!);
+              children: [
+                ...['Culto', 'Ensaio', 'Especial'].map((type) {
+                  return RadioListTile<String>(
+                    title: Text(type,
+                        style: const TextStyle(fontFamily: 'Poppins')),
+                    value: type,
+                    groupValue: serviceType,
+                    activeColor: AppColors.blue,
+                    contentPadding: EdgeInsets.zero,
+                    onChanged: (v) {
+                      setDialogState(() => serviceType = v!);
+                    },
+                  );
+                }),
+                const Divider(height: 18),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.schedule_rounded,
+                      color: AppColors.blue),
+                  title: const Text('Horário',
+                      style: TextStyle(fontFamily: 'Poppins', fontSize: 14)),
+                  subtitle: Text(
+                    time.format(ctx2),
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.blue,
+                    ),
+                  ),
+                  trailing: const Icon(Icons.edit_outlined, size: 18),
+                  onTap: () async {
+                    final picked = await showTimePicker(
+                      context: ctx2,
+                      initialTime: time,
+                      helpText: 'A que horas começa?',
+                    );
+                    if (picked != null) {
+                      setDialogState(() => time = picked);
+                    }
                   },
-                );
-              }).toList(),
+                ),
+                // Atalhos para os horários de sempre, para não precisar mexer
+                // no relógio toda vez.
+                Wrap(
+                  spacing: 8,
+                  children: const [
+                    TimeOfDay(hour: 9, minute: 0),
+                    TimeOfDay(hour: 19, minute: 0),
+                    TimeOfDay(hour: 20, minute: 0),
+                  ].map((t) {
+                    final selected = t == time;
+                    return ActionChip(
+                      label: Text(t.format(ctx2),
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 12,
+                            color: selected ? Colors.white : null,
+                          )),
+                      backgroundColor: selected ? AppColors.blue : null,
+                      onPressed: () => setDialogState(() => time = t),
+                    );
+                  }).toList(),
+                ),
+              ],
             );
           }),
           actions: [
@@ -257,8 +324,10 @@ class _ScaleScreenState extends State<ScaleScreen> {
             ElevatedButton(
               onPressed: () async {
                 Navigator.pop(ctx);
+                final dia = _selectedDay!;
                 final newScale = FirestoreService.createScaleModel(
-                  date: _selectedDay!,
+                  date: DateTime(dia.year, dia.month, dia.day,
+                      time.hour, time.minute),
                   serviceType: serviceType,
                   createdBy: auth.user?.id,
                 );
@@ -477,7 +546,10 @@ class _ServiceCard extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        DateFormat('EEEE', 'pt_BR').format(scale.date),
+                        // Com a hora, "domingo" deixa de ser ambíguo entre o
+                        // culto da manhã e o da noite.
+                        DateFormat("EEEE', às' HH:mm", 'pt_BR')
+                            .format(scale.date),
                         style: const TextStyle(
                           fontFamily: 'Poppins',
                           fontSize: 12,
