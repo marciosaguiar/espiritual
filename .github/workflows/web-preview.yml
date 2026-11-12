@@ -34,13 +34,10 @@ jobs:
       - name: Flutter version
         run: flutter --version
 
-      - name: Enable web target
-        run: flutter create --platforms=web .
-
       - name: Install dependencies
         run: flutter pub get
 
-      - name: Build web (preview demo)
+      - name: Build web
         run: flutter build web --release --base-href "/espiritual/"
 
       - name: Upload artifact

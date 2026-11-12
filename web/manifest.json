@@ -1,0 +1,39 @@
+{
+    "name": "LevitaSync",
+    "short_name": "LevitaSync",
+    "lang": "pt-BR",
+    "dir": "ltr",
+    "start_url": ".",
+    "scope": ".",
+    "display": "standalone",
+    "background_color": "#003C8F",
+    "theme_color": "#003C8F",
+    "description": "Repertório, escala e conversas do ministério de louvor, num lugar só.",
+    "orientation": "portrait-primary",
+    "categories": ["music", "productivity"],
+    "prefer_related_applications": false,
+    "icons": [
+        {
+            "src": "icons/Icon-192.png",
+            "sizes": "192x192",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-512.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        },
+        {
+            "src": "icons/Icon-maskable-192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "maskable"
+        },
+        {
+            "src": "icons/Icon-maskable-512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "maskable"
+        }
+    ]
+}

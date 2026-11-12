@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/scale_provider.dart';
 import '../../providers/songs_provider.dart';
+import '../../widgets/common/install_banner.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/scale_model.dart';
@@ -122,6 +123,10 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Antes de tudo: instalar. Enquanto o app vive numa aba, ele
+                  // não recebe aviso nenhum no iPhone.
+                  const InstallBanner(),
+
                   // Primeira coisa da tela: a pergunta que o ministério mais
                   // faz. O modelo já sabia responder (isUserInScale,
                   // hasUserConfirmed) e nada chamava esses métodos.

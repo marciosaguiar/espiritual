@@ -80,6 +80,9 @@ class _SetupNeededApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      // Sem título, o Flutter web apaga o título da página: a aba e o nome
+      // sugerido ao salvar nos favoritos ficavam em branco.
+      title: AppStrings.appName,
       debugShowCheckedModeBanner: false,
       home: Scaffold(
         backgroundColor: const Color(0xFF0E1116),

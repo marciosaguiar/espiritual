@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <!-- Substituído pelo valor de --base-href no build (no GitHub Pages: /espiritual/). -->
+  <base href="$FLUTTER_BASE_HREF">
+
+  <meta charset="UTF-8">
+  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
+  <meta name="description"
+        content="Repertório, escala e conversas do ministério de louvor, num lugar só.">
+
+  <!-- viewport-fit=cover: o app ocupa a tela toda e o SafeArea do Flutter
+       cuida de não encostar no recorte e na barra inferior do iPhone. -->
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+  <!-- Instalado na tela de início: abre sem a barra do navegador. É isto que
+       também permite a notificação no iPhone (iOS 16.4+). -->
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="LevitaSync">
+  <meta name="theme-color" content="#003C8F">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+
+  <link rel="icon" type="image/png" href="favicon.png"/>
+
+  <title>LevitaSync</title>
+  <link rel="manifest" href="manifest.json">
+
+  <style>
+    /* Abertura com a identidade do app enquanto o Flutter carrega.
+       Sem isto o primeiro acesso mostra uma tela branca por alguns segundos,
+       que num celular se lê como "não funcionou". */
+    html, body { margin: 0; padding: 0; height: 100%; background: #003C8F; }
+    #abertura {
+      position: fixed; inset: 0; z-index: 2;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center; gap: 18px;
+      background: linear-gradient(180deg, #003C8F 0%, #1565C0 55%, #8E0000 100%);
+      color: #fff; text-align: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      transition: opacity .35s ease;
+    }
+    #abertura.sumindo { opacity: 0; pointer-events: none; }
+    #abertura img { width: 76px; height: 76px; }
+    #abertura .nome { font-size: 30px; font-weight: 700; letter-spacing: -0.5px; }
+    #abertura .sub { font-size: 13px; opacity: .72; margin-top: -10px; }
+    #abertura .giro {
+      width: 26px; height: 26px; margin-top: 14px;
+      border: 2.5px solid rgba(255,255,255,.3);
+      border-top-color: rgba(255,255,255,.85);
+      border-radius: 50%; animation: girar 1s linear infinite;
+    }
+    @keyframes girar { to { transform: rotate(360deg); } }
+    @media (prefers-reduced-motion: reduce) {
+      #abertura .giro { animation-duration: 3s; }
+      #abertura { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <div id="abertura">
+    <img src="icons/Icon-192.png" alt="">
+    <div class="nome">LevitaSync</div>
+    <div class="sub">Ministério de Louvor Unificado</div>
+    <div class="giro"></div>
+  </div>
+
+  <script>
+    // O Flutter avisa quando a primeira tela foi desenhada; só então a
+    // abertura sai. Se algo der errado no caminho, ela some mesmo assim
+    // depois de 12s, para não prender a pessoa numa tela de carregamento.
+    function esconderAbertura() {
+      var el = document.getElementById('abertura');
+      if (!el || el.classList.contains('sumindo')) return;
+      el.classList.add('sumindo');
+      setTimeout(function () { el.remove(); }, 400);
+    }
+    window.addEventListener('flutter-first-frame', esconderAbertura);
+    setTimeout(esconderAbertura, 12000);
+
+    // ── Instalar na tela de início ────────────────────────────────────────
+    // O Chrome dispara 'beforeinstallprompt' logo no carregamento, antes de o
+    // Flutter existir, e o convite só pode ser aberto a partir desse evento
+    // guardado. Por isso ele é capturado aqui e exposto ao app em duas
+    // funções. O Safari não tem equivalente: lá o app mostra as instruções.
+    var conviteInstalacao = null;
+    window.addEventListener('beforeinstallprompt', function (e) {
+      e.preventDefault();
+      conviteInstalacao = e;
+    });
+    window.addEventListener('appinstalled', function () {
+      conviteInstalacao = null;
+    });
+    window.levitaPodeConvidar = function () { return !!conviteInstalacao; };
+
+    // Já está instalado? 'display-mode: standalone' cobre Android e iOS novos;
+    // navigator.standalone cobre os iPhones mais antigos.
+    window.levitaEstaInstalado = function () {
+      try {
+        if (window.matchMedia('(display-mode: standalone)').matches) return true;
+        if (window.matchMedia('(display-mode: fullscreen)').matches) return true;
+        return navigator.standalone === true;
+      } catch (e) { return false; }
+    };
+
+    // Safari de iPhone/iPad é o único caso sem convite nativo, e é onde as
+    // instruções precisam ser específicas (botão Compartilhar).
+    window.levitaEhSafariDeIphone = function () {
+      try {
+        var ua = navigator.userAgent;
+        var tocaTela = window.matchMedia('(pointer: coarse)').matches;
+        var ios = /iPhone|iPad|iPod/.test(ua) ||
+                  (/Macintosh/.test(ua) && tocaTela); // iPad novo se diz Mac
+        if (!ios) return false;
+        if (!/Safari/.test(ua)) return false;
+        return !/CriOS|FxiOS|EdgiOS|OPiOS|Chrome/.test(ua);
+      } catch (e) { return false; }
+    };
+    window.levitaConvidarInstalacao = function () {
+      if (!conviteInstalacao) return false;
+      conviteInstalacao.prompt();
+      conviteInstalacao = null;
+      return true;
+    };
+  </script>
+
+  <script src="flutter_bootstrap.js" async></script>
+</body>
+</html>
