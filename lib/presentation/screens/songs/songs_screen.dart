@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/songs_provider.dart';
+import '../../widgets/common/error_banner.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/song_model.dart';
@@ -143,6 +144,20 @@ class _SongsScreenState extends State<SongsScreen>
   }
 
   Widget _buildBody(SongsProvider songs, bool isDark, double topInset) {
+    // A lista que não carregou dizia apenas "nenhuma música", o que a pessoa
+    // lê como repertório vazio e não como falha.
+    if (songs.error != null) {
+      return Column(
+        children: [
+          ErrorBanner(message: songs.error!, onRetry: songs.retry),
+          Expanded(child: _buildList(songs, isDark, topInset)),
+        ],
+      );
+    }
+    return _buildList(songs, isDark, topInset);
+  }
+
+  Widget _buildList(SongsProvider songs, bool isDark, double topInset) {
     if (songs.isLoading) {
       return const Center(
         child: CircularProgressIndicator(color: AppColors.blue),

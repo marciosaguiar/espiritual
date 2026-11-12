@@ -7,6 +7,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/songs_provider.dart';
 import '../../providers/scale_provider.dart';
+import '../../widgets/common/error_banner.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/message_model.dart';
 import '../../../data/models/song_model.dart';
@@ -160,13 +161,24 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (auth.user == null) return;
 
-    await chat.sendMessage(
+    final error = await chat.sendMessage(
       userId: auth.user!.id,
       userName: auth.user!.name,
       text: text.isEmpty ? '🎵 Compartilhou uma música' : text,
       linkedSongId: linkedSongId,
       linkedSongName: linkedSongName,
     );
+
+    if (!mounted) return;
+
+    if (error != null) {
+      // O texto fica no campo para a pessoa poder tentar de novo, em vez de
+      // ser apagado junto com a mensagem que nunca saiu.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: AppColors.red),
+      );
+      return;
+    }
 
     _messageCtrl.clear();
     _stopTyping();
@@ -302,6 +314,7 @@ class _ChatScreenState extends State<ChatScreen> {
               headerColor, typingLabel, chat.messages.isNotEmpty, isDark),
       body: Column(
         children: [
+          ErrorBanner.maybe(chat.error, onRetry: chat.retry),
           if (_showSongSearch && !_searchMode)
             _buildSongSearchPanel(auth, songs, isDark),
           Expanded(

@@ -54,6 +54,18 @@ class SongsProvider extends ChangeNotifier {
     });
   }
 
+  /// Drops the listener and attaches a new one.
+  ///
+  /// The listener guards against stacking subscriptions, so after a failure it
+  /// would never reconnect on its own — "Tentar de novo" needs this.
+  void retry() {
+    _songsSub?.cancel();
+    _songsSub = null;
+    _error = null;
+    notifyListeners();
+    listenToSongs();
+  }
+
   @override
   void dispose() {
     _songsSub?.cancel();
@@ -116,32 +128,36 @@ class SongsProvider extends ChangeNotifier {
     _filteredSongs = base;
   }
 
-  Future<bool> addSong(SongModel song) async {
+  /// Adds a song. Returns null on success, or the message to show.
+  Future<String?> addSong(SongModel song) async {
     // No manual reload needed: the realtime listener picks up the new song.
-    return FirestoreService.addSong(song);
+    final result = await FirestoreService.addSong(song);
+    return result.error;
   }
 
-  Future<bool> updateSong(SongModel song) async {
-    final success = await FirestoreService.updateSong(song);
-    if (success) {
-      final idx = _songs.indexWhere((s) => s.id == song.id);
-      if (idx >= 0) {
-        _songs[idx] = song;
-        _applyFilter();
-        notifyListeners();
-      }
-    }
-    return success;
-  }
+  /// Changes a song. Returns null on success, or the message to show.
+  Future<String?> updateSong(SongModel song) async {
+    final result = await FirestoreService.updateSong(song);
+    if (!result.success) return result.error;
 
-  Future<bool> deleteSong(String songId) async {
-    final success = await FirestoreService.deleteSong(songId);
-    if (success) {
-      _songs.removeWhere((s) => s.id == songId);
+    final idx = _songs.indexWhere((s) => s.id == song.id);
+    if (idx >= 0) {
+      _songs[idx] = song;
       _applyFilter();
       notifyListeners();
     }
-    return success;
+    return null;
+  }
+
+  /// Deletes a song. Returns null on success, or the message to show.
+  Future<String?> deleteSong(String songId) async {
+    final result = await FirestoreService.deleteSong(songId);
+    if (!result.success) return result.error;
+
+    _songs.removeWhere((s) => s.id == songId);
+    _applyFilter();
+    notifyListeners();
+    return null;
   }
 
   Future<void> toggleOffline(SongModel song) async {

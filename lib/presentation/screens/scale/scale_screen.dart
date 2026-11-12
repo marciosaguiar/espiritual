@@ -5,6 +5,7 @@ import 'package:table_calendar/table_calendar.dart';
 import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/scale_provider.dart';
+import '../../widgets/common/error_banner.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/scale_model.dart';
 import '../../../data/services/firestore_service.dart';
@@ -68,6 +69,7 @@ class _ScaleScreenState extends State<ScaleScreen> {
       ),
       body: Column(
         children: [
+          ErrorBanner.maybe(scale.error, onRetry: scale.retry),
           // Calendar
           Container(
             color:
@@ -260,15 +262,21 @@ class _ScaleScreenState extends State<ScaleScreen> {
                   serviceType: serviceType,
                   createdBy: auth.user?.id,
                 );
-                await scale.createScale(newScale);
-                if (mounted) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ScaleDetailScreen(scale: newScale),
-                    ),
+                final error = await scale.createScale(newScale);
+                if (!mounted) return;
+                if (error != null) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                        content: Text(error), backgroundColor: AppColors.red),
                   );
+                  return;
                 }
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ScaleDetailScreen(scale: newScale),
+                  ),
+                );
               },
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.blue),
               child: const Text('Criar'),

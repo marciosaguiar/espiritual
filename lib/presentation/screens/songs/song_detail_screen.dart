@@ -231,8 +231,19 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     ),
                   );
                   if (confirm == true && mounted) {
-                    await songs.deleteSong(widget.song.id);
-                    if (mounted) Navigator.pop(context);
+                    final error = await songs.deleteSong(widget.song.id);
+                    if (!mounted) return;
+                    if (error == null) {
+                      Navigator.pop(context);
+                    } else {
+                      // Antes a tela fechava mesmo quando falhava, e a música
+                      // reaparecia na lista sem explicação.
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(error),
+                            backgroundColor: AppColors.red),
+                      );
+                    }
                   }
                 }
               },

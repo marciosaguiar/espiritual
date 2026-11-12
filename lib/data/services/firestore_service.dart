@@ -40,30 +40,38 @@ class FirestoreService {
     }
   }
 
-  static Future<bool> addSong(SongModel song) async {
+  static Future<({bool success, String? error})> addSong(SongModel song) async {
     try {
       await _db.collection(_songs).doc(song.id).set(song.toFirestore());
-      return true;
-    } catch (_) {
-      return false;
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: _describe(e, 'salvar a música'));
+    } catch (e) {
+      return (success: false, error: 'Não foi possível salvar a música: $e');
     }
   }
 
-  static Future<bool> updateSong(SongModel song) async {
+  static Future<({bool success, String? error})> updateSong(
+      SongModel song) async {
     try {
       await _db.collection(_songs).doc(song.id).update(song.toFirestore());
-      return true;
-    } catch (_) {
-      return false;
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: _describe(e, 'alterar a música'));
+    } catch (e) {
+      return (success: false, error: 'Não foi possível alterar a música: $e');
     }
   }
 
-  static Future<bool> deleteSong(String songId) async {
+  static Future<({bool success, String? error})> deleteSong(
+      String songId) async {
     try {
       await _db.collection(_songs).doc(songId).delete();
-      return true;
-    } catch (_) {
-      return false;
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: _describe(e, 'apagar a música'));
+    } catch (e) {
+      return (success: false, error: 'Não foi possível apagar a música: $e');
     }
   }
 
@@ -276,30 +284,27 @@ class FirestoreService {
         .toList();
   }
 
-  static Future<bool> createScale(ScaleModel scale) async {
+  static Future<({bool success, String? error})> createScale(
+      ScaleModel scale) async {
     try {
       await _db.collection(_scales).doc(scale.id).set(scale.toFirestore());
-      return true;
-    } catch (_) {
-      return false;
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: _describe(e, 'criar o culto'));
+    } catch (e) {
+      return (success: false, error: 'Não foi possível criar o culto: $e');
     }
   }
 
-  static Future<bool> updateScale(ScaleModel scale) async {
-    try {
-      await _db.collection(_scales).doc(scale.id).update(scale.toFirestore());
-      return true;
-    } catch (_) {
-      return false;
-    }
-  }
-
-  static Future<bool> deleteScale(String scaleId) async {
+  static Future<({bool success, String? error})> deleteScale(
+      String scaleId) async {
     try {
       await _db.collection(_scales).doc(scaleId).delete();
-      return true;
-    } catch (_) {
-      return false;
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: _describe(e, 'apagar o culto'));
+    } catch (e) {
+      return (success: false, error: 'Não foi possível apagar o culto: $e');
     }
   }
 
@@ -486,15 +491,18 @@ class FirestoreService {
             .toList());
   }
 
-  static Future<bool> sendMessage(MessageModel message) async {
+  static Future<({bool success, String? error})> sendMessage(
+      MessageModel message) async {
     try {
       await _db
           .collection(_messages)
           .doc(message.id)
           .set(message.toFirestore());
-      return true;
-    } catch (_) {
-      return false;
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: _describe(e, 'enviar a mensagem'));
+    } catch (e) {
+      return (success: false, error: 'Não foi possível enviar: $e');
     }
   }
 

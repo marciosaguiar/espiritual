@@ -54,13 +54,13 @@ class _AddSongScreenState extends State<AddSongScreen> {
       addedBy: auth.user?.id,
     );
 
-    final success = await songs.addSong(song);
+    var error = await songs.addSong(song);
 
     // The chart is the church's arrangement, not part of the song itself, so
     // it is saved as the song's first arrangement.
     final chords = _chordsCtrl.text.trim();
-    if (success && chords.isNotEmpty) {
-      await FirestoreService.saveArrangement(
+    if (error == null && chords.isNotEmpty) {
+      final arranjo = await FirestoreService.saveArrangement(
         FirestoreService.createArrangementModel(
           songId: song.id,
           churchKey: _selectedKey,
@@ -68,26 +68,23 @@ class _AddSongScreenState extends State<AddSongScreen> {
           approvedBy: auth.user?.id,
         ),
       );
-    }
-    if (mounted) {
-      setState(() => _isSaving = false);
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Música adicionada com sucesso!'),
-            backgroundColor: AppColors.success,
-          ),
-        );
-        Navigator.pop(context);
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(AppStrings.errorGeneric),
-            backgroundColor: AppColors.red,
-          ),
-        );
+      // A música entrou; avisa que a cifra não, em vez de dar tudo por certo.
+      if (!arranjo.success) {
+        error = 'A música foi salva, mas a cifra não: ${arranjo.error}';
       }
     }
+
+    if (!mounted) return;
+    setState(() => _isSaving = false);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(error ?? 'Música adicionada com sucesso!'),
+        backgroundColor: error == null ? AppColors.success : AppColors.red,
+        duration: Duration(seconds: error == null ? 2 : 6),
+      ),
+    );
+    if (error == null) Navigator.pop(context);
   }
 
   @override

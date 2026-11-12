@@ -331,8 +331,17 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                   );
                   if (confirm == true && mounted) {
                     final scaleProvider = context.read<ScaleProvider>();
-                    await scaleProvider.deleteScale(_scale.id);
-                    if (mounted) Navigator.pop(context);
+                    final error = await scaleProvider.deleteScale(_scale.id);
+                    if (!mounted) return;
+                    if (error == null) {
+                      Navigator.pop(context);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                            content: Text(error),
+                            backgroundColor: AppColors.red),
+                      );
+                    }
                   }
                 }
               },

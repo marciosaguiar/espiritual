@@ -58,6 +58,18 @@ class ChatProvider extends ChangeNotifier {
     );
   }
 
+  /// Drops the listener and attaches a new one.
+  ///
+  /// The listener guards against stacking subscriptions, so after a failure it
+  /// would never reconnect on its own — "Tentar de novo" needs this.
+  void retry() {
+    _messagesSub?.cancel();
+    _messagesSub = null;
+    _error = null;
+    notifyListeners();
+    listenToMessages();
+  }
+
   @override
   void dispose() {
     _messagesSub?.cancel();
@@ -65,14 +77,18 @@ class ChatProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<bool> sendMessage({
+  /// Sends a message. Returns null on success, or the message to show.
+  ///
+  /// A failed send used to vanish: the bubble never appeared and nothing said
+  /// why, which with no connection is most of the time.
+  Future<String?> sendMessage({
     required String userId,
     required String userName,
     required String text,
     String? linkedSongId,
     String? linkedSongName,
   }) async {
-    if (text.trim().isEmpty) return false;
+    if (text.trim().isEmpty) return 'Escreva algo antes de enviar.';
 
     final message = FirestoreService.createMessage(
       userId: userId,
@@ -82,7 +98,8 @@ class ChatProvider extends ChangeNotifier {
       linkedSongName: linkedSongName,
     );
 
-    return FirestoreService.sendMessage(message);
+    final result = await FirestoreService.sendMessage(message);
+    return result.error;
   }
 
   void clearError() {

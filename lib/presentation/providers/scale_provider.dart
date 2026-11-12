@@ -28,6 +28,18 @@ class ScaleProvider extends ChangeNotifier {
     });
   }
 
+  /// Drops the listener and attaches a new one.
+  ///
+  /// The listener guards against stacking subscriptions, so after a failure it
+  /// would never reconnect on its own — "Tentar de novo" needs this.
+  void retry() {
+    _scalesSub?.cancel();
+    _scalesSub = null;
+    _error = null;
+    notifyListeners();
+    listenToScales();
+  }
+
   @override
   void dispose() {
     _scalesSub?.cancel();
@@ -88,26 +100,26 @@ class ScaleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> createScale(ScaleModel scale) async {
-    final success = await FirestoreService.createScale(scale);
-    if (success) {
-      _scales.add(scale);
-      _scales.sort((a, b) => a.date.compareTo(b.date));
-      notifyListeners();
-    }
-    return success;
+  /// Creates a service. Returns null on success, or the message to show.
+  Future<String?> createScale(ScaleModel scale) async {
+    final result = await FirestoreService.createScale(scale);
+    if (!result.success) return result.error;
+
+    _scales.add(scale);
+    _scales.sort((a, b) => a.date.compareTo(b.date));
+    notifyListeners();
+    return null;
   }
 
-  Future<bool> deleteScale(String scaleId) async {
-    final success = await FirestoreService.deleteScale(scaleId);
-    if (success) {
-      _scales.removeWhere((s) => s.id == scaleId);
-      if (_selectedScale?.id == scaleId) {
-        _selectedScale = null;
-      }
-      notifyListeners();
-    }
-    return success;
+  /// Deletes a service. Returns null on success, or the message to show.
+  Future<String?> deleteScale(String scaleId) async {
+    final result = await FirestoreService.deleteScale(scaleId);
+    if (!result.success) return result.error;
+
+    _scales.removeWhere((s) => s.id == scaleId);
+    if (_selectedScale?.id == scaleId) _selectedScale = null;
+    notifyListeners();
+    return null;
   }
 
   /// Confirms presence. Returns null on success, or the message to show.
