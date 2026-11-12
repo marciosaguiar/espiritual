@@ -5,6 +5,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/songs_provider.dart';
 import '../../providers/theme_provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/chord_transposer.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/auth_service.dart';
@@ -63,7 +64,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
                 const SizedBox(height: 16),
                 Text(
-                  'Como usar o LevitaSync',
+                  'Como usar o ${AppStrings.appName}',
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 18,
@@ -268,7 +269,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void _showAboutSheet(BuildContext context) {
     showAboutDialog(
       context: context,
-      applicationName: 'LevitaSync',
+      applicationName: AppStrings.appName,
       applicationVersion: 'Versão 1.0.0',
       applicationIcon: Container(
         width: 48,
@@ -598,7 +599,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 8),
                   _SettingRow(
                     icon: Icons.info_outline_rounded,
-                    label: 'Sobre o LevitaSync',
+                    label: 'Sobre o ${AppStrings.appName}',
                     trailing: const Icon(Icons.chevron_right_rounded,
                         color: AppColors.textSecondaryLight),
                     onTap: () => _showAboutSheet(context),
@@ -658,9 +659,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 borderRadius: BorderRadius.circular(6),
                               ),
                               child: Text(
+                                // O tom em que a pessoa toca, não o
+                                // deslocamento: "+2" não diz nada para quem
+                                // canta, "D → E" diz.
                                 '${song.originalKey} → '
-                                '${e.value.semitones >= 0 ? '+' : ''}'
-                                '${e.value.semitones}',
+                                '${ChordTransposer.getKeyName(song.originalKey, e.value.semitones)}',
                                 style: const TextStyle(
                                   fontFamily: 'Poppins',
                                   fontSize: 11,

@@ -963,14 +963,9 @@ class _WaMessageBubble extends StatelessWidget {
                             ),
                           ),
                         ),
-                      if (message.hasSong && message.linkedSongName != null)
-                        _LinkedSongCard(
-                          name: message.linkedSongName!,
-                          isMe: isMe,
-                          isDark: isDark,
-                          onTap: onSongTap,
-                        ),
-                      // Text + inline-ish meta (time + check), WhatsApp style.
+                      // O texto vem antes do cartão da música: quem compartilha
+                      // escreve o recado ("essa cabe no domingo") e o cartão é
+                      // o anexo, não o contrário.
                       Wrap(
                         alignment: WrapAlignment.end,
                         crossAxisAlignment: WrapCrossAlignment.end,
@@ -986,27 +981,29 @@ class _WaMessageBubble extends StatelessWidget {
                           ),
                           Padding(
                             padding: const EdgeInsets.only(left: 8, top: 2),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Text(
-                                  DateFormat('HH:mm').format(message.timestamp),
-                                  style: TextStyle(
-                                    fontFamily: 'Poppins',
-                                    fontSize: 11,
-                                    color: metaColor,
-                                  ),
-                                ),
-                                if (isMe) ...[
-                                  const SizedBox(width: 3),
-                                  Icon(Icons.done_all_rounded,
-                                      size: 15, color: metaColor),
-                                ],
-                              ],
+                            // Só a hora. O ✓✓ prometia confirmação de leitura,
+                            // que não existe: nada registra quem leu.
+                            child: Text(
+                              DateFormat('HH:mm').format(message.timestamp),
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 11,
+                                color: metaColor,
+                              ),
                             ),
                           ),
                         ],
                       ),
+                      if (message.hasSong && message.linkedSongName != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: _LinkedSongCard(
+                            name: message.linkedSongName!,
+                            isMe: isMe,
+                            isDark: isDark,
+                            onTap: onSongTap,
+                          ),
+                        ),
                     ],
                   ),
                 ),

@@ -21,7 +21,6 @@ class ScaleScreen extends StatefulWidget {
 class _ScaleScreenState extends State<ScaleScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  CalendarFormat _calendarFormat = CalendarFormat.month;
 
   bool _isServiceDay(DateTime day) {
     final weekday = day.weekday;
@@ -84,7 +83,10 @@ class _ScaleScreenState extends State<ScaleScreen> {
               firstDay: DateTime.utc(2024, 1, 1),
               lastDay: DateTime.utc(2027, 12, 31),
               focusedDay: _focusedDay,
-              calendarFormat: _calendarFormat,
+              // Mês e dias da semana em português. Sem isto o TableCalendar
+              // escreve "November" e "Mon/Tue" mesmo com o resto traduzido.
+              locale: 'pt_BR',
+              calendarFormat: CalendarFormat.month,
               selectedDayPredicate: (day) => isSameDay(_selectedDay, day),
               onDaySelected: (selected, focused) {
                 setState(() {
@@ -95,9 +97,6 @@ class _ScaleScreenState extends State<ScaleScreen> {
                       isSameDay(_selectedDay, selected) ? null : selected;
                   _focusedDay = focused;
                 });
-              },
-              onFormatChanged: (format) {
-                setState(() => _calendarFormat = format);
               },
               onPageChanged: (focused) {
                 setState(() => _focusedDay = focused);
@@ -155,19 +154,15 @@ class _ScaleScreenState extends State<ScaleScreen> {
                 ),
               ),
               headerStyle: HeaderStyle(
+                // O botão "2 weeks" oferecia uma visão que ninguém pediu, em
+                // inglês, ao lado do mês.
+                formatButtonVisible: false,
+                titleCentered: true,
                 titleTextStyle: TextStyle(
                   fontFamily: 'Poppins',
                   fontSize: 16,
                   fontWeight: FontWeight.w600,
                   color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
-                ),
-                formatButtonTextStyle: const TextStyle(
-                  fontFamily: 'Poppins',
-                  fontSize: 12,
-                ),
-                formatButtonDecoration: BoxDecoration(
-                  border: Border.all(color: AppColors.blue.withOpacity(0.3)),
-                  borderRadius: BorderRadius.circular(8),
                 ),
                 leftChevronIcon: const Icon(Icons.chevron_left_rounded),
                 rightChevronIcon: const Icon(Icons.chevron_right_rounded),

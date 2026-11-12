@@ -108,7 +108,7 @@ class AppStrings {
   static const String errorNoInternet = 'Sem conexão. Modo offline ativo.';
 
   // Success
-  static const String successLogin = 'Bem-vindo ao LevitaSync!';
+  static const String successLogin = 'Bem-vindo ao $appName!';
   static const String successRegister = 'Conta criada com sucesso!';
   static const String successSaved = 'Salvo com sucesso!';
   static const String successPresenceConfirmed = 'Presença confirmada!';

@@ -14,9 +14,8 @@ import '../songs/song_detail_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   /// Switches the bottom-nav tab (0=Início, 1=Músicas, 2=Escala, 3=Chat).
-  final void Function(int index)? onNavigateTab;
 
-  const HomeScreen({super.key, this.onNavigateTab});
+  const HomeScreen({super.key, });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -145,10 +144,6 @@ class _HomeScreenState extends State<HomeScreen> {
                             ),
                     child: _NextServiceCard(scale: nextScale, songs: songs),
                   ),
-                  const SizedBox(height: 20),
-
-                  // Quick Actions
-                  _QuickActionsSection(onNavigateTab: widget.onNavigateTab),
                   const SizedBox(height: 20),
 
                   // Suggested repertoire
@@ -451,107 +446,6 @@ class _InfoRow extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _QuickActionsSection extends StatelessWidget {
-  final void Function(int index)? onNavigateTab;
-  const _QuickActionsSection({this.onNavigateTab});
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          AppStrings.quickActions,
-          style: TextStyle(
-            fontFamily: 'Poppins',
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
-          ),
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _QuickActionButton(
-                icon: Icons.search_rounded,
-                label: 'Buscar\nMúsica',
-                color: AppColors.blue,
-                onTap: () => onNavigateTab?.call(1),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _QuickActionButton(
-                icon: Icons.calendar_month_rounded,
-                label: 'Ver\nEscala',
-                color: AppColors.red,
-                onTap: () => onNavigateTab?.call(2),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _QuickActionButton(
-                icon: Icons.chat_bubble_rounded,
-                label: 'Chat do\nMinistério',
-                color: AppColors.yellow,
-                onTap: () => onNavigateTab?.call(3),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _QuickActionButton extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  const _QuickActionButton({
-    required this.icon,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.2)),
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 28),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }

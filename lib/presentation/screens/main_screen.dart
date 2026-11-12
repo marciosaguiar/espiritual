@@ -25,7 +25,7 @@ class _MainScreenState extends State<MainScreen> {
   AuthProvider? _auth;
 
   late final List<Widget> _screens = [
-    HomeScreen(onNavigateTab: _goToTab),
+    const HomeScreen(),
     const SongsScreen(),
     const ScaleScreen(),
     const ChatScreen(),

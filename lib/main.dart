@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'firebase_options.dart';
+import 'core/constants/app_strings.dart';
 import 'core/theme/app_theme.dart';
 import 'data/services/local_storage_service.dart';
 import 'presentation/providers/auth_provider.dart';
@@ -94,7 +95,7 @@ class _SetupNeededApp extends StatelessWidget {
                       size: 48, color: Color(0xFFDDA64A)),
                   const SizedBox(height: 20),
                   const Text(
-                    'Falta conectar o LevitaSync\nao banco de dados',
+                    'Falta conectar o ${AppStrings.appName}\nao banco de dados',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       fontSize: 22,
@@ -201,7 +202,7 @@ class LevitaSyncApp extends StatelessWidget {
       child: Consumer<ThemeProvider>(
         builder: (ctx, themeProvider, _) {
           return MaterialApp(
-            title: 'LevitaSync',
+            title: AppStrings.appName,
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
@@ -286,7 +287,7 @@ class _SplashScreen extends StatelessWidget {
               ),
               SizedBox(height: 20),
               Text(
-                'LevitaSync',
+                AppStrings.appName,
                 style: TextStyle(
                   fontFamily: 'Poppins',
                   fontSize: 36,
