@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "000000000000",
-    "project_id": "levitasync",
-    "storage_bucket": "levitasync.appspot.com"
+    "project_number": "241914653758",
+    "project_id": "espiritual-d2403",
+    "storage_bucket": "espiritual-d2403.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:000000000000:android:0000000000000000000000",
+        "mobilesdk_app_id": "1:241914653758:android:96b37569e572f4acadf56f",
         "android_client_info": {
           "package_name": "com.levitasync.app"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "YOUR_ANDROID_API_KEY_HERE"
+          "current_key": "AIzaSyCj8Sh0C3fuJx5XrA6Orny4_4YwavQknas"
         }
       ],
       "services": {

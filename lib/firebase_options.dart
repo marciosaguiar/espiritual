@@ -41,14 +41,14 @@ class DefaultFirebaseOptions {
   }
 
   // ⚠️ REPLACE WITH YOUR FIREBASE CONFIG ⚠️
-  static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'YOUR_ANDROID_API_KEY',
-    appId: '1:000000000000:android:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'levitasync',
-    storageBucket: 'levitasync.appspot.com',
-  );
 
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'AIzaSyCj8Sh0C3fuJx5XrA6Orny4_4YwavQknas',
+    appId: '1:241914653758:android:96b37569e572f4acadf56f',
+    messagingSenderId: '241914653758',
+    projectId: 'espiritual-d2403',
+    storageBucket: 'espiritual-d2403.firebasestorage.app',
+  );
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: 'YOUR_IOS_API_KEY',
     appId: '1:000000000000:ios:0000000000000000000000',
@@ -68,11 +68,12 @@ class DefaultFirebaseOptions {
   );
 
   static const FirebaseOptions web = FirebaseOptions(
-    apiKey: 'YOUR_WEB_API_KEY',
-    appId: '1:000000000000:web:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'levitasync',
-    storageBucket: 'levitasync.appspot.com',
-    authDomain: 'levitasync.firebaseapp.com',
+    apiKey: 'AIzaSyCmC08W1DPC2xEKVGB0fF_EHeDrFxNwCwE',
+    appId: '1:241914653758:web:2152e261d85fb083adf56f',
+    messagingSenderId: '241914653758',
+    projectId: 'espiritual-d2403',
+    authDomain: 'espiritual-d2403.firebaseapp.com',
+    storageBucket: 'espiritual-d2403.firebasestorage.app',
+    measurementId: 'G-KK5FTPDM2Y',
   );
 }
