@@ -46,8 +46,15 @@ service cloud.firestore {
 
     // ── Validações ──────────────────────────────────────────────────────────
 
+    // Campo de texto opcional, dentro de um limite de tamanho.
+    //
+    // O `== null` não é zelo: o app grava `photoUrl: null` em todo cadastro,
+    // e sem esta linha `null is string` dava falso e a regra inteira recusava
+    // criar conta, editar o próprio perfil e promover um membro. Confirmado
+    // no emulador — era um app que não deixaria ninguém entrar.
     function texto(campo, maximo) {
       return !(campo in request.resource.data)
+        || request.resource.data[campo] == null
         || (request.resource.data[campo] is string
             && request.resource.data[campo].size() <= maximo);
     }
@@ -88,7 +95,9 @@ service cloud.firestore {
       // Você edita o seu perfil, menos a sua função — senão qualquer um se
       // promoveria a líder.
       allow update: if tamanhoRazoavel()
-        && texto('name', 60)
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 3
+        && request.resource.data.name.size() <= 60
         && texto('photoUrl', 500)
         && !('passwordHash' in request.resource.data)
         && (

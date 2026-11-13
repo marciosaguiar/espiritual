@@ -1,0 +1,14 @@
+{
+  "name": "levitasync-regras",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Testes das regras de seguranca do Firestore, contra o emulador.",
+  "scripts": {
+    "test": "firebase emulators:exec --only firestore --project levitas-teste \"node testar-regras.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^3.0.4",
+    "firebase": "^13.3.0",
+    "firebase-tools": "^15.0.0"
+  }
+}
