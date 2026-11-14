@@ -247,7 +247,9 @@ class _MemberRowState extends State<_MemberRow> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(r.success
-            ? '${m.name} saiu do ministério.'
+            // "Saiu" é o que a própria pessoa faz, em Perfil. Aqui quem
+            // decidiu foi o líder, e a frase tem de dizer isso.
+            ? '${m.name} foi removido do ministério.'
             : r.error ?? 'Não foi possível remover.'),
         backgroundColor: r.success ? AppColors.success : AppColors.red,
       ),
