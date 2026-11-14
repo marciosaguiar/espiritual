@@ -32,6 +32,12 @@ estava declarado no `pubspec.yaml` e nunca era aplicado, e tira
 regra fazia o `flutter analyze` acusar 6 erros vindos de um arquivo de exemplo
 de dentro do `firebase-tools` — os dois comandos acima se contradiziam.
 
+O `test_regras/.npmrc` também não é enfeite: `@firebase/rules-unit-testing@3`
+pede `firebase@^10` e aqui se usa o 13. As versões novas do npm recusam
+instalar por isso, então `npm install` falhava num computador limpo, embora os
+59 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
+só com `npm install --legacy-peer-deps`.
+
 ## Estado atual
 
 Funciona e está testado. O que **ainda falta para o app rodar de verdade** é
