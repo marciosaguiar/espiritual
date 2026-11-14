@@ -49,7 +49,7 @@ class MembersScreen extends StatelessWidget {
           // visível de propósito, para um "não" por engano ter conserto.
           final pendentes = members.where((m) => m.isPendente).toList();
           final equipe = members.where((m) => m.aprovado).toList();
-          final recusados = members.where((m) => m.isRecusado).toList();
+          final recusados = members.where((m) => m.isRemovido).toList();
           final leaders = equipe.where((m) => m.isAdmin).length;
 
           Widget linha(UserModel m) => _MemberRow(
@@ -410,7 +410,7 @@ class _PendenteRowState extends State<_PendenteRow> {
   Future<void> _decidir(UserRole papel) async {
     final m = widget.member;
 
-    if (papel == UserRole.recusado) {
+    if (papel == UserRole.removido) {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -542,7 +542,7 @@ class _PendenteRowState extends State<_PendenteRow> {
                 if (esperando) ...[
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () => _decidir(UserRole.recusado),
+                      onPressed: () => _decidir(UserRole.removido),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: AppColors.red,
                         side: BorderSide(

@@ -37,7 +37,7 @@ void main() {
       expect(com(UserRole.levita).aprovado, isTrue);
       expect(com(UserRole.admin).aprovado, isTrue);
       expect(com(UserRole.pendente).aprovado, isFalse);
-      expect(com(UserRole.recusado).aprovado, isFalse);
+      expect(com(UserRole.removido).aprovado, isFalse);
     });
 
     test('nenhuma função nova entra sozinha na lista de aprovados', () {

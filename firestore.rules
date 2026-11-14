@@ -65,9 +65,13 @@ service cloud.firestore {
 
     // As quatro funções que existem. Serve para um erro de digitação não
     // criar um quinto estado que ninguém sabe o que faz.
+    //
+    // `recusado` saiu: recusar um pedido novo e tirar alguém já aprovado
+    // viraram o MESMO estado, `removido`. Documento antigo com 'recusado' o
+    // app lê como removido, e esta lista recusa gravá-lo de novo.
     function funcaoValida() {
       return request.resource.data.role in
-        ['pendente', 'levita', 'admin', 'recusado'];
+        ['pendente', 'levita', 'admin', 'removido'];
     }
 
     // ── Validações ──────────────────────────────────────────────────────────

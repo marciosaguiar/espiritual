@@ -30,7 +30,7 @@ class AuthProvider extends ChangeNotifier {
   /// mostra a tela de espera: as regras do banco não devolvem nada mesmo, e
   /// sem esta checagem a pessoa veria cinco abas vazias achando que quebrou.
   bool get pendente => _user?.isPendente ?? false;
-  bool get recusado => _user?.isRecusado ?? false;
+  bool get removido => _user?.isRemovido ?? false;
   bool get aprovado => _user?.aprovado ?? false;
 
   StreamSubscription<UserModel?>? _meuCadastro;

@@ -363,13 +363,13 @@ await teste('função inventada é recusada', () =>
 
 console.log('\n── o líder decide ──');
 
-await teste('líder recusa a entrada', () =>
-  assertSucceeds(updateDoc(doc(lider(), 'users', OUTRO), { role: 'recusado' })));
+await teste('líder recusa a entrada (vira removido)', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'users', OUTRO), { role: 'removido' })));
 
-await teste('recusado continua sem ler o repertório', () =>
+await teste('removido continua sem ler o repertório', () =>
   assertFails(getDoc(doc(novato(), 'songs', 's1'))));
 
-await teste('recusado ainda lê o próprio cadastro (é o que explica a tela)', () =>
+await teste('removido ainda lê o próprio cadastro (é o que explica a tela)', () =>
   assertSucceeds(getDoc(doc(novato(), 'users', OUTRO))));
 
 await teste('líder volta atrás e aprova', () =>

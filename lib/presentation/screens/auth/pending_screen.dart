@@ -20,7 +20,7 @@ class PendingScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final recusado = auth.recusado;
+    final removido = auth.removido;
 
     final corTexto =
         isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
@@ -40,21 +40,21 @@ class PendingScreen extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
-                    color: (recusado ? AppColors.red : AppColors.blue)
+                    color: (removido ? AppColors.red : AppColors.blue)
                         .withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   child: Icon(
-                    recusado
+                    removido
                         ? Icons.do_not_disturb_on_outlined
                         : Icons.hourglass_top_rounded,
                     size: 34,
-                    color: recusado ? AppColors.red : AppColors.blue,
+                    color: removido ? AppColors.red : AppColors.blue,
                   ),
                 ),
                 const SizedBox(height: 22),
                 Text(
-                  recusado
+                  removido
                       ? 'Seu pedido não foi aprovado'
                       : 'Falta o líder aprovar',
                   style: TextStyle(
@@ -67,7 +67,7 @@ class PendingScreen extends StatelessWidget {
                 ),
                 const SizedBox(height: 14),
                 Text(
-                  recusado
+                  removido
                       ? 'Fale com o líder do ministério. Se foi engano, ele '
                           'consegue liberar a sua entrada pelo app, sem você '
                           'precisar se cadastrar de novo.'
@@ -81,7 +81,7 @@ class PendingScreen extends StatelessWidget {
                     color: corFraca,
                   ),
                 ),
-                if (!recusado) ...[
+                if (!removido) ...[
                   const SizedBox(height: 18),
                   Container(
                     width: double.infinity,

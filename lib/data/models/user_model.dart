@@ -8,7 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 /// Membros. As regras do banco não liberam leitura nenhuma para pendente e
 /// recusado, fora o próprio cadastro — é isso que faz a trava valer de
 /// verdade, e não só sumir com os botões da tela.
-enum UserRole { pendente, levita, admin, recusado }
+enum UserRole { pendente, levita, admin, removido }
 
 enum UserInstrument { vocalist, guitar, bass, drums, keyboard, other }
 
@@ -25,8 +25,8 @@ extension UserRoleExtension on UserRole {
         return 'Levita';
       case UserRole.pendente:
         return 'Aguardando aprovação';
-      case UserRole.recusado:
-        return 'Não aprovado';
+      case UserRole.removido:
+        return 'Fora do ministério';
     }
   }
 
@@ -41,6 +41,11 @@ extension UserRoleExtension on UserRole {
   /// acesso normal. Se o padrão fosse levita, bastaria um documento torto para
   /// alguém entrar sem passar pelo líder.
   static UserRole fromString(String value) {
+    // `recusado` foi o primeiro nome de `removido`, quando só existia o caso
+    // de recusar um pedido novo. Agora recusar um pendente e tirar alguém já
+    // aprovado são o MESMO estado — um estado só, uma regra só — e este
+    // apelido evita ter de mexer em documento gravado para migrar.
+    if (value == 'recusado') return UserRole.removido;
     return UserRole.values.firstWhere(
       (e) => e.name == value,
       orElse: () => UserRole.pendente,
@@ -103,6 +108,13 @@ class UserModel {
   final List<String> favoriteSongs;
   final DateTime createdAt;
 
+  /// Quando e por quem a pessoa saiu do ministério. Só existem enquanto
+  /// `role` é `removido`; devolver o acesso limpa os dois. Servem para a tela
+  /// Membros poder dizer "saiu em 14/11, por Marcio" — sem isso, "Removidos"
+  /// vira uma lista de nomes sem história, e ninguém lembra o que houve.
+  final DateTime? removedAt;
+  final String? removedBy;
+
   /// Escolhido no perfil. Nulo = nunca escolheu: vale o que o instrumento
   /// sugere (ver [modoLeitura]).
   final ModoLeitura? leitura;
@@ -116,6 +128,8 @@ class UserModel {
     this.photoUrl,
     this.favoriteSongs = const [],
     required this.createdAt,
+    this.removedAt,
+    this.removedBy,
     this.leitura,
   });
 
@@ -126,7 +140,7 @@ class UserModel {
   bool get aprovado => role == UserRole.levita || role == UserRole.admin;
 
   bool get isPendente => role == UserRole.pendente;
-  bool get isRecusado => role == UserRole.recusado;
+  bool get isRemovido => role == UserRole.removido;
 
   /// Cantor(a) que nunca escolheu lê como quem canta; o resto, como quem toca.
   ModoLeitura get modoLeitura =>
@@ -147,6 +161,9 @@ class UserModel {
     String? photoUrl,
     List<String>? favoriteSongs,
     DateTime? createdAt,
+    DateTime? removedAt,
+    String? removedBy,
+    bool limparRemocao = false,
     ModoLeitura? leitura,
   }) {
     return UserModel(
@@ -158,6 +175,10 @@ class UserModel {
       photoUrl: photoUrl ?? this.photoUrl,
       favoriteSongs: favoriteSongs ?? this.favoriteSongs,
       createdAt: createdAt ?? this.createdAt,
+      // `?? this.x` não consegue voltar para nulo, e devolver o acesso
+      // precisa exatamente disso: apagar quem removeu e quando.
+      removedAt: limparRemocao ? null : (removedAt ?? this.removedAt),
+      removedBy: limparRemocao ? null : (removedBy ?? this.removedBy),
       leitura: leitura ?? this.leitura,
     );
   }
@@ -218,6 +239,8 @@ class UserModel {
       'photoUrl': photoUrl,
       'favoriteSongs': favoriteSongs,
       'createdAt': Timestamp.fromDate(createdAt),
+      'removedAt': removedAt == null ? null : Timestamp.fromDate(removedAt!),
+      'removedBy': removedBy,
       if (leitura != null) 'leitura': leitura!.name,
     };
   }
@@ -234,6 +257,8 @@ class UserModel {
       photoUrl: data['photoUrl'] as String?,
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? []),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      removedAt: (data['removedAt'] as Timestamp?)?.toDate(),
+      removedBy: data['removedBy'] as String?,
       leitura: _leituraDe(data['leitura']),
     );
   }
@@ -251,6 +276,8 @@ class UserModel {
       'photoUrl': photoUrl,
       'favoriteSongs': favoriteSongs,
       'createdAt': createdAt.toIso8601String(),
+      'removedAt': removedAt?.toIso8601String(),
+      'removedBy': removedBy,
       if (leitura != null) 'leitura': leitura!.name,
     };
   }
@@ -268,6 +295,8 @@ class UserModel {
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? const []),
       createdAt:
           DateTime.tryParse(data['createdAt'] as String? ?? '') ?? DateTime.now(),
+      removedAt: DateTime.tryParse(data['removedAt'] as String? ?? ''),
+      removedBy: data['removedBy'] as String?,
       leitura: _leituraDe(data['leitura']),
     );
   }
