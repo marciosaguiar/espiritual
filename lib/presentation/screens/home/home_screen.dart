@@ -12,6 +12,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../data/models/scale_model.dart';
 import '../scale/scale_detail_screen.dart';
 import '../songs/song_detail_screen.dart';
+import '../../widgets/common/glass.dart';
 
 class HomeScreen extends StatefulWidget {
   /// Switches the bottom-nav tab (0=Início, 1=Músicas, 2=Escala, 3=Chat).
@@ -142,7 +143,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         ? null
                         : () => Navigator.push(
                               context,
-                              MaterialPageRoute(
+                              GlassPageRoute(
                                 builder: (_) =>
                                     ScaleDetailScreen(scale: nextScale),
                               ),
@@ -491,7 +492,7 @@ class _SuggestionSection extends StatelessWidget {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
+                GlassPageRoute(
                   builder: (_) => SongDetailScreen(song: song),
                 ),
               );

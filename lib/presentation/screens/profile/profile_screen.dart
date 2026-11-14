@@ -13,6 +13,7 @@ import '../songs/song_detail_screen.dart';
 import 'fixed_schedule_screen.dart';
 import 'members_screen.dart';
 import 'teams_screen.dart';
+import '../../widgets/common/glass.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -577,7 +578,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           color: AppColors.textSecondaryLight),
                       onTap: () => Navigator.push(
                         context,
-                        MaterialPageRoute(
+                        GlassPageRoute(
                             builder: (_) => const MembersScreen()),
                       ),
                     ),
@@ -589,7 +590,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           color: AppColors.textSecondaryLight),
                       onTap: () => Navigator.push(
                         context,
-                        MaterialPageRoute(
+                        GlassPageRoute(
                             builder: (_) => const FixedScheduleScreen()),
                       ),
                     ),
@@ -601,7 +602,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           color: AppColors.textSecondaryLight),
                       onTap: () => Navigator.push(
                         context,
-                        MaterialPageRoute(builder: (_) => const TeamsScreen()),
+                        GlassPageRoute(builder: (_) => const TeamsScreen()),
                       ),
                     ),
                   ],
@@ -723,7 +724,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         onTap: () {
                           Navigator.push(
                             context,
-                            MaterialPageRoute(
+                            GlassPageRoute(
                               builder: (_) => SongDetailScreen(song: song),
                             ),
                           );

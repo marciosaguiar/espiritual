@@ -6,6 +6,7 @@ import '../../widgets/common/app_text_field.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import 'register_screen.dart';
+import '../../widgets/common/glass.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -191,7 +192,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             onTap: () {
                               Navigator.push(
                                 context,
-                                MaterialPageRoute(
+                                GlassPageRoute(
                                   builder: (_) => const RegisterScreen(),
                                 ),
                               );

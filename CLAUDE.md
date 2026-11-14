@@ -13,7 +13,7 @@ nenhuma falha silenciosa.
 flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
-flutter test                   # 101 testes
+flutter test                   # 104 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -123,6 +123,13 @@ efeito colateral: meses muito antigos aparecem vazios no calendário.
   trabalho de quem está mexendo ao mesmo tempo.
 - **Nada de dependência declarada e não usada.** Já foram removidas 14.
 - O nome do app sai de `AppStrings.appName`, nunca escrito à mão.
+- **Tela que abre por cima usa `GlassPageRoute`, nunca `MaterialPageRoute`.**
+  Os dois temas põem `scaffoldBackgroundColor: Colors.transparent` para o
+  fundo único do app aparecer. Com `MaterialPageRoute` isso deixava a tela
+  que entra translúcida *durante a animação*, e as duas apareciam embaralhadas
+  por alguns décimos de segundo. `GlassPageRoute` pinta o fundo dentro da
+  própria rota. Um teste varre `lib/presentation/screens` e falha se alguém
+  voltar atrás.
 
 ## Armadilhas que já custaram caro
 
@@ -138,6 +145,15 @@ efeito colateral: meses muito antigos aparecem vazios no calendário.
 - **Escutas em tempo real.** As quatro começam juntas em `main_screen`, e duas
   leem a coleção inteira. É o maior custo de leitura do app; com 300 músicas
   passa da cota gratuita diária do Firestore.
+- **O app instalado serve a versão em cache.** Na tela de início quem entrega
+  as telas é o service worker, e o iOS só procura versão nova numa carga de
+  página de verdade — coisa que um app instalado quase nunca faz. Resultado:
+  um defeito corrigido, publicado e no ar continua aparecendo no celular.
+  Aconteceu com o instrumento em inglês: a correção estava no build do
+  GitHub Pages e a tela vinha de um cache antigo. O `web/index.html` agora
+  pergunta por versão nova quando o app volta ao primeiro plano e recarrega
+  uma vez quando ela assume. **Ao investigar um defeito "que não sumiu",
+  confirme primeiro de qual build veio a tela.**
 
 ## Próximos passos combinados (fase 2)
 

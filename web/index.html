@@ -157,6 +157,49 @@
     };
   </script>
 
+  <script>
+    // Keep the installed app from serving a build that is weeks old.
+    //
+    // Installed to the home screen, the app is served by a service worker that
+    // caches the whole build. On iOS it is only asked for a new version on a
+    // real page load, and an app on the home screen is almost never closed —
+    // so a fix can be published, land on GitHub Pages, and still not be on the
+    // phone. That is how "the instrument still shows other" happened with the
+    // fix already in the build: the screen came from an older cache.
+    //
+    // Two lines, both cheap:
+    //   · when the app comes back to the foreground, ask whether there is a
+    //     new build (one conditional request, at most every 10 minutes);
+    //   · when a new build takes over, reload once so every screen comes from
+    //     it instead of half from each.
+    (function () {
+      if (!('serviceWorker' in navigator)) return;
+
+      // Only reload when a build REPLACES another one. On a first visit the
+      // page also goes from "no worker" to "worker", and reloading there would
+      // just make the app open twice.
+      var tinhaBuildAnterior = !!navigator.serviceWorker.controller;
+      var jaRecarregou = false;
+
+      navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!tinhaBuildAnterior || jaRecarregou) return;
+        jaRecarregou = true;
+        window.location.reload();
+      });
+
+      var ultimaConferida = 0;
+      document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState !== 'visible') return;
+        var agora = Date.now();
+        if (agora - ultimaConferida < 600000) return;
+        ultimaConferida = agora;
+        navigator.serviceWorker.getRegistration().then(function (reg) {
+          if (reg) reg.update();
+        }).catch(function () { /* offline: tenta na próxima vez */ });
+      });
+    })();
+  </script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

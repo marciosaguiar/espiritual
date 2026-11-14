@@ -10,6 +10,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/models/scale_model.dart';
 import '../../../data/services/firestore_service.dart';
 import 'scale_detail_screen.dart';
+import '../../widgets/common/glass.dart';
 
 class ScaleScreen extends StatefulWidget {
   const ScaleScreen({super.key});
@@ -219,7 +220,7 @@ class _ScaleScreenState extends State<ScaleScreen> {
     if (scale.getScaleForDay(_selectedDay!) != null) {
       Navigator.push(
         context,
-        MaterialPageRoute(
+        GlassPageRoute(
           builder: (_) => ScaleDetailScreen(
             scale: scale.getScaleForDay(_selectedDay!)!,
           ),
@@ -337,7 +338,7 @@ class _ScaleScreenState extends State<ScaleScreen> {
                 }
                 Navigator.push(
                   context,
-                  MaterialPageRoute(
+                  GlassPageRoute(
                     builder: (_) => ScaleDetailScreen(scale: newScale),
                   ),
                 );
@@ -450,7 +451,7 @@ class _SelectedDayView extends StatelessWidget {
     return _ServiceCard(scale: scaleModel!, onTap: () {
       Navigator.push(
         context,
-        MaterialPageRoute(
+        GlassPageRoute(
           builder: (_) => ScaleDetailScreen(scale: scaleModel!),
         ),
       );
@@ -473,7 +474,7 @@ class _ServiceCard extends StatelessWidget {
           () {
             Navigator.push(
               context,
-              MaterialPageRoute(
+              GlassPageRoute(
                 builder: (_) => ScaleDetailScreen(scale: scale),
               ),
             );

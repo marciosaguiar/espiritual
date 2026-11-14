@@ -10,6 +10,7 @@ import '../../providers/agenda_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/scale_provider.dart';
 import '../../widgets/common/error_banner.dart';
+import '../../widgets/common/glass.dart';
 
 /// Teams the leader sets up once: who plays in the morning, who plays at
 /// night. The standing schedule puts them on the services by itself.
@@ -59,7 +60,7 @@ class TeamsScreen extends StatelessWidget {
       BuildContext context, TeamModel? equipe) async {
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => _EditorEquipe(equipe: equipe)),
+      GlassPageRoute(builder: (_) => _EditorEquipe(equipe: equipe)),
     );
   }
 }

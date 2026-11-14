@@ -9,6 +9,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../data/models/song_model.dart';
 import 'song_detail_screen.dart';
 import 'add_song_screen.dart';
+import '../../widgets/common/glass.dart';
 
 class SongsScreen extends StatefulWidget {
   const SongsScreen({super.key});
@@ -62,7 +63,7 @@ class _SongsScreenState extends State<SongsScreen>
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (_) => const AddSongScreen()),
+                  GlassPageRoute(builder: (_) => const AddSongScreen()),
                 );
               },
             ),
@@ -269,7 +270,7 @@ class _SongListTile extends StatelessWidget {
       onTap: () {
         Navigator.push(
           context,
-          MaterialPageRoute(
+          GlassPageRoute(
             builder: (_) => SongDetailScreen(song: song),
           ),
         );

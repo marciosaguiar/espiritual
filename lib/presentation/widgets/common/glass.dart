@@ -187,3 +187,26 @@ class GlassBackdrop extends StatelessWidget {
     );
   }
 }
+
+/// Use this for EVERY screen opened on top of another one, in place of
+/// [MaterialPageRoute].
+///
+/// Both themes set `scaffoldBackgroundColor: Colors.transparent` so the single
+/// app-wide [GlassBackdrop] shows through every screen. The side effect was
+/// that a screen being pushed was see-through *while it animated in*: for a
+/// few hundred milliseconds the calendar below showed through the service
+/// detail and the two screens read as one scrambled screen. It only settled at
+/// the end, when the Navigator stops painting the route underneath an opaque
+/// route — which is why it "went back to normal by itself".
+///
+/// Giving the incoming route its own backdrop makes it opaque from the first
+/// frame (the gradients in [AppColors] have no alpha), so the animation covers
+/// what is below. Nothing changes in how the screen looks once it arrives: it
+/// paints the same backdrop the app was painting behind it.
+class GlassPageRoute<T> extends MaterialPageRoute<T> {
+  GlassPageRoute({
+    required WidgetBuilder builder,
+    super.settings,
+    super.fullscreenDialog,
+  }) : super(builder: (context) => GlassBackdrop(child: builder(context)));
+}
