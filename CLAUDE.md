@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 130 testes
+flutter test                   # 143 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 84 testes
+cd test_regras && npm install && npm test    # 107 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -35,7 +35,7 @@ de dentro do `firebase-tools` — os dois comandos acima se contradiziam.
 O `test_regras/.npmrc` também não é enfeite: `@firebase/rules-unit-testing@3`
 pede `firebase@^10` e aqui se usa o 13. As versões novas do npm recusam
 instalar por isso, então `npm install` falhava num computador limpo, embora os
-84 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
+107 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
 só com `npm install --legacy-peer-deps`.
 
 ## Estado atual
@@ -129,8 +129,13 @@ cadastra nasce `pendente`:
 pendente  → acabou de se cadastrar; não lê NADA além do próprio cadastro
 levita    → aprovado
 admin     → líder
-recusado  → o líder disse não; mesma falta de acesso do pendente
+removido  → saiu, foi recusado ou foi tirado; mesma falta de acesso
 ```
+
+**`removido` é um estado só.** Recusar um pedido novo e tirar alguém que já
+estava dentro são a mesma coisa para o banco: sem acesso, documento
+preservado, volta possível. O nome antigo `recusado` ainda é lido (vira
+`removido`) e nunca mais é gravado.
 
 - **A trava está nas regras, não na tela.** Esconder botões não adiantaria:
   qualquer um fala direto com o banco pela API. `aprovado()` no
@@ -144,8 +149,28 @@ recusado  → o líder disse não; mesma falta de acesso do pendente
   Dart e a lista fechada `['levita','admin']` na regra. Campo faltando,
   documento meio gravado ou nome escrito errado no console têm de significar
   *menos* acesso, nunca o acesso normal.
-- **Recusar não apaga ninguém.** O app não apaga conta e as regras proíbem; a
-  pessoa fica `recusado` e o líder consegue voltar atrás.
+- **Nada é apagado, nunca.** O app não apaga conta — isso exigiria o Admin
+  SDK num servidor, que depende do plano pago — e as regras proíbem apagar
+  `users`. "Remover" é revogar acesso. O histórico (quem tocou onde, o que
+  disse no chat) é do ministério, não do vínculo.
+- **Remover é uma transação só**, em `FirestoreService.removerDoMinisterio`:
+  marca o cadastro (`role`, `removedAt`, `removedBy`), tira a pessoa de todas
+  as equipes e dos cultos **futuros**, e grava só o campo que pertence a cada
+  documento (`members`, `levitas`). Culto passado fica como está: ela tocou
+  lá. A parte que dá para errar em silêncio é pura e testada
+  (`FirestoreService.semAPessoa`).
+- **Quem some de um culto deixa aviso.** `ScaleModel.faltando` guarda os
+  nomes, e a tela do culto diz ao líder "Faltando alguém: Fulano foi
+  removido". Sem isso o culto perderia um instrumento e ninguém saberia até
+  domingo. O aviso some quando o líder mexe na escalação — o gesto de "já vi".
+- **Sair do ministério é da própria pessoa**, em Perfil. Mesmo efeito, com
+  `removedBy` apontando para ela mesma.
+- **O último líder não sai nem é removido.** Essa proteção é SÓ do app: a
+  regra teria de contar quantos admins existem, e contar exige consulta, que
+  regra do Firestore não faz. Vale contra engano, não contra má-fé.
+- **Perder o acesso limpa o aparelho.** `LocalStorageService
+  .limparTudoDoMinisterio()` apaga sessão e músicas salvas offline; sem isso
+  o banco recusaria tudo mas o repertório continuaria no celular.
 - **O app escuta o próprio cadastro** (`AuthService.watchUser`), então a
   aprovação vale na hora, sem a pessoa precisar fechar e abrir. Vale para o
   contrário também: líder rebaixado perde as telas de líder na mesma hora.
@@ -219,6 +244,7 @@ Nesta ordem, e **nada disso antes de testar o app num iPhone real**:
 0. ~~Cifra de verdade, colar cifra, cantor/músico~~ — **feito.**
 
 1. ~~Aprovação do líder~~ — **feito.**
+1. ~~Remover do ministério, devolver acesso e sair sozinho~~ — **feito.**
 2. **Notificações push**, Android e iPhone. No iOS funciona por Web Push com
    VAPID em PWA instalado (16.4+) — **não** exige conta paga da Apple. Exige
    Cloud Functions para os gatilhos: escalado, lembrete da véspera, mensagem

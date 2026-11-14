@@ -9,6 +9,9 @@ import '../../../core/utils/chord_transposer.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/firestore_service.dart';
+import '../../providers/agenda_provider.dart';
+import '../../providers/scale_provider.dart';
 import '../songs/song_detail_screen.dart';
 import 'fixed_schedule_screen.dart';
 import 'members_screen.dart';
@@ -869,6 +872,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                   const SizedBox(height: 28),
 
+                  // Sair do MINISTÉRIO — diferente de sair da conta, e por
+                  // isso vem antes e com outra cara. Quem toca em "Sair da
+                  // conta" quer voltar depois; quem toca aqui, não.
+                  const _SairDoMinisterio(),
+                  const SizedBox(height: 10),
+
                   // Logout
                   SizedBox(
                     width: double.infinity,
@@ -982,6 +991,121 @@ class _StatCard extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Sair do ministério": a própria pessoa revoga o próprio acesso.
+///
+/// Existe porque sair não deveria depender de pedir a alguém. O efeito é o
+/// mesmo de ser removido pelo líder, com uma diferença registrada no banco:
+/// `removedBy` é a própria pessoa, e a lista de removidos mostra isso.
+///
+/// O último líder não sai: o ministério ficaria sem ninguém capaz de aprovar
+/// membro, criar culto ou devolver acesso — nem de desfazer a saída.
+class _SairDoMinisterio extends StatefulWidget {
+  const _SairDoMinisterio();
+
+  @override
+  State<_SairDoMinisterio> createState() => _SairDoMinisterioState();
+}
+
+class _SairDoMinisterioState extends State<_SairDoMinisterio> {
+  bool _saindo = false;
+
+  Future<void> _sair() async {
+    final auth = context.read<AuthProvider>();
+    final eu = auth.user;
+    if (eu == null) return;
+
+    if (eu.isAdmin && await AuthService.adminCount() <= 1) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('O ministério precisa de pelo menos um líder. '
+              'Promova outra pessoa antes de sair.'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sair do ministério?'),
+        content: const Text(
+          'Você perde o acesso ao chat, às escalas e às músicas, e sai das '
+          'equipes e dos próximos cultos. Sua conta continua existindo: se '
+          'mudar de ideia, um líder devolve o seu acesso.',
+          style: TextStyle(fontFamily: 'Poppins', fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
+            child: const Text('Sair do ministério'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final equipes = context.read<AgendaProvider>().teams;
+    final escalas = context.read<ScaleProvider>().scales;
+
+    setState(() => _saindo = true);
+    final r = await FirestoreService.removerDoMinisterio(
+      alvo: eu,
+      porQuemId: eu.id,
+      equipes: equipes,
+      escalas: escalas,
+    );
+    if (!mounted) return;
+    setState(() => _saindo = false);
+
+    // Deu certo? A tela some sozinha: o provider escuta o próprio cadastro e
+    // o app troca para a tela de quem está fora. Só o erro precisa de aviso.
+    if (!r.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(r.error ?? 'Não foi possível sair do ministério.'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      child: TextButton.icon(
+        onPressed: _saindo ? null : _sair,
+        icon: _saindo
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2))
+            : const Icon(Icons.person_remove_outlined,
+                size: 18, color: AppColors.textSecondaryLight),
+        label: const Text(
+          'Sair do ministério',
+          style: TextStyle(
+            color: AppColors.textSecondaryLight,
+            fontFamily: 'Poppins',
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(vertical: 13),
         ),
       ),
     );

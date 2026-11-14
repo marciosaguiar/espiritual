@@ -4,6 +4,8 @@ import '../models/arrangement_model.dart';
 import '../models/team_model.dart';
 import '../models/scale_model.dart';
 import '../models/message_model.dart';
+import '../models/user_model.dart';
+import 'auth_service.dart';
 import '../../core/utils/crypto_utils.dart';
 
 class FirestoreService {
@@ -448,7 +450,13 @@ class FirestoreService {
           .map((l) => l.copyWith(confirmed: previous[l.userId] ?? l.confirmed))
           .map((l) => l.toMap())
           .toList();
-      return {'levitas': merged, ..._marcaEdicaoManual(scale)};
+      // Mexer na escalação é o gesto de "já vi e resolvi": é aqui que o
+      // aviso de quem foi removido some.
+      return {
+        'levitas': merged,
+        if (scale.faltando.isNotEmpty) 'faltando': <String>[],
+        ..._marcaEdicaoManual(scale),
+      };
     });
   }
 
@@ -513,6 +521,144 @@ class FirestoreService {
       createdBy: createdBy,
       createdAt: DateTime.now(),
     );
+  }
+
+  // ─── MEMBERSHIP: REMOVING AND RESTORING ───────────────────────────────────
+
+  /// Takes someone out of the ministry.
+  ///
+  /// "Remove" here means revoking access, never deleting. Two reasons, and
+  /// only the first is a choice: the Firebase account itself can only be
+  /// deleted with the Admin SDK on a server, which needs the paid plan this
+  /// project deliberately stays off; and the history — who played where, who
+  /// said what in the chat — belongs to the ministry, not to the membership.
+  ///
+  /// Everything happens inside ONE transaction, so the person is never left
+  /// half out: still on a team but with no access, or the other way round.
+  /// The transaction re-reads each team and service as it runs, and writes
+  /// back only the field it owns (`members`, `levitas`), so a confirmation
+  /// someone taps during these few hundred milliseconds is not thrown away.
+  ///
+  /// Past services keep the person: they played there, and rewriting that
+  /// would be rewriting history. Only services from now on are cleaned.
+  static Future<({bool success, String? error})> removerDoMinisterio({
+    required UserModel alvo,
+    required String porQuemId,
+    required List<TeamModel> equipes,
+    required List<ScaleModel> escalas,
+  }) async {
+    // A contagem de líderes mora no AuthService, junto com a mesma checagem
+    // que já existe para rebaixar alguém. Repeti-la aqui seria ter duas
+    // verdades sobre quando o ministério fica sem líder.
+    if (alvo.isAdmin && await AuthService.adminCount() <= 1) {
+      return (
+        success: false,
+        error: 'O ministério precisa de pelo menos um líder. '
+            'Promova outra pessoa antes.'
+      );
+    }
+
+    final agora = DateTime.now();
+    final idsEquipes = equipes
+        .where((e) => e.members.any((m) => m.userId == alvo.id))
+        .map((e) => e.id)
+        .toList();
+    final idsEscalas = escalas
+        .where((s) =>
+            s.date.isAfter(agora) && s.levitas.any((l) => l.userId == alvo.id))
+        .map((s) => s.id)
+        .toList();
+
+    try {
+      await _db.runTransaction((tx) async {
+        final refUser = _db.collection('users').doc(alvo.id);
+        final refsEquipes =
+            idsEquipes.map((id) => _db.collection(_teams).doc(id)).toList();
+        final refsEscalas =
+            idsEscalas.map((id) => _db.collection(_scales).doc(id)).toList();
+
+        // O Firestore exige TODAS as leituras antes de qualquer escrita.
+        final equipesLidas = <DocumentSnapshot<Map<String, dynamic>>>[];
+        for (final ref in refsEquipes) {
+          equipesLidas.add(await tx.get(ref));
+        }
+        final escalasLidas = <DocumentSnapshot<Map<String, dynamic>>>[];
+        for (final ref in refsEscalas) {
+          escalasLidas.add(await tx.get(ref));
+        }
+
+        tx.update(refUser, {
+          'role': UserRole.removido.name,
+          'removedAt': FieldValue.serverTimestamp(),
+          'removedBy': porQuemId,
+        });
+
+        for (var i = 0; i < equipesLidas.length; i++) {
+          final restantes =
+              semAPessoa(equipesLidas[i].data()?['members'], alvo.id);
+          if (restantes != null) {
+            tx.update(refsEquipes[i], {'members': restantes});
+          }
+        }
+        for (var i = 0; i < escalasLidas.length; i++) {
+          final dados = escalasLidas[i].data();
+          final restantes = semAPessoa(dados?['levitas'], alvo.id);
+          if (restantes == null) continue;
+          // Sumir com o nome e não dizer nada deixaria o culto com um
+          // instrumento a menos, e o líder só descobriria no domingo.
+          final faltando = ((dados?['faltando'] as List?) ?? [])
+              .map((e) => '$e')
+              .toList();
+          if (!faltando.contains(alvo.name)) faltando.add(alvo.name);
+          tx.update(refsEscalas[i], {
+            'levitas': restantes,
+            'faltando': faltando,
+          });
+        }
+      });
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (
+        success: false,
+        error: 'Não foi possível remover do ministério: ${e.message}'
+      );
+    }
+  }
+
+  /// A lista sem a pessoa, ou `null` quando ela não estava lá — e aí não há
+  /// escrita nenhuma a fazer.
+  ///
+  /// Pública e pura de propósito: é a única decisão da remoção que dá para
+  /// errar em silêncio (tirar a pessoa errada, ou gravar uma lista igual à
+  /// que já estava lá), e dentro da transação ela não teria como ser testada.
+  static List<dynamic>? semAPessoa(Object? lista, String userId) {
+    if (lista is! List) return null;
+    final restantes = lista
+        .where((item) => !(item is Map && item['userId'] == userId))
+        .toList();
+    return restantes.length == lista.length ? null : restantes;
+  }
+
+  /// Devolve o acesso de alguém removido: volta como levita, sem equipe.
+  ///
+  /// Sem equipe de propósito — o líder escala de novo. Readmitir a pessoa
+  /// exatamente onde ela estava exigiria guardar de quais equipes ela saiu, e
+  /// isso envelhece: a equipe pode nem existir mais quando ela voltar.
+  static Future<({bool success, String? error})> devolverAcesso(
+      String userId) async {
+    try {
+      await _db.collection('users').doc(userId).update({
+        'role': UserRole.levita.name,
+        'removedAt': null,
+        'removedBy': null,
+      });
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (
+        success: false,
+        error: 'Não foi possível devolver o acesso: ${e.message}'
+      );
+    }
   }
 
   // ─── TEAMS AND THE STANDING SCHEDULE ──────────────────────────────────────

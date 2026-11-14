@@ -5,6 +5,9 @@ import '../../providers/auth_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/firestore_service.dart';
+import '../../providers/agenda_provider.dart';
+import '../../providers/scale_provider.dart';
 
 /// Ministry roster. Leaders use this to promote or step someone down —
 /// the sign-up form no longer lets people pick their own role.
@@ -45,11 +48,12 @@ class MembersScreen extends StatelessWidget {
           }
 
           // Três grupos, porque são três decisões diferentes: quem espera uma
-          // resposta, quem já está dentro, e quem foi recusado — este último
-          // visível de propósito, para um "não" por engano ter conserto.
+          // resposta, quem já está dentro, e quem saiu — este último visível
+          // de propósito, para um "não" por engano ter conserto.
           final pendentes = members.where((m) => m.isPendente).toList();
           final equipe = members.where((m) => m.aprovado).toList();
-          final recusados = members.where((m) => m.isRemovido).toList();
+          final removidos = members.where((m) => m.isRemovido).toList();
+          final nomes = {for (final m in members) m.id: m.name};
           final leaders = equipe.where((m) => m.isAdmin).length;
 
           Widget linha(UserModel m) => _MemberRow(
@@ -89,14 +93,19 @@ class MembersScreen extends StatelessWidget {
                 )
               else
                 ...equipe.map(linha),
-              if (recusados.isNotEmpty && auth.isAdmin) ...[
+              if (removidos.isNotEmpty && auth.isAdmin) ...[
                 const SizedBox(height: 22),
-                _Secao(
-                  titulo: 'Não aprovados',
-                  detalhe: 'Toque em Aprovar para liberar a entrada.',
+                _SecaoRecolhida(
+                  titulo: 'Removidos (${removidos.length})',
                   isDark: isDark,
+                  filhos: removidos
+                      .map((m) => _RemovidoRow(
+                            member: m,
+                            porQuem: nomes[m.removedBy],
+                            isDark: isDark,
+                          ))
+                      .toList(),
                 ),
-                ...recusados.map((m) => _PendenteRow(member: m, isDark: isDark)),
               ],
             ],
           );
@@ -169,6 +178,78 @@ class _MemberRowState extends State<_MemberRow> {
               : result.error ?? 'Não foi possível alterar a função.',
         ),
         backgroundColor: result.success ? AppColors.success : AppColors.red,
+      ),
+    );
+  }
+
+  /// Tira a pessoa do ministério: perde o acesso, sai das equipes e dos
+  /// cultos que ainda não aconteceram, e some das telas — sem apagar nada.
+  Future<void> _remover() async {
+    final m = widget.member;
+
+    // O limite do último líder é conferido antes de perguntar: avisar depois
+    // de a pessoa confirmar seria fazê-la decidir duas vezes.
+    if (m.isAdmin && await AuthService.adminCount() <= 1) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('O ministério precisa de pelo menos um líder. '
+              'Promova outra pessoa antes.'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('Remover ${m.name} do ministério?'),
+        content: Text(
+          '${m.name} perde o acesso ao chat, às escalas e às músicas. '
+          'Dá para devolver depois em Membros > Removidos.',
+          style: const TextStyle(fontFamily: 'Poppins', fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
+            child: const Text('Remover'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final eu = context.read<AuthProvider>().user?.id ?? '';
+    final equipes = context.read<AgendaProvider>().teams;
+    // Só os cultos que o app tem na memória, que é a janela de 60/90 dias.
+    // O gerador só cria 4 semanas à frente, então não há culto futuro fora
+    // dela — e, se um dia houver, ele aparece ao líder como "faltando
+    // alguém" em vez de sumir calado.
+    final escalas = context.read<ScaleProvider>().scales;
+
+    setState(() => _saving = true);
+    final r = await FirestoreService.removerDoMinisterio(
+      alvo: m,
+      porQuemId: eu,
+      equipes: equipes,
+      escalas: escalas,
+    );
+    if (!mounted) return;
+    setState(() => _saving = false);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(r.success
+            ? '${m.name} saiu do ministério.'
+            : r.error ?? 'Não foi possível remover.'),
+        backgroundColor: r.success ? AppColors.success : AppColors.red,
       ),
     );
   }
@@ -300,6 +381,8 @@ class _MemberRowState extends State<_MemberRow> {
                     _changeRole(m.isAdmin ? UserRole.levita : UserRole.admin);
                   } else if (value == 'password') {
                     _explainPasswordReset();
+                  } else if (value == 'remover') {
+                    _remover();
                   }
                 },
                 itemBuilder: (_) => [
@@ -328,9 +411,206 @@ class _MemberRowState extends State<_MemberRow> {
                       ],
                     ),
                   ),
+                  // Nunca na própria linha: sair do ministério é decisão de
+                  // quem sai, e fica em Perfil → Sair do ministério.
+                  if (!widget.isMe)
+                    const PopupMenuItem(
+                      value: 'remover',
+                      child: Row(
+                        children: [
+                          Icon(Icons.person_remove_outlined,
+                              size: 18, color: AppColors.red),
+                          SizedBox(width: 10),
+                          Text('Remover do ministério',
+                              style: TextStyle(color: AppColors.red)),
+                        ],
+                      ),
+                    ),
                 ],
               ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Seção que começa fechada. Os removidos são história: precisam existir
+/// para um engano ter conserto, mas não podem disputar espaço com quem está
+/// esperando uma resposta.
+class _SecaoRecolhida extends StatefulWidget {
+  final String titulo;
+  final List<Widget> filhos;
+  final bool isDark;
+
+  const _SecaoRecolhida({
+    required this.titulo,
+    required this.filhos,
+    required this.isDark,
+  });
+
+  @override
+  State<_SecaoRecolhida> createState() => _SecaoRecolhidaState();
+}
+
+class _SecaoRecolhidaState extends State<_SecaoRecolhida> {
+  bool _aberta = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final cor = widget.isDark
+        ? AppColors.textPrimaryDark
+        : AppColors.textPrimaryLight;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        InkWell(
+          onTap: () => setState(() => _aberta = !_aberta),
+          borderRadius: BorderRadius.circular(10),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(
+              children: [
+                Icon(
+                  _aberta
+                      ? Icons.keyboard_arrow_down_rounded
+                      : Icons.chevron_right_rounded,
+                  size: 22,
+                  color: cor,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  widget.titulo,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: cor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 6),
+        if (_aberta) ...widget.filhos,
+      ],
+    );
+  }
+}
+
+/// Quem saiu ou foi tirado do ministério, com a data e quem fez.
+class _RemovidoRow extends StatefulWidget {
+  final UserModel member;
+  final String? porQuem;
+  final bool isDark;
+
+  const _RemovidoRow({
+    required this.member,
+    required this.porQuem,
+    required this.isDark,
+  });
+
+  @override
+  State<_RemovidoRow> createState() => _RemovidoRowState();
+}
+
+class _RemovidoRowState extends State<_RemovidoRow> {
+  bool _salvando = false;
+
+  String get _quando {
+    final d = widget.member.removedAt;
+    if (d == null) return 'saiu agora';
+    String dois(int v) => v.toString().padLeft(2, '0');
+    return 'saiu em ${dois(d.day)}/${dois(d.month)}/${d.year}';
+  }
+
+  Future<void> _devolver() async {
+    setState(() => _salvando = true);
+    final r = await FirestoreService.devolverAcesso(widget.member.id);
+    if (!mounted) return;
+    setState(() => _salvando = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(r.success
+            ? '${widget.member.name} voltou como levita. Escale de novo '
+                'quando quiser.'
+            : r.error ?? 'Não foi possível devolver o acesso.'),
+        backgroundColor: r.success ? AppColors.success : AppColors.red,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final m = widget.member;
+    final isDark = widget.isDark;
+    final fraca = isDark
+        ? AppColors.textSecondaryDark
+        : AppColors.textSecondaryLight;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.04)
+            : Colors.white.withValues(alpha: 0.42),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.08)
+              : Colors.white.withValues(alpha: 0.6),
+        ),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  m.name,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w600,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  widget.porQuem == null
+                      ? _quando
+                      : '$_quando · por ${widget.porQuem}',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 12,
+                    color: fraca,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (_salvando)
+            const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2.2),
+            )
+          else
+            OutlinedButton(
+              onPressed: _devolver,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.blue,
+                side: BorderSide(color: AppColors.blue.withValues(alpha: 0.5)),
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+              ),
+              child: const Text('Devolver acesso'),
+            ),
         ],
       ),
     );
@@ -392,8 +672,9 @@ class _Secao extends StatelessWidget {
 /// Quem está esperando uma resposta do líder: aprovar ou recusar.
 ///
 /// Recusar não apaga ninguém — o app não tem como apagar uma conta, e as
-/// regras proíbem. A pessoa fica marcada como não aprovada, continua sem ver
-/// nada, e o líder consegue voltar atrás.
+/// regras proíbem. A pessoa vai para o mesmo estado de quem foi removido
+/// depois de aprovado (é a mesma coisa: sem acesso, com volta possível) e
+/// aparece em "Removidos", onde o líder consegue devolver o acesso.
 class _PendenteRow extends StatefulWidget {
   final UserModel member;
   final bool isDark;
@@ -459,7 +740,7 @@ class _PendenteRowState extends State<_PendenteRow> {
   Widget build(BuildContext context) {
     final m = widget.member;
     final isDark = widget.isDark;
-    final esperando = m.isPendente;
+    const esperando = true;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),

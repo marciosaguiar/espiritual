@@ -101,6 +101,18 @@ class LocalStorageService {
   static Map<String, SongModel> getOfflineSongs() =>
       Map<String, SongModel>.from(_offlineCache);
 
+  /// Apaga tudo o que ficou guardado no aparelho: a sessão e as músicas
+  /// salvas para tocar sem internet.
+  ///
+  /// Usado quando a pessoa sai do ministério. Sem isto, as regras do banco
+  /// passariam a recusar tudo, mas o repertório que já estava no celular
+  /// continuaria lá — o acesso seria cortado só pela metade.
+  static Future<void> limparTudoDoMinisterio() async {
+    _offlineCache.clear();
+    await _persistOffline();
+    await clearSession();
+  }
+
   static bool isSongOffline(String songId) =>
       _offlineCache.containsKey(songId);
 

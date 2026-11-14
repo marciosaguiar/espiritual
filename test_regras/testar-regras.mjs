@@ -352,8 +352,8 @@ await teste('pendente não vira levita por conta própria', () =>
 await teste('pendente não vira líder por conta própria', () =>
   assertFails(updateDoc(doc(novato(), 'users', OUTRO), { role: 'admin' })));
 
-await teste('pendente ainda conserta o próprio nome enquanto espera', () =>
-  assertSucceeds(updateDoc(doc(novato(), 'users', OUTRO), { name: 'Bruno Silva' })));
+await teste('pendente não escreve nem no próprio cadastro', () =>
+  assertFails(updateDoc(doc(novato(), 'users', OUTRO), { name: 'Bruno Silva' })));
 
 await teste('levita comum não aprova ninguém', () =>
   assertFails(updateDoc(doc(levita(), 'users', OUTRO), { role: 'levita' })));
@@ -383,12 +383,107 @@ await teste('aprovado passa a ler os cultos', () =>
 
 await teste('aprovado passa a mandar mensagem no chat', () =>
   assertSucceeds(addDoc(collection(novato(), 'messages'),
-    { userId: OUTRO, userName: 'Bruno Silva', text: 'cheguei', createdAt: serverTimestamp() })));
+    { userId: OUTRO, userName: 'Bruno', text: 'cheguei', createdAt: serverTimestamp() })));
 
 await teste('aprovado continua sem criar música (isso é do líder)', () =>
   assertFails(setDoc(doc(novato(), 'songs', 's-novo'),
     { id: 's-novo', name: 'Nova', artist: 'x', lyrics: '', originalKey: 'C',
       links: [], isOfflineAvailable: false, createdAt: new Date(), addedBy: OUTRO })));
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Sair e ser removido do ministério
+//
+// A esta altura OUTRO ('Bruno') já foi aprovado e é levita.
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n── remoção pelo líder ──');
+
+await teste('levita não remove ninguém', () =>
+  assertFails(updateDoc(doc(levita(), 'users', OUTRO),
+    { role: 'removido', removedAt: serverTimestamp(), removedBy: LEVITA })));
+
+await teste('levita não remove o líder', () =>
+  assertFails(updateDoc(doc(levita(), 'users', LIDER),
+    { role: 'removido', removedAt: serverTimestamp(), removedBy: LEVITA })));
+
+await teste('líder remove um levita', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'users', OUTRO),
+    { role: 'removido', removedAt: serverTimestamp(), removedBy: LIDER })));
+
+await teste('removido não lê o repertório', () =>
+  assertFails(getDoc(doc(novato(), 'songs', 's1'))));
+
+await teste('removido não lê os cultos', () =>
+  assertFails(getDoc(doc(novato(), 'scales', 'c1'))));
+
+await teste('removido não lê as equipes', () =>
+  assertFails(getDocs(collection(novato(), 'teams'))));
+
+await teste('removido não lê o chat', () =>
+  assertFails(getDocs(collection(novato(), 'messages'))));
+
+await teste('removido não manda mensagem', () =>
+  assertFails(addDoc(collection(novato(), 'messages'),
+    { userId: OUTRO, userName: 'Bruno', text: 'voltei', createdAt: serverTimestamp() })));
+
+await teste('removido não confirma presença', () =>
+  assertFails(updateDoc(doc(novato(), 'scales', 'c1'), {
+    levitas: [{ userId: OUTRO, userName: 'Bruno', instrument: 'vocalist', confirmed: true }],
+  })));
+
+await teste('removido lê o PRÓPRIO cadastro (é o que explica a tela)', () =>
+  assertSucceeds(getDoc(doc(novato(), 'users', OUTRO))));
+
+console.log('\n── removido não se devolve ──');
+
+await teste('removido não se devolve para levita', () =>
+  assertFails(updateDoc(doc(novato(), 'users', OUTRO),
+    { role: 'levita', removedAt: null, removedBy: null })));
+
+await teste('removido não se promove a líder', () =>
+  assertFails(updateDoc(doc(novato(), 'users', OUTRO), { role: 'admin' })));
+
+await teste('removido não volta para pendente para tentar de novo', () =>
+  assertFails(updateDoc(doc(novato(), 'users', OUTRO), { role: 'pendente' })));
+
+await teste('removido não apaga o carimbo de saída', () =>
+  assertFails(updateDoc(doc(novato(), 'users', OUTRO), { removedBy: null })));
+
+await teste('levita não devolve o acesso de ninguém', () =>
+  assertFails(updateDoc(doc(levita(), 'users', OUTRO),
+    { role: 'levita', removedAt: null, removedBy: null })));
+
+await teste('líder devolve o acesso', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'users', OUTRO),
+    { role: 'levita', removedAt: null, removedBy: null })));
+
+await teste('devolvido volta a ler o repertório', () =>
+  assertSucceeds(getDoc(doc(novato(), 'songs', 's1'))));
+
+console.log('\n── sair por conta própria ──');
+
+await teste('levita sai sozinho do ministério', () =>
+  assertSucceeds(updateDoc(doc(novato(), 'users', OUTRO),
+    { role: 'removido', removedAt: serverTimestamp(), removedBy: OUTRO })));
+
+await teste('quem saiu não entra de volta sozinho', () =>
+  assertFails(updateDoc(doc(novato(), 'users', OUTRO),
+    { role: 'levita', removedAt: null, removedBy: null })));
+
+await teste('ninguém "sai" no lugar de outra pessoa', () =>
+  assertFails(updateDoc(doc(levita(), 'users', LIDER),
+    { role: 'removido', removedAt: serverTimestamp(), removedBy: LIDER })));
+
+await teste('saindo com o removedBy de outra pessoa é recusado', () =>
+  assertFails(updateDoc(doc(levita(), 'users', LEVITA),
+    { role: 'removido', removedAt: serverTimestamp(), removedBy: OUTRO })));
+
+await teste('carimbo de saída com tipo errado é recusado', () =>
+  assertFails(updateDoc(doc(lider(), 'users', LEVITA),
+    { role: 'removido', removedAt: 'ontem', removedBy: LIDER })));
+
+await teste('conta apagada pelo app continua proibida', () =>
+  assertFails(deleteDoc(doc(lider(), 'users', OUTRO))));
 
 
 console.log('\n── coleção desconhecida ──');

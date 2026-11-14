@@ -74,6 +74,32 @@ service cloud.firestore {
         ['pendente', 'levita', 'admin', 'removido'];
     }
 
+    // O carimbo de quem saiu: quando, e por quem. Nulo é válido — é assim
+    // que "devolver acesso" limpa os dois.
+    function carimboDeSaidaValido() {
+      return (!('removedAt' in request.resource.data)
+              || request.resource.data.removedAt == null
+              || request.resource.data.removedAt is timestamp)
+        && texto('removedBy', 128);
+    }
+
+    // Sair do ministério por conta própria.
+    //
+    // É a única mudança de função que alguém faz em si mesmo, e só tem uma
+    // direção: de dentro para fora. O contrário — sair de `removido` — fica
+    // de fora de propósito, senão qualquer pessoa removida se readmitiria.
+    //
+    // O limite do último líder NÃO cabe aqui: a regra teria de contar quantos
+    // admins existem, e contar exige consulta, que regra do Firestore não
+    // faz. Essa proteção é só do app (ver removerDoMinisterio e o botão
+    // "Sair do ministério"). Vale para um erro, não contra má-fé — e todo
+    // líder aqui é gente de confiança do próprio ministério.
+    function saindoPorContaPropria() {
+      return resource.data.role in ['levita', 'admin']
+        && request.resource.data.role == 'removido'
+        && request.resource.data.removedBy == eu();
+    }
+
     // ── Validações ──────────────────────────────────────────────────────────
 
     // Campo de texto opcional, dentro de um limite de tamanho.
@@ -137,6 +163,7 @@ service cloud.firestore {
       // razoável.
       allow update: if tamanhoRazoavel()
         && funcaoValida()
+        && carimboDeSaidaValido()
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 3
         && request.resource.data.name.size() <= 60
@@ -146,7 +173,14 @@ service cloud.firestore {
         && (!('leitura' in request.resource.data)
             || request.resource.data.leitura in ['canto', 'toco'])
         && (
-          (souEu(userId) && !('role' in mudou()))
+          // Seu próprio perfil: nome, instrumento, "eu canto / eu toco".
+          // Exige estar aprovado — quem está pendente ou removido não
+          // escreve nada em lugar nenhum, nem no próprio cadastro.
+          (souEu(userId) && aprovado() && !('role' in mudou()))
+          // Sair do ministério por conta própria.
+          || (souEu(userId) && saindoPorContaPropria())
+          // O líder decide sobre os outros: aprovar, recusar, promover,
+          // remover e devolver o acesso.
           || ehLider()
         );
 

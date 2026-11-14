@@ -46,8 +46,17 @@ class AuthProvider extends ChangeNotifier {
     _meuCadastro = AuthService.watchUser(id).listen((perfil) {
       if (perfil == null || _user == null || perfil.id != _user!.id) return;
       if (perfil.role == _user!.role && perfil.name == _user!.name) return;
+
+      final saiu = _user!.aprovado && !perfil.aprovado;
       _user = perfil;
-      LocalStorageService.saveSession(perfil);
+      if (saiu) {
+        // Cortar o acesso no banco não basta: o repertório salvo para tocar
+        // sem internet continuaria no celular. Some junto.
+        _prefs = {};
+        LocalStorageService.limparTudoDoMinisterio();
+      } else {
+        LocalStorageService.saveSession(perfil);
+      }
       notifyListeners();
     }, onError: (_) {
       // Leitura do próprio cadastro negada ou sem rede: a tela atual continua

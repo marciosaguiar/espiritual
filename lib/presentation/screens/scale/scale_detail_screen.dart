@@ -649,6 +649,49 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
 
             const SizedBox(height: 20),
 
+            // Alguém escalado aqui saiu do ministério. O aviso é só para o
+            // líder, porque é ele quem resolve — e some quando ele mexe na
+            // escalação.
+            if (_scale.faltando.isNotEmpty && auth.isAdmin) ...[
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                      color: Colors.orange.withValues(alpha: 0.45)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.person_off_outlined,
+                        size: 19, color: Colors.orange),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        _scale.faltando.length == 1
+                            ? 'Faltando alguém: ${_scale.faltando.first} foi '
+                                'removido do ministério.'
+                            : 'Faltando alguém: '
+                                '${_scale.faltando.join(', ')} foram removidos '
+                                'do ministério.',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 13,
+                          height: 1.45,
+                          color: isDark
+                              ? AppColors.textPrimaryDark
+                              : AppColors.textPrimaryLight,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
             // Levitas section
             Row(
               children: [
