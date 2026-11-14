@@ -6,6 +6,9 @@ import '../../providers/songs_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/utils/chord_transposer.dart';
+import '../../../core/utils/cifra_colada.dart';
+import '../../widgets/common/glass.dart';
+import '../../widgets/songs/colar_cifra.dart';
 import '../../../data/models/arrangement_model.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../../data/models/song_model.dart';
@@ -38,6 +41,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       final auth = context.read<AuthProvider>();
       final saved = auth.getSavedTone(widget.song.id);
       if (saved != 0) setState(() => _semitones = saved);
+      // Quem canta lê de longe: letra grande também no Modo Culto.
+      if (auth.user?.canta ?? false) setState(() => _fontSize = 26);
       _loadArrangement();
     });
   }
@@ -45,10 +50,80 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   Future<void> _loadArrangement() async {
     final found = await FirestoreService.getArrangement(widget.song.id);
     if (!mounted) return;
+    final canta = context.read<AuthProvider>().user?.canta ?? false;
     setState(() {
       _arrangement = found;
       _loadingArrangement = false;
+      // Quem toca abre direto na cifra, no tom dele; quem canta, na letra.
+      _showChords = !canta && (found?.hasChords ?? false);
     });
+  }
+
+  /// Líder cola a cifra de novo (conserta música cadastrada com a cifra
+  /// embolada num parágrafo só): a cifra vira a da igreja e a letra é
+  /// trocada pela letra pura tirada dela.
+  Future<void> _colarCifra() async {
+    final auth = context.read<AuthProvider>();
+    final songs = context.read<SongsProvider>();
+    final inicial = _arrangement?.hasChords == true
+        ? _arrangement!.chords
+        : (CifraColada.pareceCifra(widget.song.lyrics) ? widget.song.lyrics : '');
+
+    final r = await Navigator.push<CifraColada>(
+      context,
+      GlassPageRoute(
+        builder: (_) => ColarCifraScreen(
+          musica: widget.song.name,
+          artista: widget.song.artist,
+          inicial: inicial,
+        ),
+      ),
+    );
+    if (r == null || !mounted) return;
+
+    String? erro;
+    ArrangementModel? novo = _arrangement;
+    if (r.temAcordes) {
+      final base = _arrangement ??
+          FirestoreService.createArrangementModel(
+            songId: widget.song.id,
+            churchKey: r.tom ?? widget.song.originalKey,
+            approvedBy: auth.user?.id,
+          );
+      final salvo = await FirestoreService.saveArrangement(base.copyWith(
+        chords: r.cifra,
+        churchKey: _arrangement == null ? null : (r.tom ?? base.churchKey),
+        approvedBy: auth.user?.id,
+        updatedAt: DateTime.now(),
+      ));
+      if (salvo.success) {
+        novo = salvo.arrangement;
+      } else {
+        erro = salvo.error;
+      }
+    }
+    if (erro == null && r.letra.isNotEmpty && r.letra != widget.song.lyrics) {
+      erro = await songs.updateSong(widget.song.copyWith(lyrics: r.letra));
+    }
+    if (!mounted) return;
+    setState(() {
+      _arrangement = novo;
+      if (r.temAcordes && !(auth.user?.canta ?? false)) _showChords = true;
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(erro ?? 'Cifra salva.'),
+        backgroundColor: erro == null ? AppColors.success : AppColors.red,
+      ),
+    );
+  }
+
+  /// Letra atual: a da lista de músicas (atualiza depois de colar a cifra).
+  String _letra(SongsProvider songs) {
+    for (final s in songs.allSongs) {
+      if (s.id == widget.song.id) return s.lyrics;
+    }
+    return widget.song.lyrics;
   }
 
   /// Personal note for this song — only this musician sees it.
@@ -150,15 +225,24 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     }
   }
 
-  /// The chart, when there is one and the user asked for it; otherwise the
-  /// plain words.
-  String get _displayText {
-    final chords = _arrangement?.chords ?? '';
-    if (_showChords && chords.isNotEmpty) {
-      return ChordTransposer.transposeText(chords, _semitones);
+  bool get _mostrandoCifra => _showChords && _hasChords;
+
+  /// A cifra (no tom escolhido), quando há e a pessoa pediu; senão a letra.
+  /// Quem canta nunca vê acorde: se a letra antiga tiver acordes no meio,
+  /// sai a letra pura.
+  String _textoExibido(String letra, bool canta) {
+    if (_mostrandoCifra) {
+      return ChordTransposer.transposeText(_arrangement!.chords, _semitones);
     }
-    return widget.song.lyrics;
+    if (canta) return CifraColada.letraDe(letra);
+    return CifraColada.pareceCifra(letra)
+        ? ChordTransposer.transposeText(letra, _semitones)
+        : letra;
   }
+
+  /// Fonte de largura fixa sempre que houver acordes na tela.
+  bool _monoespacada(String letra, bool canta) =>
+      _mostrandoCifra || (!canta && CifraColada.pareceCifra(letra));
 
   /// Key being shown: the church's arrangement is the starting point, the
   /// song's recorded key is the fallback.
@@ -178,13 +262,17 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final isFav = auth.isFavorite(widget.song.id);
     final isOffline = songs.isOffline(widget.song.id);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final canta = auth.user?.canta ?? false;
+    final letra = _letra(songs);
+    final texto = _textoExibido(letra, canta);
+    final mono = _monoespacada(letra, canta);
 
     if (_isWorshipMode) {
       return _WorshipModeView(
         song: widget.song,
-        displayText: _displayText,
+        displayText: texto,
         currentKey: _currentKey,
-        showChords: _showChords,
+        showChords: mono,
         fontSize: _fontSize,
         onExit: () => setState(() => _isWorshipMode = false),
         onFontSizeChange: (v) => setState(() => _fontSize = v),
@@ -210,6 +298,10 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           if (auth.isAdmin)
             PopupMenuButton<String>(
               onSelected: (v) async {
+                if (v == 'colar') {
+                  await _colarCifra();
+                  return;
+                }
                 if (v == 'delete') {
                   final confirm = await showDialog<bool>(
                     context: context,
@@ -247,6 +339,16 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                 }
               },
               itemBuilder: (_) => [
+                const PopupMenuItem(
+                  value: 'colar',
+                  child: Row(
+                    children: [
+                      Icon(Icons.content_paste_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text('Colar cifra'),
+                    ],
+                  ),
+                ),
                 const PopupMenuItem(
                   value: 'delete',
                   child: Row(
@@ -434,6 +536,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                       isActive: isOffline,
                       onTap: _toggleOffline,
                     ),
+                    // Só abre a busca do site no navegador; nada é lido de lá.
+                    _ToggleChip(
+                      label: 'Cifra Club',
+                      icon: Icons.open_in_new_rounded,
+                      isActive: false,
+                      onTap: () => abrirBuscaCifraClub(
+                          context, widget.song.name, widget.song.artist),
+                    ),
                     if (widget.song.videoUrl != null)
                       _ToggleChip(
                         label: 'YouTube',
@@ -454,14 +564,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-              child: Text(
-                _displayText.isNotEmpty
-                    ? _displayText
-                    : 'Nenhuma letra disponível',
+              child: _TextoMusica(
+                texto: texto,
+                mono: mono,
                 style: TextStyle(
-                  fontFamily: _showChords ? 'Courier' : 'Poppins',
-                  fontSize: 15,
-                  height: 1.9,
+                  fontFamily: mono ? 'JetBrainsMono' : 'Poppins',
+                  fontSize: mono ? 14 : (canta ? 22 : 16),
+                  height: mono ? 1.5 : 1.8,
+                  fontWeight: canta && !mono ? FontWeight.w500 : null,
                   color: isDark
                       ? AppColors.textPrimaryDark
                       : AppColors.textPrimaryLight,
@@ -672,14 +782,13 @@ class _WorshipModeView extends StatelessWidget {
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-                  child: Text(
-                    displayText.isNotEmpty
-                        ? displayText
-                        : 'Nenhuma letra disponível',
+                  child: _TextoMusica(
+                    texto: displayText,
+                    mono: showChords,
                     style: TextStyle(
-                      fontFamily: showChords ? 'Courier' : 'Poppins',
+                      fontFamily: showChords ? 'JetBrainsMono' : 'Poppins',
                       fontSize: fontSize,
-                      height: 2.0,
+                      height: showChords ? 1.5 : 2.0,
                       color: Colors.white,
                       fontWeight: FontWeight.w500,
                     ),
@@ -691,5 +800,31 @@ class _WorshipModeView extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+
+/// Letra ou cifra. A cifra não quebra linha (quebrar desalinha o acorde da
+/// sílaba): se a linha for mais larga que a tela, ela rola para o lado.
+class _TextoMusica extends StatelessWidget {
+  final String texto;
+  final bool mono;
+  final TextStyle style;
+
+  const _TextoMusica({
+    required this.texto,
+    required this.mono,
+    required this.style,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Text(
+      texto.isNotEmpty ? texto : 'Nenhuma letra disponível',
+      softWrap: !mono,
+      style: style,
+    );
+    if (!mono) return t;
+    return SingleChildScrollView(scrollDirection: Axis.horizontal, child: t);
   }
 }

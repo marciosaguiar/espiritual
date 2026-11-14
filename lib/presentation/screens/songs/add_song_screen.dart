@@ -8,6 +8,8 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/models/song_model.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../../core/utils/chord_transposer.dart';
+import '../../../core/utils/cifra_colada.dart';
+import '../../widgets/songs/colar_cifra.dart';
 
 class AddSongScreen extends StatefulWidget {
   const AddSongScreen({super.key});
@@ -20,8 +22,8 @@ class _AddSongScreenState extends State<AddSongScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _artistCtrl = TextEditingController();
-  final _lyricsCtrl = TextEditingController();
-  final _chordsCtrl = TextEditingController();
+  /// Campo único: cifra do Cifra Club como veio, ou só a letra.
+  final _cifraCtrl = TextEditingController();
   final _youtubeCtrl = TextEditingController();
   String _selectedKey = 'C';
   bool _isSaving = false;
@@ -30,8 +32,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _artistCtrl.dispose();
-    _lyricsCtrl.dispose();
-    _chordsCtrl.dispose();
+    _cifraCtrl.dispose();
     _youtubeCtrl.dispose();
     super.dispose();
   }
@@ -43,11 +44,14 @@ class _AddSongScreenState extends State<AddSongScreen> {
     final auth = context.read<AuthProvider>();
     final songs = context.read<SongsProvider>();
 
+    // A letra pura sai da cifra; a cifra (com as quebras de linha intactas)
+    // vira o arranjo da igreja. Sem acordes, o texto entra só como letra.
+    final colado = CifraColada.analisar(_cifraCtrl.text);
     final link = _youtubeCtrl.text.trim();
     final song = FirestoreService.createSongModel(
       name: _nameCtrl.text.trim(),
       artist: _artistCtrl.text.trim(),
-      lyrics: _lyricsCtrl.text.trim(),
+      lyrics: colado.letra,
       originalKey: _selectedKey,
       links: link.isEmpty ? const [] : [SongLink(url: link)],
       addedBy: auth.user?.id,
@@ -57,7 +61,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
 
     // The chart is the church's arrangement, not part of the song itself, so
     // it is saved as the song's first arrangement.
-    final chords = _chordsCtrl.text.trim();
+    final chords = colado.temAcordes ? colado.cifra : '';
     if (error == null && chords.isNotEmpty) {
       final arranjo = await FirestoreService.saveArrangement(
         FirestoreService.createArrangementModel(
@@ -122,6 +126,16 @@ class _AddSongScreenState extends State<AddSongScreen> {
                   return null;
                 },
               ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  onPressed: () => abrirBuscaCifraClub(
+                      context, _nameCtrl.text, _artistCtrl.text),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                  label: const Text('Buscar no Cifra Club'),
+                ),
+              ),
               const SizedBox(height: 16),
               // Key selector
               Column(
@@ -171,20 +185,14 @@ class _AddSongScreenState extends State<AddSongScreen> {
                 ],
               ),
               const SizedBox(height: 16),
-              AppTextField(
-                label: 'Letra',
-                hint: 'Cole a letra aqui...',
-                controller: _lyricsCtrl,
-                maxLines: 8,
-                textInputAction: TextInputAction.newline,
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                label: 'Cifra (opcional)',
-                hint: 'Cole a cifra com acordes...',
-                controller: _chordsCtrl,
-                maxLines: 8,
-                textInputAction: TextInputAction.newline,
+              PainelColarCifra(
+                controller: _cifraCtrl,
+                onAnalisar: (r) {
+                  final tom = tomDaLista(r.tom);
+                  if (tom != null && tom != _selectedKey) {
+                    setState(() => _selectedKey = tom);
+                  }
+                },
               ),
               const SizedBox(height: 16),
               AppTextField(

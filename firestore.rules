@@ -100,6 +100,9 @@ service cloud.firestore {
         && request.resource.data.name.size() <= 60
         && texto('photoUrl', 500)
         && !('passwordHash' in request.resource.data)
+        // "Eu canto" / "Eu toco" no perfil.
+        && (!('leitura' in request.resource.data)
+            || request.resource.data.leitura in ['canto', 'toco'])
         && (
           (souEu(userId) && !('role' in mudou()))
           || ehLider()

@@ -4,6 +4,10 @@ enum UserRole { admin, levita }
 
 enum UserInstrument { vocalist, guitar, bass, drums, keyboard, other }
 
+/// Como a pessoa lê as músicas: quem canta vê só a letra, em fonte grande;
+/// quem toca vê a cifra no tom dele.
+enum ModoLeitura { canto, toco }
+
 extension UserRoleExtension on UserRole {
   String get label {
     switch (this) {
@@ -81,6 +85,10 @@ class UserModel {
   final List<String> favoriteSongs;
   final DateTime createdAt;
 
+  /// Escolhido no perfil. Nulo = nunca escolheu: vale o que o instrumento
+  /// sugere (ver [modoLeitura]).
+  final ModoLeitura? leitura;
+
   const UserModel({
     required this.id,
     required this.name,
@@ -90,9 +98,20 @@ class UserModel {
     this.photoUrl,
     this.favoriteSongs = const [],
     required this.createdAt,
+    this.leitura,
   });
 
   bool get isAdmin => role == UserRole.admin;
+
+  /// Cantor(a) que nunca escolheu lê como quem canta; o resto, como quem toca.
+  ModoLeitura get modoLeitura =>
+      leitura ??
+      (instrument == UserInstrument.vocalist ? ModoLeitura.canto : ModoLeitura.toco);
+
+  bool get canta => modoLeitura == ModoLeitura.canto;
+
+  static ModoLeitura? _leituraDe(Object? v) =>
+      ModoLeitura.values.where((m) => m.name == v).firstOrNull;
 
   UserModel copyWith({
     String? id,
@@ -103,6 +122,7 @@ class UserModel {
     String? photoUrl,
     List<String>? favoriteSongs,
     DateTime? createdAt,
+    ModoLeitura? leitura,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -113,6 +133,7 @@ class UserModel {
       photoUrl: photoUrl ?? this.photoUrl,
       favoriteSongs: favoriteSongs ?? this.favoriteSongs,
       createdAt: createdAt ?? this.createdAt,
+      leitura: leitura ?? this.leitura,
     );
   }
 
@@ -172,6 +193,7 @@ class UserModel {
       'photoUrl': photoUrl,
       'favoriteSongs': favoriteSongs,
       'createdAt': Timestamp.fromDate(createdAt),
+      if (leitura != null) 'leitura': leitura!.name,
     };
   }
 
@@ -185,6 +207,7 @@ class UserModel {
       photoUrl: data['photoUrl'] as String?,
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? []),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      leitura: _leituraDe(data['leitura']),
     );
   }
 
@@ -201,6 +224,7 @@ class UserModel {
       'photoUrl': photoUrl,
       'favoriteSongs': favoriteSongs,
       'createdAt': createdAt.toIso8601String(),
+      if (leitura != null) 'leitura': leitura!.name,
     };
   }
 
@@ -215,6 +239,7 @@ class UserModel {
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? const []),
       createdAt:
           DateTime.tryParse(data['createdAt'] as String? ?? '') ?? DateTime.now(),
+      leitura: _leituraDe(data['leitura']),
     );
   }
 }

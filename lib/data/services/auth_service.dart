@@ -200,6 +200,7 @@ class AuthService {
         'instrument': user.instrument.name,
         'photoUrl': user.photoUrl,
         'favoriteSongs': user.favoriteSongs,
+        if (user.leitura != null) 'leitura': user.leitura!.name,
       });
       await LocalStorageService.saveSession(user);
       return true;

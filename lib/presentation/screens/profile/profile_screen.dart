@@ -516,6 +516,27 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     const SizedBox(height: 20),
                   ],
 
+                  // Cantor x músico: muda o que a tela da música mostra.
+                  _EscolhaLeitura(
+                    atual: user.modoLeitura,
+                    onEscolher: (m) async {
+                      final ok = await auth.updateProfile(leitura: m);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(ok
+                              ? (m == ModoLeitura.canto
+                                  ? 'Pronto: nas músicas você verá só a letra, grande.'
+                                  : 'Pronto: nas músicas você verá a cifra no seu tom.')
+                              : 'Não deu para salvar. Confira a internet.'),
+                          backgroundColor:
+                              ok ? AppColors.success : AppColors.red,
+                        ),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 20),
+
                   // Stats cards
                   Row(
                     children: [
@@ -1013,6 +1034,95 @@ class _SettingRow extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+
+/// "Eu canto" ou "Eu toco": quem canta abre a música e vê só a letra, em
+/// fonte grande; quem toca vê a cifra no tom salvo.
+class _EscolhaLeitura extends StatelessWidget {
+  final ModoLeitura atual;
+  final ValueChanged<ModoLeitura> onEscolher;
+
+  const _EscolhaLeitura({required this.atual, required this.onEscolher});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    Widget opcao(ModoLeitura m, String emoji, String titulo, String sub) {
+      final sel = atual == m;
+      return Expanded(
+        child: GestureDetector(
+          onTap: sel ? null : () => onEscolher(m),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+            decoration: BoxDecoration(
+              color: sel
+                  ? AppColors.blue
+                  : isDark
+                      ? Colors.grey.shade800
+                      : Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$emoji $titulo',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: sel
+                        ? Colors.white
+                        : isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  sub,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 11,
+                    color: sel
+                        ? Colors.white70
+                        : isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondaryLight,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Nas músicas, eu…',
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            opcao(ModoLeitura.canto, '🎤', 'Eu canto', 'Só a letra, grande'),
+            const SizedBox(width: 10),
+            opcao(ModoLeitura.toco, '🎸', 'Eu toco', 'Cifra no meu tom'),
+          ],
+        ),
+      ],
     );
   }
 }

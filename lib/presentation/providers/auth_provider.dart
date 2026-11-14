@@ -223,11 +223,13 @@ class AuthProvider extends ChangeNotifier {
   Future<bool> updateProfile({
     UserInstrument? instrument,
     String? photoUrl,
+    ModoLeitura? leitura,
   }) async {
     if (_user == null) return false;
     final updated = _user!.copyWith(
       instrument: instrument,
       photoUrl: photoUrl,
+      leitura: leitura,
     );
     final success = await AuthService.updateUser(updated);
     if (success) {

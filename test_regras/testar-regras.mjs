@@ -118,6 +118,10 @@ await teste('levita não se promove a líder', () =>
   assertFails(updateDoc(doc(levita(), 'users', LEVITA), { role: 'admin' })));
 await teste('levita edita o próprio instrumento', () =>
   assertSucceeds(updateDoc(doc(levita(), 'users', LEVITA), { instrument: 'guitar' })));
+await teste('levita escolhe "Eu canto" no perfil', () =>
+  assertSucceeds(updateDoc(doc(levita(), 'users', LEVITA), { leitura: 'canto' })));
+await teste('modo de leitura só aceita canto ou toco', () =>
+  assertFails(updateDoc(doc(levita(), 'users', LEVITA), { leitura: 'admin' })));
 await teste('levita não edita o perfil de outra pessoa', () =>
   assertFails(updateDoc(doc(levita(), 'users', LIDER), { instrument: 'drums' })));
 await teste('líder promove um levita', () =>

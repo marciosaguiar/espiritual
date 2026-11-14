@@ -48,3 +48,8 @@ flutter:
           weight: 600
         - asset: assets/fonts/Poppins-Bold.ttf
           weight: 700
+    # Cifra: largura fixa para o acorde ficar sobre a sílaba (licença OFL em
+    # assets/fonts/JetBrainsMono-OFL.txt). Courier não existe no Android.
+    - family: JetBrainsMono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono.ttf

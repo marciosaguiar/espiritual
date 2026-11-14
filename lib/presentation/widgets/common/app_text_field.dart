@@ -18,6 +18,9 @@ class AppTextField extends StatefulWidget {
   final FocusNode? focusNode;
   final TextInputAction? textInputAction;
 
+  /// Fonte de largura fixa (cifra: o acorde fica em cima da sílaba certa).
+  final bool monospace;
+
   const AppTextField({
     super.key,
     required this.label,
@@ -35,6 +38,7 @@ class AppTextField extends StatefulWidget {
     this.onTap,
     this.focusNode,
     this.textInputAction,
+    this.monospace = false,
   });
 
   @override
@@ -64,7 +68,14 @@ class _AppTextFieldState extends State<AppTextField> {
         TextFormField(
           controller: widget.controller,
           obscureText: widget.obscureText && !_showPassword,
-          keyboardType: widget.keyboardType,
+          // Campo de várias linhas precisa ser multiline: no navegador o
+          // TextInputType.text vira <input>, que joga fora as quebras de
+          // linha de um texto colado (a cifra virava um parágrafo corrido).
+          keyboardType: widget.maxLines != 1 &&
+                  !widget.obscureText &&
+                  widget.keyboardType == TextInputType.text
+              ? TextInputType.multiline
+              : widget.keyboardType,
           validator: widget.validator,
           onChanged: widget.onChanged,
           onFieldSubmitted: widget.onSubmitted,
@@ -74,8 +85,8 @@ class _AppTextFieldState extends State<AppTextField> {
           focusNode: widget.focusNode,
           textInputAction: widget.textInputAction,
           style: TextStyle(
-            fontFamily: 'Poppins',
-            fontSize: 15,
+            fontFamily: widget.monospace ? 'JetBrainsMono' : 'Poppins',
+            fontSize: widget.monospace ? 13 : 15,
             color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
           ),
           decoration: InputDecoration(
