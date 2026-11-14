@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <!-- De propósito igual ao do app, para medir nas MESMAS condições. -->
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Diagnóstico">
+  <title>Diagnóstico de largura</title>
+  <style>
+    :root { color-scheme: light dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 0;
+      font: 15px/1.5 -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #0E1116; color: #E7EBF0;
+    }
+    /* A régua: ocupa 100% e tem borda grossa dos dois lados.
+       Se a borda da DIREITA não aparecer inteira na tela, a página está
+       sendo desenhada mais larga que o aparelho — que é o defeito. */
+    .regua {
+      width: 100%;
+      border-left: 10px solid #2ECC71;
+      border-right: 10px solid #E74C3C;
+      background: #1B2027;
+      padding: 14px 0;
+      text-align: center;
+      font-weight: 700;
+      letter-spacing: .02em;
+    }
+    .conteudo { padding: 20px 16px 48px; }
+    h1 { font-size: 19px; margin: 20px 0 6px; }
+    p.sub { margin: 0 0 20px; color: #9EAAB6; font-size: 13.5px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    td { padding: 8px 4px; border-bottom: 1px solid #242B34; vertical-align: top; }
+    td:first-child { color: #9EAAB6; }
+    td:last-child {
+      text-align: right; font-weight: 600;
+      font-family: ui-monospace, Menlo, monospace;
+    }
+    .ok { color: #6FC3A3; }
+    .mau { color: #E98585; }
+    .veredito {
+      margin-top: 22px; padding: 14px 16px; border-radius: 10px;
+      font-weight: 600; line-height: 1.45;
+    }
+    .veredito.ok { background: #11241D; border: 1px solid #6FC3A3; }
+    .veredito.mau { background: #2A1414; border: 1px solid #E98585; }
+  </style>
+</head>
+<body>
+  <div class="regua">⟵ as duas bordas devem aparecer ⟶</div>
+
+  <div class="conteudo">
+    <h1>Diagnóstico de largura</h1>
+    <p class="sub">
+      Abra no mesmo lugar onde o app está cortado. Se o app estiver instalado
+      na tela de início, adicione esta página também e abra pelo ícone — é o
+      modo que importa.
+    </p>
+
+    <table id="dados"></table>
+    <div id="veredito" class="veredito"></div>
+  </div>
+
+<script>
+  function linha(nome, valor, classe) {
+    return '<tr><td>' + nome + '</td><td' +
+           (classe ? ' class="' + classe + '"' : '') + '>' + valor + '</td></tr>';
+  }
+
+  var vv = window.visualViewport;
+  var sonda = document.createElement('div');
+  sonda.style.cssText =
+    'position:fixed;left:0;top:0;width:0;height:0;' +
+    'padding-left:env(safe-area-inset-left,0px);' +
+    'padding-right:env(safe-area-inset-right,0px);';
+  document.body.appendChild(sonda);
+  var cs = getComputedStyle(sonda);
+  var seguroEsq = cs.paddingLeft, seguroDir = cs.paddingRight;
+  sonda.remove();
+
+  var instalado = window.matchMedia('(display-mode: standalone)').matches ||
+                  navigator.standalone === true;
+
+  // O teste que importa: o documento é mais largo que a janela?
+  var larguraDoc = document.documentElement.scrollWidth;
+  var larguraJanela = window.innerWidth;
+  var sobra = larguraDoc - larguraJanela;
+  var cortado = sobra > 0.5 || (vv && (larguraJanela - vv.width) > 0.5);
+
+  document.getElementById('dados').innerHTML =
+    linha('Largura da janela', larguraJanela + ' px') +
+    linha('Largura do documento', larguraDoc + ' px', sobra > 0.5 ? 'mau' : 'ok') +
+    linha('Sobra (deve ser 0)', sobra + ' px', sobra > 0.5 ? 'mau' : 'ok') +
+    linha('Largura da tela', screen.width + ' px') +
+    linha('Viewport visual', vv ? Math.round(vv.width) + ' px' : '—') +
+    linha('Zoom', vv ? vv.scale.toFixed(2) : '—') +
+    linha('Área segura esquerda', seguroEsq) +
+    linha('Área segura direita', seguroDir) +
+    linha('Densidade de pixels', window.devicePixelRatio) +
+    linha('Aberto pelo ícone', instalado ? 'sim' : 'não (navegador)');
+
+  var v = document.getElementById('veredito');
+  if (cortado) {
+    v.className = 'veredito mau';
+    v.textContent = 'A página está mais larga que a tela por ' +
+      Math.max(sobra, vv ? Math.round(larguraJanela - vv.width) : 0) +
+      ' px. É exatamente o defeito do app.';
+  } else {
+    v.className = 'veredito ok';
+    v.textContent = 'Largura correta: nada transborda. Se a barra verde e a ' +
+      'vermelha aparecem inteiras aí em cima, o corte do app não vem daqui.';
+  }
+</script>
+</body>
+</html>
