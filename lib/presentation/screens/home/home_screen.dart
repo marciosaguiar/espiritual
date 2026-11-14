@@ -15,9 +15,11 @@ import '../songs/song_detail_screen.dart';
 import '../../widgets/common/glass.dart';
 
 class HomeScreen extends StatefulWidget {
-  /// Switches the bottom-nav tab (0=Início, 1=Músicas, 2=Escala, 3=Chat).
+  /// Leva para a aba Perfil. A foto no canto parecia um botão e não era:
+  /// quem toca ali espera o próprio perfil, não um enfeite.
+  final VoidCallback? onAbrirPerfil;
 
-  const HomeScreen({super.key, });
+  const HomeScreen({super.key, this.onAbrirPerfil});
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -99,18 +101,26 @@ class _HomeScreenState extends State<HomeScreen> {
             actions: [
               Padding(
                 padding: const EdgeInsets.only(right: 16),
-                child: CircleAvatar(
-                  radius: 20,
-                  backgroundColor: AppColors.blue.withOpacity(0.15),
-                  child: Text(
-                    (auth.user?.name.isNotEmpty == true)
-                        ? auth.user!.name[0].toUpperCase()
-                        : 'L',
-                    style: const TextStyle(
-                      fontFamily: 'Poppins',
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.blue,
-                      fontSize: 16,
+                child: Semantics(
+                  button: true,
+                  label: 'Abrir meu perfil',
+                  child: InkWell(
+                    onTap: widget.onAbrirPerfil,
+                    customBorder: const CircleBorder(),
+                    child: CircleAvatar(
+                      radius: 20,
+                      backgroundColor: AppColors.blue.withOpacity(0.15),
+                      child: Text(
+                        (auth.user?.name.isNotEmpty == true)
+                            ? auth.user!.name[0].toUpperCase()
+                            : 'L',
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.blue,
+                          fontSize: 16,
+                        ),
+                      ),
                     ),
                   ),
                 ),

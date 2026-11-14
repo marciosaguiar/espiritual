@@ -32,8 +32,11 @@ class _MainScreenState extends State<MainScreen> {
   /// Guards against generating twice in one session.
   bool _gerou = false;
 
+  /// Índice da aba Perfil, usado por quem precisa levar a pessoa até lá.
+  static const int _abaPerfil = 4;
+
   late final List<Widget> _screens = [
-    const HomeScreen(),
+    HomeScreen(onAbrirPerfil: () => _goToTab(_abaPerfil)),
     const SongsScreen(),
     const ScaleScreen(),
     const ChatScreen(),
