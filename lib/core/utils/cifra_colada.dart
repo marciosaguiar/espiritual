@@ -40,6 +40,14 @@ class CifraColada {
     caseSensitive: false,
   );
 
+  /// O mesmo tom, em qualquer ponto da linha. Só vale dentro de uma linha já
+  /// reconhecida como cabeçalho de site, onde não há letra para confundir:
+  /// solto, pegaria o "tom" de um verso qualquer.
+  static final RegExp _tomNoCabecalho = RegExp(
+    r'\btom:\s*([A-G][#b]?m?)\b',
+    caseSensitive: false,
+  );
+
   /// Parte da música entre colchetes no começo da linha: [Intro], [Refrão].
   static final RegExp _parte = RegExp(r'^\s*\[([^\]\n]+)\]\s*(.*)$');
 
@@ -89,7 +97,13 @@ class CifraColada {
         tom ??= mTom.group(1);
         continue;
       }
-      if (_cabecalho.hasMatch(linha)) continue;
+      if (_cabecalho.hasMatch(linha)) {
+        // O Cifra Club entrega o nome do serviço e o tom na MESMA linha
+        // ("… no Apple Music Tom: D"). Jogar a linha fora inteira fazia o
+        // tom se perder, e o líder tinha de digitá-lo à mão sem saber por quê.
+        tom ??= _tomNoCabecalho.firstMatch(linha)?.group(1);
+        continue;
+      }
 
       cifra.add(linha);
 

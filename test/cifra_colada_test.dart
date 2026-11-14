@@ -122,5 +122,23 @@ Sou grato por Seu amor'''.trim());
     test('sem artista, só a música', () {
       expect(CifraColada.buscaNoCifraClub(' Santo ').queryParameters['q'], 'Santo');
     });
+
+    test('tom na mesma linha do cabeçalho do site', () {
+      // Como o Cifra Club entrega de verdade: nome do serviço e tom juntos.
+      final r = CifraColada.analisar(
+        '"Sou Grato Por Seu Amor" no Apple Music Tom: D\n'
+        'Bm   G6\n'
+        'Um caminho\n',
+      );
+      expect(r.tom, 'D');
+      expect(r.cifra, isNot(contains('Apple Music')));
+      expect(r.letra, 'Um caminho');
+    });
+
+    test('cabeçalho sem tom continua sem tom', () {
+      final r = CifraColada.analisar('Cifra Club\nBm  G6\nUm caminho\n');
+      expect(r.tom, isNull);
+    });
+
   });
 }

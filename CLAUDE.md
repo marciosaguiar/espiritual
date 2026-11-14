@@ -13,17 +13,24 @@ nenhuma falha silenciosa.
 flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
-flutter test                   # 104 testes
+                               # (os "issues" restantes são avisos)
+flutter test                   # 122 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 57 testes
+cd test_regras && npm install && npm test    # 59 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
 app: um erro nelas só aparece quando alguém não consegue entrar.
+
+O `analysis_options.yaml` existe por dois motivos: liga o `flutter_lints`, que
+estava declarado no `pubspec.yaml` e nunca era aplicado, e tira
+`test_regras/node_modules` da análise. Sem essa exclusão, rodar os testes de
+regra fazia o `flutter analyze` acusar 6 erros vindos de um arquivo de exemplo
+de dentro do `firebase-tools` — os dois comandos acima se contradiziam.
 
 ## Estado atual
 
