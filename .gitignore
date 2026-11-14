@@ -62,3 +62,6 @@ ios/Flutter/flutter_export_environment.sh
 
 # Build da web (gerado pelo CI)
 /build/
+
+# Patches das entregas por copiar-e-colar
+*.patch
