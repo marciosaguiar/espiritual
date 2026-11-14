@@ -38,7 +38,73 @@ jobs:
         run: flutter pub get
 
       - name: Build web
-        run: flutter build web --release --base-href "/espiritual/"
+        # --pwa-strategy=none: o service worker que o Flutter gera hoje só se
+        #   desregistra, e registrá-lo apagaria o nosso (web/sw.js), que é
+        #   quem guarda o app no aparelho.
+        # --no-web-resources-cdn: traz o canvaskit (1,5 MB) do nosso próprio
+        #   site. Vindo do servidor do Google ele fica fora do nosso cache e
+        #   é baixado de novo a cada abertura.
+        run: >
+          flutter build web --release --base-href "/espiritual/"
+          --pwa-strategy=none --no-web-resources-cdn
+
+      - name: Carimbar a versão e conferir o build
+        # Três conferências que transformam em build vermelho o que antes
+        # passava calado. Foi assim que o app perdeu o cache: uma versão nova
+        # do Flutter trocou o service worker por um que só se desregistra,
+        # tudo continuou "funcionando", e a abertura passou a demorar 5
+        # segundos no celular.
+        run: |
+          set -e
+
+          # 1. A lista do que guardar sai do build, não escrita à mão: os
+          #    nomes mudam entre versões do Flutter, e um arquivo esquecido
+          #    (foi o canvaskit) faz o app não abrir sem internet.
+          node -e '
+            const fs = require("fs"), p = require("path");
+            const raiz = "build/web";
+            // Fora do cache: o que o app nunca pede. O Flutter publica
+            // cinco variantes do canvaskit (36 MB somadas); ficam as duas
+            // que são realmente carregadas — a do Safari, que é o caso do
+            // iPhone, e a do Chrome. As outras três e o skwasm saem.
+            // O que faltar continua vindo da rede na primeira vez e é
+            // guardado depois.
+            const fora = new RegExp(
+              "^canvaskit/webparagraph/" +
+              "|(^|/)(skwasm[^/]*|wimp\\.wasm|NOTICES|sw\\.js|\\.last_build_id)$");
+            const arquivos = [];
+            (function anda(dir) {
+              for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+                const caminho = p.join(dir, e.name);
+                if (e.isDirectory()) { anda(caminho); continue; }
+                const rel = p.relative(raiz, caminho).split(p.sep).join("/");
+                if (!fora.test(rel)) arquivos.push(rel);
+              }
+            })(raiz);
+            arquivos.unshift("./");
+            const versao = (process.env.GITHUB_SHA || "sem-sha").slice(0, 12);
+            const cabeca = "self.VERSAO_DO_BUILD = " + JSON.stringify(versao) +
+              ";\nself.LISTA_DO_BUILD = " + JSON.stringify(arquivos) + ";\n";
+            const alvo = "build/web/sw.js";
+            fs.writeFileSync(alvo, cabeca + fs.readFileSync(alvo, "utf8"));
+            console.log("sw.js: versão " + versao + ", " + arquivos.length + " arquivos no cache");
+          '
+          grep -q "VERSAO_DO_BUILD" build/web/sw.js || { echo "::error::sw.js saiu sem versão"; exit 1; }
+
+          # 2. O canvaskit (1,5 MB) tem de vir do nosso site, senão fica fora
+          #    do nosso cache e é baixado de novo a cada abertura.
+          if ! grep -q 'useLocalCanvasKit":true' build/web/flutter_bootstrap.js; then
+            echo "::error::o canvaskit voltou a vir do CDN do Google"
+            exit 1
+          fi
+          test -f build/web/canvaskit/canvaskit.wasm
+
+          # 3. O Flutter não pode registrar um service worker: seria por cima
+          #    do nosso, e o dele hoje só se desregistra.
+          if grep -qE 'serviceWorkerVersion: *"' build/web/flutter_bootstrap.js; then
+            echo "::error::o Flutter voltou a registrar um service worker"
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

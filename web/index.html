@@ -158,26 +158,20 @@
   </script>
 
   <script>
-    // Keep the installed app from serving a build that is weeks old.
+    // Guarda o app no aparelho e recarrega só quando houver versão nova.
     //
-    // Installed to the home screen, the app is served by a service worker that
-    // caches the whole build. On iOS it is only asked for a new version on a
-    // real page load, and an app on the home screen is almost never closed —
-    // so a fix can be published, land on GitHub Pages, and still not be on the
-    // phone. That is how "the instrument still shows other" happened with the
-    // fix already in the build: the screen came from an older cache.
+    // O Flutter tinha um service worker que fazia o cache; as versões novas
+    // geram um que só se desregistra, e com isso o app passou a baixar 3,26
+    // MB a cada abertura — os ~5 segundos de tela de abertura no iPhone.
+    // O `sw.js` deste projeto devolve esse cache e não depende do Flutter.
     //
-    // Two lines, both cheap:
-    //   · when the app comes back to the foreground, ask whether there is a
-    //     new build (one conditional request, at most every 10 minutes);
-    //   · when a new build takes over, reload once so every screen comes from
-    //     it instead of half from each.
+    // O recarregar só acontece quando um service worker NOVO assume o lugar
+    // de um que já estava valendo. Voltar para o app não recarrega nada.
     (function () {
       if (!('serviceWorker' in navigator)) return;
 
-      // Only reload when a build REPLACES another one. On a first visit the
-      // page also goes from "no worker" to "worker", and reloading there would
-      // just make the app open twice.
+      // Na primeira visita a página também passa de "sem worker" para "com
+      // worker". Recarregar aí só faria o app abrir duas vezes.
       var tinhaBuildAnterior = !!navigator.serviceWorker.controller;
       var jaRecarregou = false;
 
@@ -187,7 +181,17 @@
         window.location.reload();
       });
 
-      var ultimaConferida = 0;
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('sw.js').catch(function (e) {
+          // Sem cache o app continua funcionando, só mais devagar.
+          console.warn('[levita] service worker não registrou:', e);
+        });
+      });
+
+      // O iOS só procura versão nova numa carga de página de verdade, e um
+      // app na tela de início quase nunca faz uma. Então perguntamos quando
+      // ele volta ao primeiro plano — no máximo de 10 em 10 minutos.
+      var ultimaConferida = Date.now();
       document.addEventListener('visibilitychange', function () {
         if (document.visibilityState !== 'visible') return;
         var agora = Date.now();
