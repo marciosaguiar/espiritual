@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import '../../data/models/arrangement_model.dart';
 import '../../data/models/user_model.dart';
@@ -23,6 +25,41 @@ class AuthProvider extends ChangeNotifier {
   bool get isAuthenticated => _status == AuthStatus.authenticated && _user != null;
   bool get isAdmin => _user?.isAdmin ?? false;
   bool get isLoading => _status == AuthStatus.loading;
+
+  /// Entrou, mas ainda não passou pelo líder. Enquanto for verdade, o app
+  /// mostra a tela de espera: as regras do banco não devolvem nada mesmo, e
+  /// sem esta checagem a pessoa veria cinco abas vazias achando que quebrou.
+  bool get pendente => _user?.isPendente ?? false;
+  bool get recusado => _user?.isRecusado ?? false;
+  bool get aprovado => _user?.aprovado ?? false;
+
+  StreamSubscription<UserModel?>? _meuCadastro;
+
+  /// Fica de olho no próprio cadastro para a aprovação valer na hora.
+  ///
+  /// Sem isto, quem acabou de se cadastrar ficaria parado no "aguarde" mesmo
+  /// depois de aprovado, até fechar e abrir o app — e nada na tela mandaria
+  /// fazer isso. Vale também para o contrário: líder rebaixado perde as telas
+  /// de líder no mesmo instante, sem precisar entrar de novo.
+  void _ouvirProprioCadastro(String id) {
+    _meuCadastro?.cancel();
+    _meuCadastro = AuthService.watchUser(id).listen((perfil) {
+      if (perfil == null || _user == null || perfil.id != _user!.id) return;
+      if (perfil.role == _user!.role && perfil.name == _user!.name) return;
+      _user = perfil;
+      LocalStorageService.saveSession(perfil);
+      notifyListeners();
+    }, onError: (_) {
+      // Leitura do próprio cadastro negada ou sem rede: a tela atual continua
+      // valendo. Não há valor padrão seguro para inventar aqui.
+    });
+  }
+
+  @override
+  void dispose() {
+    _meuCadastro?.cancel();
+    super.dispose();
+  }
 
   /// Restores the session on app start.
   ///
@@ -74,6 +111,7 @@ class AuthProvider extends ChangeNotifier {
     _user = profile;
     _status = AuthStatus.authenticated;
     await LocalStorageService.saveSession(profile);
+    _ouvirProprioCadastro(profile.id);
     notifyListeners();
 
     await _loadPrefs(profile.id);
@@ -98,6 +136,7 @@ class AuthProvider extends ChangeNotifier {
     if (result.success && result.user != null) {
       _user = result.user;
       _status = AuthStatus.authenticated;
+      _ouvirProprioCadastro(result.user!.id);
       notifyListeners();
       return true;
     } else {
@@ -119,6 +158,7 @@ class AuthProvider extends ChangeNotifier {
     if (result.success && result.user != null) {
       _user = result.user;
       _status = AuthStatus.authenticated;
+      _ouvirProprioCadastro(result.user!.id);
       notifyListeners();
       await _loadPrefs(result.user!.id);
       return true;
@@ -132,6 +172,10 @@ class AuthProvider extends ChangeNotifier {
 
   /// Logout
   Future<void> logout() async {
+    // Antes de desconectar: a escuta do próprio cadastro passaria a ler sem
+    // conta, as regras recusariam, e sobraria um erro no console a cada saída.
+    await _meuCadastro?.cancel();
+    _meuCadastro = null;
     await AuthService.logout();
     _user = null;
     _prefs = {};

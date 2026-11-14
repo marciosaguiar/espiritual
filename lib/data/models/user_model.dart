@@ -1,6 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum UserRole { admin, levita }
+/// Quem é a pessoa dentro do ministério.
+///
+/// `pendente` é onde todo cadastro começa: o endereço do app é público, então
+/// qualquer um com o link cria conta, e sem este degrau estaria dentro do chat
+/// e da escala no mesmo instante. O líder aprova ou recusa em Perfil →
+/// Membros. As regras do banco não liberam leitura nenhuma para pendente e
+/// recusado, fora o próprio cadastro — é isso que faz a trava valer de
+/// verdade, e não só sumir com os botões da tela.
+enum UserRole { pendente, levita, admin, recusado }
 
 enum UserInstrument { vocalist, guitar, bass, drums, keyboard, other }
 
@@ -15,6 +23,10 @@ extension UserRoleExtension on UserRole {
         return 'Líder';
       case UserRole.levita:
         return 'Levita';
+      case UserRole.pendente:
+        return 'Aguardando aprovação';
+      case UserRole.recusado:
+        return 'Não aprovado';
     }
   }
 
@@ -22,10 +34,16 @@ extension UserRoleExtension on UserRole {
     return name;
   }
 
+  /// Função desconhecida vira `pendente`, nunca `levita`.
+  ///
+  /// Um valor que não se reconhece — campo faltando, documento meio gravado,
+  /// nome escrito errado no console — tem de significar MENOS acesso, não o
+  /// acesso normal. Se o padrão fosse levita, bastaria um documento torto para
+  /// alguém entrar sem passar pelo líder.
   static UserRole fromString(String value) {
     return UserRole.values.firstWhere(
       (e) => e.name == value,
-      orElse: () => UserRole.levita,
+      orElse: () => UserRole.pendente,
     );
   }
 }
@@ -102,6 +120,13 @@ class UserModel {
   });
 
   bool get isAdmin => role == UserRole.admin;
+
+  /// Já passou pelo líder. É o que abre o app inteiro, e a mesma conta que as
+  /// regras do banco fazem — `levita` ou `admin`, nada mais.
+  bool get aprovado => role == UserRole.levita || role == UserRole.admin;
+
+  bool get isPendente => role == UserRole.pendente;
+  bool get isRecusado => role == UserRole.recusado;
 
   /// Cantor(a) que nunca escolheu lê como quem canta; o resto, como quem toca.
   ModoLeitura get modoLeitura =>
@@ -202,7 +227,9 @@ class UserModel {
       id: data['id'] as String,
       name: data['name'] as String,
       email: data['email'] as String? ?? '',
-      role: UserRoleExtension.fromString(data['role'] as String? ?? 'levita'),
+      // Campo ausente cai em pendente, não em levita: um cadastro sem
+      // função não pode valer como cadastro aprovado.
+      role: UserRoleExtension.fromString(data['role'] as String? ?? ''),
       instrument: UserInstrumentExtension.fromString(data['instrument'] as String? ?? 'other'),
       photoUrl: data['photoUrl'] as String?,
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? []),
@@ -232,7 +259,9 @@ class UserModel {
     return UserModel(
       id: data['id'] as String,
       name: data['name'] as String,
-      role: UserRoleExtension.fromString(data['role'] as String? ?? 'levita'),
+      // Campo ausente cai em pendente, não em levita: um cadastro sem
+      // função não pode valer como cadastro aprovado.
+      role: UserRoleExtension.fromString(data['role'] as String? ?? ''),
       instrument:
           UserInstrumentExtension.fromString(data['instrument'] as String? ?? 'other'),
       photoUrl: data['photoUrl'] as String?,

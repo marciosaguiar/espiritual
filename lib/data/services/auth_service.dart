@@ -29,11 +29,14 @@ class AuthService {
 
   /// Creates an account.
   ///
-  /// Everyone joins as a levita — the security rules refuse any other role on
-  /// sign-up, because the app's address is public and otherwise a stranger
-  /// could register straight into the leader role through the API. The first
-  /// leader is promoted once in the Firebase console; from then on leaders
-  /// promote the others from the Members screen.
+  /// Everyone joins as `pendente` and waits for a leader — the security rules
+  /// refuse any other role on sign-up. The app's address is public, so without
+  /// this step anyone with the link would land straight inside the chat and
+  /// the schedule; and if the role could be chosen here, a stranger could
+  /// register as a leader through the API.
+  ///
+  /// The first leader is promoted once in the Firebase console; from then on
+  /// leaders approve and promote the others from the Members screen.
   static Future<({bool success, String? error, UserModel? user})> register({
     required String name,
     required String password,
@@ -68,7 +71,7 @@ class AuthService {
         id: uid,
         name: trimmed,
         email: email,
-        role: UserRole.levita,
+        role: UserRole.pendente,
         instrument: instrument,
         createdAt: DateTime.now(),
       );
@@ -113,7 +116,11 @@ class AuthService {
           id: uid,
           name: name.trim(),
           email: email,
-          role: UserRole.levita,
+          // Mesmo degrau do cadastro: um perfil refeito aqui não pode
+          // valer mais do que um perfil criado pela porta da frente. Com
+          // `levita` as regras recusariam a escrita, e a pessoa ficaria
+          // trancada fora da própria conta.
+          role: UserRole.pendente,
           createdAt: DateTime.now(),
         );
         await _db.collection(_collection).doc(uid).set(rebuilt.toFirestore());
@@ -224,6 +231,30 @@ class AuthService {
     return updated;
   }
 
+  /// Quem está esperando o líder. Consulta filtrada de propósito: o resultado
+  /// quase sempre vem vazio, e o selo em Perfil não pode custar a leitura da
+  /// lista inteira de membros a cada abertura do app.
+  static Stream<List<UserModel>> watchPendentes() {
+    return _db
+        .collection(_collection)
+        .where('role', isEqualTo: 'pendente')
+        .snapshots()
+        .map((snapshot) => snapshot.docs
+            .map((doc) => UserModel.fromFirestore(doc.data()))
+            .toList());
+  }
+
+  /// O próprio cadastro, em tempo real.
+  ///
+  /// É o que tira a pessoa da tela de espera no segundo em que o líder
+  /// aprova. Sem isto ela ficaria olhando "aguarde" até fechar e abrir o app,
+  /// sem nada na tela dizendo que precisa fazer isso.
+  static Stream<UserModel?> watchUser(String id) {
+    return _db.collection(_collection).doc(id).snapshots().map(
+          (doc) => doc.exists ? UserModel.fromFirestore(doc.data()!) : null,
+        );
+  }
+
   static Stream<List<UserModel>> getAllUsers() {
     return _db
         .collection(_collection)
@@ -272,7 +303,16 @@ class AuthService {
     if (user.role == role) return (success: true, error: null);
 
     try {
-      if (role == UserRole.levita && await adminCount() <= 1) {
+      // Rebaixar o último líder deixaria o ministério sem ninguém capaz de
+      // criar culto, aprovar membro ou cadastrar música — e sem ninguém capaz
+      // de desfazer isso pelo app.
+      //
+      // A condição olha de ONDE a pessoa está saindo, não para onde vai. Antes
+      // era `role == levita`, e isso tinha dois furos: rebaixar um líder para
+      // `recusado` passava batido, e aprovar um pendente (que também vira
+      // levita) era recusado com "o ministério precisa de pelo menos um
+      // líder", numa igreja com um líder só — ou seja, em quase todas.
+      if (user.isAdmin && role != UserRole.admin && await adminCount() <= 1) {
         return (
           success: false,
           error: 'O ministério precisa de pelo menos um líder.'

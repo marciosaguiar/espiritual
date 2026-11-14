@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 122 testes
+flutter test                   # 130 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 59 testes
+cd test_regras && npm install && npm test    # 84 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -35,7 +35,7 @@ de dentro do `firebase-tools` — os dois comandos acima se contradiziam.
 O `test_regras/.npmrc` também não é enfeite: `@firebase/rules-unit-testing@3`
 pede `firebase@^10` e aqui se usa o 13. As versões novas do npm recusam
 instalar por isso, então `npm install` falhava num computador limpo, embora os
-59 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
+84 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
 só com `npm install --legacy-peer-deps`.
 
 ## Estado atual
@@ -49,8 +49,11 @@ configuração, não código:
    arquivos nativos, que hoje têm valores de exemplo.
 3. `firebase deploy --only firestore:rules`.
 4. Depois de criar a primeira conta pelo app, **promover-se a líder no
-   console**: Firestore → `users` → seu documento → `role`: `levita` → `admin`.
-   As regras proíbem nascer admin de propósito (o endereço do app é público).
+   console**: Firestore → `users` → seu documento → `role`: `pendente` →
+   `admin`. As regras proíbem nascer admin de propósito, e agora proíbem
+   também nascer levita: todo cadastro novo fica `pendente` até um líder
+   aprovar. Como o primeiro cadastro não tem líder para aprová-lo, esse
+   primeiro empurrão é no console — uma vez só, na vida do projeto.
 
 Sem o passo 2 o app abre numa tela explicando o que falta, em vez de parecer
 quebrado.
@@ -116,6 +119,40 @@ como não confirmados.
   (`FirestoreService.servicosFaltando`), testada em `test/agenda_fixa_test.dart`.
   Toda lógica nova de geração entra ali, não dentro da transação.
 
+### Aprovação do líder
+
+O endereço do app é público — tem de ser, o GitHub Pages serve de graça só
+repositório público. Então qualquer pessoa com o link cria uma conta. Quem se
+cadastra nasce `pendente`:
+
+```
+pendente  → acabou de se cadastrar; não lê NADA além do próprio cadastro
+levita    → aprovado
+admin     → líder
+recusado  → o líder disse não; mesma falta de acesso do pendente
+```
+
+- **A trava está nas regras, não na tela.** Esconder botões não adiantaria:
+  qualquer um fala direto com o banco pela API. `aprovado()` no
+  `firestore.rules` é o que vale, e o `test_regras` cobre cada coleção.
+  Rodando os testes novos contra as regras antigas, 16 falham — é a medida
+  exata do buraco que existia.
+- **O pendente lê o próprio cadastro, e só.** Sem isso o app não teria como
+  saber que a pessoa está esperando, e mostraria cinco abas vazias parecendo
+  quebrado. É o que a `PendingScreen` explica.
+- **Função desconhecida vira `pendente`**, nos dois lados: `fromString` no
+  Dart e a lista fechada `['levita','admin']` na regra. Campo faltando,
+  documento meio gravado ou nome escrito errado no console têm de significar
+  *menos* acesso, nunca o acesso normal.
+- **Recusar não apaga ninguém.** O app não apaga conta e as regras proíbem; a
+  pessoa fica `recusado` e o líder consegue voltar atrás.
+- **O app escuta o próprio cadastro** (`AuthService.watchUser`), então a
+  aprovação vale na hora, sem a pessoa precisar fechar e abrir. Vale para o
+  contrário também: líder rebaixado perde as telas de líder na mesma hora.
+- **O selo aparece em dois lugares** — na aba Perfil e na linha "Membros do
+  ministério" —, porque um pedido esquecido é uma pessoa achando que o app
+  não funciona.
+
 ### Janela de leitura dos cultos
 
 `watchScales` lê apenas de 60 dias atrás até 90 dias à frente
@@ -158,6 +195,12 @@ efeito colateral: meses muito antigos aparecem vazios no calendário.
 - **Escutas em tempo real.** As quatro começam juntas em `main_screen`, e duas
   leem a coleção inteira. É o maior custo de leitura do app; com 300 músicas
   passa da cota gratuita diária do Firestore.
+- **Valor padrão que abre a porta.** `fromFirestore` lia
+  `data['role'] ?? 'levita'`: um cadastro sem o campo `role` entrava como
+  aprovado. Com a aprovação do líder isso deixou de ser detalhe e virou a
+  diferença entre a trava funcionar ou não. Foi pego por um teste escrito
+  justamente para perguntar "e se o campo não existir?" — vale repetir essa
+  pergunta em todo `?? valor` que decide acesso.
 - **O app instalado serve a versão em cache.** Na tela de início quem entrega
   as telas é o service worker, e o iOS só procura versão nova numa carga de
   página de verdade — coisa que um app instalado quase nunca faz. Resultado:
@@ -173,11 +216,9 @@ efeito colateral: meses muito antigos aparecem vazios no calendário.
 Nesta ordem, e **nada disso antes de testar o app num iPhone real**:
 
 0. ~~Agenda fixa + equipes~~ — **feito.**
+0. ~~Cifra de verdade, colar cifra, cantor/músico~~ — **feito.**
 
-1. **Aprovação do líder.** Quem se cadastra entra com `role: 'pendente'`; as
-   regras não liberam leitura nenhuma para pendente; o líder aprova ou recusa
-   em Perfil → Membros, com selo de quantos aguardam. Hoje o cadastro é
-   aberto a qualquer pessoa com o link, e é o buraco mais urgente.
+1. ~~Aprovação do líder~~ — **feito.**
 2. **Notificações push**, Android e iPhone. No iOS funciona por Web Push com
    VAPID em PWA instalado (16.4+) — **não** exige conta paga da Apple. Exige
    Cloud Functions para os gatilhos: escalado, lembrete da véspera, mensagem

@@ -7,6 +7,8 @@ import '../providers/scale_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/agenda_provider.dart';
 import '../providers/auth_provider.dart';
+import '../../data/models/user_model.dart';
+import '../../data/services/auth_service.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../widgets/common/glass.dart';
@@ -127,11 +129,24 @@ class _MainScreenState extends State<MainScreen> {
         index: _currentIndex,
         children: _screens,
       ),
-      bottomNavigationBar: _GlassNavBar(
-        currentIndex: _currentIndex,
-        onTap: _goToTab,
-        isDark: isDark,
-      ),
+      bottomNavigationBar: context.watch<AuthProvider>().isAdmin
+          // O selo precisa aparecer sem o líder ir procurar: quem está
+          // esperando não vê NADA do app, e um pedido esquecido por dias é
+          // uma pessoa achando que o app não funciona.
+          ? StreamBuilder<List<UserModel>>(
+              stream: AuthService.watchPendentes(),
+              builder: (_, snap) => _GlassNavBar(
+                currentIndex: _currentIndex,
+                onTap: _goToTab,
+                isDark: isDark,
+                pendentes: snap.data?.length ?? 0,
+              ),
+            )
+          : _GlassNavBar(
+              currentIndex: _currentIndex,
+              onTap: _goToTab,
+              isDark: isDark,
+            ),
     );
   }
 }
@@ -141,10 +156,14 @@ class _GlassNavBar extends StatelessWidget {
   final ValueChanged<int> onTap;
   final bool isDark;
 
+  /// Quantos aguardam aprovação. Só o líder recebe diferente de zero.
+  final int pendentes;
+
   const _GlassNavBar({
     required this.currentIndex,
     required this.onTap,
     required this.isDark,
+    this.pendentes = 0,
   });
 
   static const _items = [
@@ -177,6 +196,7 @@ class _GlassNavBar extends StatelessWidget {
                     label: _items[i].$3,
                     selected: i == currentIndex,
                     isDark: isDark,
+                    badge: i == _items.length - 1 ? pendentes : 0,
                     onTap: () => onTap(i),
                   ),
                 ),
@@ -194,6 +214,7 @@ class _GlassNavItem extends StatelessWidget {
   final String label;
   final bool selected;
   final bool isDark;
+  final int badge;
   final VoidCallback onTap;
 
   const _GlassNavItem({
@@ -203,6 +224,7 @@ class _GlassNavItem extends StatelessWidget {
     required this.selected,
     required this.isDark,
     required this.onTap,
+    this.badge = 0,
   });
 
   @override
@@ -225,7 +247,37 @@ class _GlassNavItem extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(selected ? filled : outlined, size: 23, color: color),
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(selected ? filled : outlined, size: 23, color: color),
+                if (badge > 0)
+                  Positioned(
+                    top: -4,
+                    right: -7,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 5, vertical: 1),
+                      constraints: const BoxConstraints(minWidth: 17),
+                      decoration: BoxDecoration(
+                        color: AppColors.red,
+                        borderRadius: BorderRadius.circular(9),
+                      ),
+                      child: Text(
+                        badge > 9 ? '9+' : '$badge',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                          height: 1.3,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
             const SizedBox(height: 3),
             Text(
               label,

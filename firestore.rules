@@ -8,7 +8,9 @@ rules_version = '2';
 // de verdade, e não só limites de tamanho como na versão anterior.
 //
 // Em resumo:
-//   · nada é legível sem estar logado;
+//   · nada é legível sem estar logado E aprovado por um líder;
+//   · quem acabou de se cadastrar nasce `pendente` e enxerga só o próprio
+//     cadastro, até o líder aprovar ou recusar em Perfil → Membros;
 //   · cada pessoa só edita o próprio perfil, e não a própria função;
 //   · só o líder cria e altera músicas, arranjos e cultos;
 //   · APAGAR qualquer coisa é só do líder;
@@ -44,6 +46,30 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(eu())).data.role == 'admin';
     }
 
+    // Passou pela aprovação do líder.
+    //
+    // Esta é a trava de verdade da entrada. O endereço do app é público, então
+    // qualquer pessoa com o link cria uma conta; sem esta função ela estaria
+    // lendo o chat, a escala e o repertório do ministério no mesmo instante.
+    //
+    // A lista é fechada de propósito: só `levita` e `admin` entram. Função
+    // desconhecida — campo faltando, documento meio gravado, nome escrito
+    // errado no console — fica DE FORA. Um valor que não se reconhece tem de
+    // significar menos acesso, nunca o acesso normal.
+    function aprovado() {
+      return logado()
+        && exists(/databases/$(database)/documents/users/$(eu()))
+        && get(/databases/$(database)/documents/users/$(eu())).data.role
+             in ['levita', 'admin'];
+    }
+
+    // As quatro funções que existem. Serve para um erro de digitação não
+    // criar um quinto estado que ninguém sabe o que faz.
+    function funcaoValida() {
+      return request.resource.data.role in
+        ['pendente', 'levita', 'admin', 'recusado'];
+    }
+
     // ── Validações ──────────────────────────────────────────────────────────
 
     // Campo de texto opcional, dentro de um limite de tamanho.
@@ -71,20 +97,27 @@ service cloud.firestore {
     // ── Usuários ────────────────────────────────────────────────────────────
     match /users/{userId} {
 
-      // Todo mundo do ministério vê a lista (nomes e instrumentos aparecem na
-      // escala e no chat). Sem login, nada.
-      allow read: if logado();
+      // Quem já faz parte vê a lista (nomes e instrumentos aparecem na escala
+      // e no chat). Quem está esperando aprovação vê apenas o PRÓPRIO
+      // cadastro — e precisa vê-lo, senão o app não teria como saber que a
+      // pessoa está pendente e mostraria o aplicativo todo vazio, sem
+      // explicação, parecendo defeito.
+      allow read: if souEu(userId) || aprovado();
 
       // Só dá para criar o SEU próprio cadastro, com o id da sua conta, e
-      // sempre como levita.
+      // sempre como pendente.
       //
-      // Cadastrar-se como líder é proibido de propósito: o endereço do app é
-      // público, e sem esta linha qualquer pessoa poderia se registrar como
-      // administradora. O primeiro líder é promovido uma vez no console do
-      // Firebase; daí em diante os líderes promovem os outros pelo app.
+      // Dois motivos numa linha só. Primeiro: o endereço do app é público, e
+      // sem ela qualquer pessoa se registraria como administradora pela API.
+      // Segundo: todo cadastro novo tem de parar aqui até um líder aprovar,
+      // porque até então não há nada que impeça um estranho de entrar.
+      //
+      // O primeiro líder é promovido uma vez no console do Firebase
+      // (pendente → admin); daí em diante os líderes aprovam e promovem os
+      // outros pelo app.
       allow create: if souEu(userId)
         && tamanhoRazoavel()
-        && request.resource.data.role == 'levita'
+        && request.resource.data.role == 'pendente'
         && request.resource.data.id == userId
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 3
@@ -93,8 +126,13 @@ service cloud.firestore {
         && !('passwordHash' in request.resource.data);
 
       // Você edita o seu perfil, menos a sua função — senão qualquer um se
-      // promoveria a líder.
+      // promoveria a líder, ou se aprovaria sozinho.
+      //
+      // Quem está pendente também edita o próprio nome: é a única coisa que
+      // ele consegue fazer, e consertar o nome antes de o líder decidir é
+      // razoável.
       allow update: if tamanhoRazoavel()
+        && funcaoValida()
         && request.resource.data.name is string
         && request.resource.data.name.size() >= 3
         && request.resource.data.name.size() <= 60
@@ -122,7 +160,7 @@ service cloud.firestore {
 
     // ── Músicas ─────────────────────────────────────────────────────────────
     match /songs/{songId} {
-      allow read: if logado();
+      allow read: if aprovado();
 
       allow create, update: if ehLider()
         && tamanhoRazoavel()
@@ -136,7 +174,7 @@ service cloud.firestore {
       // ── Arranjo da igreja ─────────────────────────────────────────────────
       // Como a NOSSA igreja toca a música: cifra, tom, estrutura, andamento.
       match /arrangements/{arrangementId} {
-        allow read: if logado();
+        allow read: if aprovado();
 
         allow create, update: if ehLider()
           && tamanhoRazoavel()
@@ -152,7 +190,7 @@ service cloud.firestore {
     // "Equipe Manhã", "Equipe Noite": quem toca, e em quê. Todo mundo lê
     // (os nomes aparecem na escala); só o líder monta.
     match /teams/{teamId} {
-      allow read: if logado();
+      allow read: if aprovado();
 
       allow create, update: if ehLider()
         && tamanhoRazoavel()
@@ -168,7 +206,7 @@ service cloud.firestore {
     // ── Agenda fixa ─────────────────────────────────────────────────────────
     // Um documento só: config/agendaFixa, com as linhas da semana.
     match /config/{documento} {
-      allow read: if logado();
+      allow read: if aprovado();
 
       allow write: if ehLider()
         && request.resource.data.slots is list
@@ -177,7 +215,7 @@ service cloud.firestore {
 
     // ── Cultos / escalas ────────────────────────────────────────────────────
     match /scales/{scaleId} {
-      allow read: if logado();
+      allow read: if aprovado();
 
       // Vale tanto para o culto avulso do "+" quanto para os que a agenda
       // fixa gera com id determinístico (2026-11-15_0800).
@@ -202,7 +240,7 @@ service cloud.firestore {
       allow update: if tamanhoRazoavel()
         && (
           (ehLider() && texto('serviceType', 60) && texto('observations', 5000))
-          || (logado() && mudou().hasOnly(['levitas']))
+          || (aprovado() && mudou().hasOnly(['levitas']))
         );
 
       allow delete: if ehLider();
@@ -210,10 +248,10 @@ service cloud.firestore {
 
     // ── Chat ────────────────────────────────────────────────────────────────
     match /messages/{messageId} {
-      allow read: if logado();
+      allow read: if aprovado();
 
       // Você só envia mensagem em seu próprio nome.
-      allow create: if logado()
+      allow create: if aprovado()
         && tamanhoRazoavel()
         && request.resource.data.userId == eu()
         && request.resource.data.text is string
@@ -227,8 +265,8 @@ service cloud.firestore {
 
     // ── "Está digitando…" ───────────────────────────────────────────────────
     match /typing/{userId} {
-      allow read: if logado();
-      allow write: if souEu(userId) && texto('userName', 60);
+      allow read: if aprovado();
+      allow write: if souEu(userId) && aprovado() && texto('userName', 60);
     }
 
     // Qualquer outra coleção fica bloqueada por não ter regra definida.

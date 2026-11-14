@@ -85,25 +85,29 @@ await semear();
 
 console.log('\n── cadastro ──');
 await teste('cadastro novo é aceito (photoUrl nulo incluído)', () =>
-  assertSucceeds(setDoc(doc(novato(), 'users', OUTRO), perfil(OUTRO, 'Bruno', 'levita'))));
+  assertSucceeds(setDoc(doc(novato(), 'users', OUTRO), perfil(OUTRO, 'Bruno', 'pendente'))));
+
+await teste('cadastrar-se já como levita é recusado', () =>
+  assertFails(setDoc(doc(env.authenticatedContext('uid-esperto').firestore(),
+    'users', 'uid-esperto'), perfil('uid-esperto', 'Esperto', 'levita'))));
 
 await teste('cadastrar-se como líder é recusado', () =>
   assertFails(setDoc(doc(novato(), 'users', OUTRO), perfil(OUTRO, 'Bruno', 'admin'))));
 
 await teste('cadastrar no id de outra pessoa é recusado', () =>
-  assertFails(setDoc(doc(novato(), 'users', 'uid-alheio'), perfil('uid-alheio', 'Falso', 'levita'))));
+  assertFails(setDoc(doc(novato(), 'users', 'uid-alheio'), perfil('uid-alheio', 'Falso', 'pendente'))));
 
 // uid próprio: o OUTRO já foi criado acima, e criar ali seria uma atualização.
 await teste('cadastro com nome curto demais é recusado', () =>
   assertFails(setDoc(doc(env.authenticatedContext('uid-curto').firestore(), 'users', 'uid-curto'),
-    perfil('uid-curto', 'Jo', 'levita'))));
+    perfil('uid-curto', 'Jo', 'pendente'))));
 
 await teste('não dá para encurtar o nome abaixo de 3 letras depois', () =>
   assertFails(updateDoc(doc(novato(), 'users', OUTRO), { name: 'Jo' })));
 
 await teste('cadastro trazendo passwordHash é recusado', () =>
   assertFails(setDoc(doc(novato(), 'users', OUTRO),
-    { ...perfil(OUTRO, 'Bruno', 'levita'), passwordHash: 'x' })));
+    { ...perfil(OUTRO, 'Bruno', 'pendente'), passwordHash: 'x' })));
 
 console.log('\n── sem login ──');
 await teste('deslogado não lê usuários', () =>
@@ -293,6 +297,99 @@ await teste('levita ainda confirma presença no culto gerado', () =>
     levitas: [{ userId: LEVITA, userName: 'Ana',
                 instrument: 'vocalist', confirmed: true }],
   })));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Aprovação do líder
+//
+// É a trava de entrada do app, e é toda feita aqui nas regras — esconder os
+// botões não adiantaria, porque qualquer pessoa pode falar direto com o banco
+// pela API. Por isso o que importa é o que está abaixo, e não o que a tela
+// mostra. OUTRO ('Bruno') foi criado como pendente lá em cima.
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n── pendente não enxerga nada ──');
+
+await teste('pendente lê o PRÓPRIO cadastro (senão o app abre vazio sem explicar)', () =>
+  assertSucceeds(getDoc(doc(novato(), 'users', OUTRO))));
+
+await teste('pendente não lê o cadastro de outra pessoa', () =>
+  assertFails(getDoc(doc(novato(), 'users', LIDER))));
+
+await teste('pendente não lista os membros', () =>
+  assertFails(getDocs(collection(novato(), 'users'))));
+
+await teste('pendente não lê o repertório', () =>
+  assertFails(getDoc(doc(novato(), 'songs', 's1'))));
+
+await teste('pendente não lê o arranjo da igreja', () =>
+  assertFails(getDocs(collection(novato(), 'songs', 's1', 'arrangements'))));
+
+await teste('pendente não lê os cultos', () =>
+  assertFails(getDoc(doc(novato(), 'scales', 'c1'))));
+
+await teste('pendente não lê as equipes', () =>
+  assertFails(getDocs(collection(novato(), 'teams'))));
+
+await teste('pendente não lê a agenda fixa', () =>
+  assertFails(getDoc(doc(novato(), 'config', 'agendaFixa'))));
+
+await teste('pendente não lê o chat', () =>
+  assertFails(getDocs(collection(novato(), 'messages'))));
+
+await teste('pendente não manda mensagem no chat', () =>
+  assertFails(addDoc(collection(novato(), 'messages'),
+    { userId: OUTRO, userName: 'Bruno', text: 'oi', createdAt: serverTimestamp() })));
+
+await teste('pendente não se mete na lista de presença de um culto', () =>
+  assertFails(updateDoc(doc(novato(), 'scales', 'c1'), {
+    levitas: [{ userId: OUTRO, userName: 'Bruno', instrument: 'vocalist', confirmed: true }],
+  })));
+
+console.log('\n── pendente não se aprova sozinho ──');
+
+await teste('pendente não vira levita por conta própria', () =>
+  assertFails(updateDoc(doc(novato(), 'users', OUTRO), { role: 'levita' })));
+
+await teste('pendente não vira líder por conta própria', () =>
+  assertFails(updateDoc(doc(novato(), 'users', OUTRO), { role: 'admin' })));
+
+await teste('pendente ainda conserta o próprio nome enquanto espera', () =>
+  assertSucceeds(updateDoc(doc(novato(), 'users', OUTRO), { name: 'Bruno Silva' })));
+
+await teste('levita comum não aprova ninguém', () =>
+  assertFails(updateDoc(doc(levita(), 'users', OUTRO), { role: 'levita' })));
+
+await teste('função inventada é recusada', () =>
+  assertFails(updateDoc(doc(lider(), 'users', OUTRO), { role: 'chefe' })));
+
+console.log('\n── o líder decide ──');
+
+await teste('líder recusa a entrada', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'users', OUTRO), { role: 'recusado' })));
+
+await teste('recusado continua sem ler o repertório', () =>
+  assertFails(getDoc(doc(novato(), 'songs', 's1'))));
+
+await teste('recusado ainda lê o próprio cadastro (é o que explica a tela)', () =>
+  assertSucceeds(getDoc(doc(novato(), 'users', OUTRO))));
+
+await teste('líder volta atrás e aprova', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'users', OUTRO), { role: 'levita' })));
+
+await teste('aprovado passa a ler o repertório', () =>
+  assertSucceeds(getDoc(doc(novato(), 'songs', 's1'))));
+
+await teste('aprovado passa a ler os cultos', () =>
+  assertSucceeds(getDoc(doc(novato(), 'scales', 'c1'))));
+
+await teste('aprovado passa a mandar mensagem no chat', () =>
+  assertSucceeds(addDoc(collection(novato(), 'messages'),
+    { userId: OUTRO, userName: 'Bruno Silva', text: 'cheguei', createdAt: serverTimestamp() })));
+
+await teste('aprovado continua sem criar música (isso é do líder)', () =>
+  assertFails(setDoc(doc(novato(), 'songs', 's-novo'),
+    { id: 's-novo', name: 'Nova', artist: 'x', lyrics: '', originalKey: 'C',
+      links: [], isOfflineAvailable: false, createdAt: new Date(), addedBy: OUTRO })));
+
 
 console.log('\n── coleção desconhecida ──');
 await teste('coleção sem regra fica bloqueada', () =>

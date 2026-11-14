@@ -15,6 +15,7 @@ import 'presentation/providers/scale_provider.dart';
 import 'presentation/providers/agenda_provider.dart';
 import 'presentation/providers/chat_provider.dart';
 import 'presentation/screens/auth/login_screen.dart';
+import 'presentation/screens/auth/pending_screen.dart';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/widgets/common/glass.dart';
 
@@ -255,6 +256,10 @@ class _AppEntryState extends State<_AppEntry> {
       case AuthStatus.loading:
         return const _SplashScreen();
       case AuthStatus.authenticated:
+        // Entrou, mas o líder ainda não liberou. As regras do banco não
+        // devolvem nada para quem está pendente, então mandar essa pessoa
+        // para o app seria mostrar cinco abas vazias sem explicação.
+        if (!auth.aprovado) return const PendingScreen();
         return const MainScreen();
       case AuthStatus.unauthenticated:
       case AuthStatus.error:

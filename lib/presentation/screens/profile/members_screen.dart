@@ -44,37 +44,61 @@ class MembersScreen extends StatelessWidget {
             );
           }
 
-          final leaders = members.where((m) => m.isAdmin).length;
+          // Três grupos, porque são três decisões diferentes: quem espera uma
+          // resposta, quem já está dentro, e quem foi recusado — este último
+          // visível de propósito, para um "não" por engano ter conserto.
+          final pendentes = members.where((m) => m.isPendente).toList();
+          final equipe = members.where((m) => m.aprovado).toList();
+          final recusados = members.where((m) => m.isRecusado).toList();
+          final leaders = equipe.where((m) => m.isAdmin).length;
 
-          return ListView.builder(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
-            itemCount: members.length + 1,
-            itemBuilder: (context, i) {
-              if (i == 0) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 14),
-                  child: Text(
-                    '$leaders ${leaders == 1 ? 'líder' : 'líderes'} · '
-                    '${members.length} ${members.length == 1 ? 'membro' : 'membros'}',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 12.5,
-                      color: isDark
-                          ? AppColors.textSecondaryDark
-                          : AppColors.textSecondaryLight,
-                    ),
-                  ),
-                );
-              }
-
-              final member = members[i - 1];
-              return _MemberRow(
-                member: member,
-                isMe: member.id == auth.user?.id,
+          Widget linha(UserModel m) => _MemberRow(
+                member: m,
+                isMe: m.id == auth.user?.id,
                 canManage: auth.isAdmin,
                 isDark: isDark,
               );
-            },
+
+          return ListView(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
+            children: [
+              if (pendentes.isNotEmpty && auth.isAdmin) ...[
+                _Secao(
+                  titulo: pendentes.length == 1
+                      ? '1 pessoa aguardando você'
+                      : '${pendentes.length} pessoas aguardando você',
+                  detalhe: 'Enquanto você não aprovar, elas não veem o '
+                      'repertório, a escala nem o chat.',
+                  destaque: true,
+                  isDark: isDark,
+                ),
+                ...pendentes.map((m) => _PendenteRow(member: m, isDark: isDark)),
+                const SizedBox(height: 22),
+              ],
+              _Secao(
+                titulo: 'Equipe',
+                detalhe: '$leaders ${leaders == 1 ? 'líder' : 'líderes'} · '
+                    '${equipe.length} ${equipe.length == 1 ? 'membro' : 'membros'}',
+                isDark: isDark,
+              ),
+              if (equipe.isEmpty)
+                _Message(
+                  icon: Icons.people_outline_rounded,
+                  title: 'Ninguém aprovado ainda',
+                  detail: 'Aprove alguém acima para montar a equipe.',
+                )
+              else
+                ...equipe.map(linha),
+              if (recusados.isNotEmpty && auth.isAdmin) ...[
+                const SizedBox(height: 22),
+                _Secao(
+                  titulo: 'Não aprovados',
+                  detalhe: 'Toque em Aprovar para liberar a entrada.',
+                  isDark: isDark,
+                ),
+                ...recusados.map((m) => _PendenteRow(member: m, isDark: isDark)),
+              ],
+            ],
           );
         },
       ),
@@ -307,6 +331,242 @@ class _MemberRowState extends State<_MemberRow> {
                 ],
               ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Cabeçalho de um dos três grupos da lista.
+class _Secao extends StatelessWidget {
+  final String titulo;
+  final String detalhe;
+  final bool destaque;
+  final bool isDark;
+
+  const _Secao({
+    required this.titulo,
+    required this.detalhe,
+    required this.isDark,
+    this.destaque = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cor = destaque
+        ? AppColors.blue
+        : (isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            titulo,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: cor,
+            ),
+          ),
+          const SizedBox(height: 3),
+          Text(
+            detalhe,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 12.5,
+              height: 1.4,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Quem está esperando uma resposta do líder: aprovar ou recusar.
+///
+/// Recusar não apaga ninguém — o app não tem como apagar uma conta, e as
+/// regras proíbem. A pessoa fica marcada como não aprovada, continua sem ver
+/// nada, e o líder consegue voltar atrás.
+class _PendenteRow extends StatefulWidget {
+  final UserModel member;
+  final bool isDark;
+
+  const _PendenteRow({required this.member, required this.isDark});
+
+  @override
+  State<_PendenteRow> createState() => _PendenteRowState();
+}
+
+class _PendenteRowState extends State<_PendenteRow> {
+  bool _salvando = false;
+
+  Future<void> _decidir(UserRole papel) async {
+    final m = widget.member;
+
+    if (papel == UserRole.recusado) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text('Recusar ${m.name}?'),
+          content: const Text(
+            'A pessoa continua sem ver o repertório, a escala e o chat. '
+            'Você pode liberar a entrada depois, se for engano.',
+            style: TextStyle(fontFamily: 'Poppins', fontSize: 13.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style: ElevatedButton.styleFrom(backgroundColor: AppColors.red),
+              child: const Text('Recusar'),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+
+    setState(() => _salvando = true);
+    final r = await AuthService.setUserRole(m, papel);
+    if (!mounted) return;
+    setState(() => _salvando = false);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          r.success
+              ? (papel == UserRole.levita
+                  ? '${m.name} entrou no ministério.'
+                  : '${m.name} não foi aprovado.')
+              : r.error ?? 'Não foi possível salvar.',
+        ),
+        backgroundColor: r.success ? AppColors.success : AppColors.red,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final m = widget.member;
+    final isDark = widget.isDark;
+    final esperando = m.isPendente;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: esperando
+            ? AppColors.blue.withValues(alpha: isDark ? 0.14 : 0.07)
+            : (isDark
+                ? Colors.white.withValues(alpha: 0.05)
+                : Colors.white.withValues(alpha: 0.5)),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: esperando
+              ? AppColors.blue.withValues(alpha: 0.35)
+              : (isDark
+                  ? Colors.white.withValues(alpha: 0.10)
+                  : Colors.white.withValues(alpha: 0.65)),
+        ),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 20,
+                backgroundColor: AppColors.blue.withValues(alpha: 0.15),
+                child: Text(
+                  m.name.isNotEmpty ? m.name[0].toUpperCase() : '?',
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.blue,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      m.name,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
+                      ),
+                    ),
+                    Text(
+                      '${m.instrument.emoji} ${m.instrument.label}',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 12.5,
+                        color: isDark
+                            ? AppColors.textSecondaryDark
+                            : AppColors.textSecondaryLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          if (_salvando)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 6),
+              child: SizedBox(
+                height: 20,
+                width: 20,
+                child: CircularProgressIndicator(strokeWidth: 2.2),
+              ),
+            )
+          else
+            Row(
+              children: [
+                if (esperando) ...[
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => _decidir(UserRole.recusado),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.red,
+                        side: BorderSide(
+                            color: AppColors.red.withValues(alpha: 0.5)),
+                        padding: const EdgeInsets.symmetric(vertical: 11),
+                      ),
+                      child: const Text('Recusar'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: () => _decidir(UserRole.levita),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.success,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 11),
+                    ),
+                    child: const Text('Aprovar'),
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );

@@ -595,8 +595,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _SettingRow(
                       icon: Icons.groups_rounded,
                       label: 'Membros do ministério',
-                      trailing: const Icon(Icons.chevron_right_rounded,
-                          color: AppColors.textSecondaryLight),
+                      trailing: const _SeloPendentes(),
                       onTap: () => Navigator.push(
                         context,
                         GlassPageRoute(
@@ -985,6 +984,53 @@ class _StatCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Quantos esperam aprovação, ao lado de "Membros do ministério".
+///
+/// Fica numa consulta filtrada por `role == 'pendente'`: o resultado quase
+/// sempre vem vazio e não custa a lista inteira de membros. Enquanto não há
+/// ninguém esperando, é só a seta de sempre.
+class _SeloPendentes extends StatelessWidget {
+  const _SeloPendentes();
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<List<UserModel>>(
+      stream: AuthService.watchPendentes(),
+      builder: (context, snap) {
+        final n = snap.data?.length ?? 0;
+        if (n == 0) {
+          return const Icon(Icons.chevron_right_rounded,
+              color: AppColors.textSecondaryLight);
+        }
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.red,
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: Text(
+                n == 1 ? '1 aguardando' : '$n aguardando',
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textSecondaryLight),
+          ],
+        );
+      },
     );
   }
 }
