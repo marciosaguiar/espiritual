@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../providers/songs_provider.dart';
 import '../providers/scale_provider.dart';
 import '../providers/chat_provider.dart';
+import '../providers/agenda_provider.dart';
 import '../providers/auth_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
@@ -23,6 +26,9 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   int _currentIndex = 0;
   AuthProvider? _auth;
+
+  /// Guards against generating twice in one session.
+  bool _gerou = false;
 
   late final List<Widget> _screens = [
     const HomeScreen(),
@@ -66,6 +72,37 @@ class _MainScreenState extends State<MainScreen> {
     scale.listenToScales();
     chat.listenToMessages();
     chat.listenToTyping();
+
+    final agenda = context.read<AgendaProvider>();
+    agenda.listen();
+
+    if (_auth!.isAdmin) _agendarGeracao(agenda, scale);
+  }
+
+  /// Creates the services of the next four weeks that are missing.
+  ///
+  /// Only a leader does this — the security rules refuse it for anybody else,
+  /// so a levita opening the app generates nothing. That is also the weak
+  /// point of this design: if no leader opens the app for weeks, the services
+  /// stop being created. A scheduled Cloud Function is the real answer, and
+  /// it needs the paid plan.
+  ///
+  /// Waits for the first batch of services and the schedule to arrive, since
+  /// generating without knowing what already exists would duplicate work (the
+  /// deterministic id still prevents duplicate documents, but it would be a
+  /// pile of pointless transactions).
+  void _agendarGeracao(AgendaProvider agenda, ScaleProvider scale) {
+    Timer(const Duration(seconds: 3), () async {
+      if (!mounted || _gerou) return;
+      final slots = agenda.slots;
+      if (slots.isEmpty) return;
+      _gerou = true;
+      await scale.gerarProximos(
+        slots: slots,
+        equipes: agenda.teamsById,
+        createdBy: _auth?.user?.id,
+      );
+    });
   }
 
   void _syncFavorites() {

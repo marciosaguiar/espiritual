@@ -217,6 +217,79 @@ await teste('não escrevo no "digitando" de outra pessoa', () =>
   assertFails(setDoc(doc(levita(), 'typing', LIDER),
     { userId: LIDER, userName: 'Marcio', typing: true, updatedAt: new Date() })));
 
+console.log('\n── equipes ──');
+await teste('levita lê as equipes (os nomes aparecem na escala)', () =>
+  assertSucceeds(getDocs(collection(levita(), 'teams'))));
+await teste('levita NÃO cria equipe', () =>
+  assertFails(setDoc(doc(levita(), 'teams', 't1'),
+    { id: 't1', name: 'Equipe Manhã', members: [], updatedAt: new Date() })));
+await teste('líder cria equipe', () =>
+  assertSucceeds(setDoc(doc(lider(), 'teams', 't1'),
+    { id: 't1', name: 'Equipe Manhã',
+      members: [{ userId: LEVITA, instrument: 'vocalist' }],
+      createdBy: LIDER, updatedAt: new Date() })));
+await teste('equipe sem nome é recusada', () =>
+  assertFails(setDoc(doc(lider(), 'teams', 't2'),
+    { id: 't2', name: '', members: [], updatedAt: new Date() })));
+await teste('levita NÃO apaga equipe', () =>
+  assertFails(deleteDoc(doc(levita(), 'teams', 't1'))));
+await teste('líder apaga equipe', () =>
+  assertSucceeds(deleteDoc(doc(lider(), 'teams', 't1'))));
+
+console.log('\n── agenda fixa ──');
+const agenda = {
+  slots: [
+    { id: 'qua-0800', weekday: 3, hour: 8, minute: 0, name: 'Culto', teamId: 't1' },
+    { id: 'dom-1900', weekday: 7, hour: 19, minute: 0, name: 'Culto', teamId: 't2' },
+  ],
+  updatedAt: new Date(),
+};
+await teste('levita lê a agenda fixa', () =>
+  assertSucceeds(getDoc(doc(levita(), 'config', 'agendaFixa'))));
+await teste('levita NÃO escreve a agenda fixa', () =>
+  assertFails(setDoc(doc(levita(), 'config', 'agendaFixa'), agenda)));
+await teste('líder escreve a agenda fixa', () =>
+  assertSucceeds(setDoc(doc(lider(), 'config', 'agendaFixa'), agenda)));
+await teste('agenda com lista gigante é recusada', () =>
+  assertFails(setDoc(doc(lider(), 'config', 'agendaFixa'),
+    { slots: Array.from({ length: 31 }, (_, i) => ({ id: 's' + i, weekday: 1 })),
+      updatedAt: new Date() })));
+
+console.log('\n── culto gerado pela agenda ──');
+// Id determinístico, como o app monta: data_hora.
+const CULTO_GERADO = '2026-11-15_0800';
+const doGerado = (extra = {}) => ({
+  id: CULTO_GERADO,
+  date: new Date(2026, 10, 15, 8, 0),
+  serviceType: 'Culto',
+  songs: [], levitas: [], observations: '',
+  createdBy: LIDER, createdAt: new Date(),
+  fromSlot: 'dom-0800', teamId: 't1',
+  manuallyEdited: false, canceled: false,
+  ...extra,
+});
+await teste('levita NÃO gera culto', () =>
+  assertFails(setDoc(doc(levita(), 'scales', CULTO_GERADO), doGerado())));
+await teste('líder gera culto com id determinístico', () =>
+  assertSucceeds(setDoc(doc(lider(), 'scales', CULTO_GERADO), doGerado())));
+await teste('líder cancela o culto', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'scales', CULTO_GERADO),
+    { canceled: true })));
+await teste('levita NÃO cancela o culto', () =>
+  assertFails(updateDoc(doc(levita(), 'scales', CULTO_GERADO),
+    { canceled: false })));
+await teste('levita NÃO marca o culto como editado à mão', () =>
+  assertFails(updateDoc(doc(levita(), 'scales', CULTO_GERADO),
+    { manuallyEdited: true })));
+await teste('levita NÃO troca a equipe do culto', () =>
+  assertFails(updateDoc(doc(levita(), 'scales', CULTO_GERADO),
+    { teamId: 'outra' })));
+await teste('levita ainda confirma presença no culto gerado', () =>
+  assertSucceeds(updateDoc(doc(levita(), 'scales', CULTO_GERADO), {
+    levitas: [{ userId: LEVITA, userName: 'Ana',
+                instrument: 'vocalist', confirmed: true }],
+  })));
+
 console.log('\n── coleção desconhecida ──');
 await teste('coleção sem regra fica bloqueada', () =>
   assertFails(setDoc(doc(lider(), 'qualquerCoisa', 'x'), { a: 1 })));

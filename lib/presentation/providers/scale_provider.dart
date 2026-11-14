@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../data/models/scale_model.dart';
+import '../../data/models/team_model.dart';
 import '../../data/services/firestore_service.dart';
 
 class ScaleProvider extends ChangeNotifier {
@@ -78,11 +79,15 @@ class ScaleProvider extends ChangeNotifier {
     }).toList();
   }
 
+  /// Upcoming services, cancelled ones left out — they are kept in the
+  /// database so the generator does not recreate them, but nobody needs to
+  /// see a cancelled service as "the next one".
   List<ScaleModel> getUpcomingScales({int limit = 5}) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     return _scales
         .where((s) {
+          if (s.canceled) return false;
           final sDate = DateTime(s.date.year, s.date.month, s.date.day);
           return !sDate.isBefore(today);
         })
@@ -196,6 +201,47 @@ class ScaleProvider extends ChangeNotifier {
       ),
     );
     return null;
+  }
+
+  /// Cancels or reinstates a service. Null on success, else the message.
+  ///
+  /// Cancelling is a field, not a deletion: the id comes from the date and
+  /// time, so a deleted service would be created again on the next start.
+  Future<String?> setCanceled(String scaleId, bool canceled) async {
+    final r = await FirestoreService.setScaleCanceled(scaleId, canceled);
+    if (!r.success) return r.error;
+    _applyLocally(scaleId, (s) => s.copyWith(canceled: canceled));
+    return null;
+  }
+
+  /// Creates the services of the next weeks that are missing.
+  ///
+  /// Runs only for a leader — the rules refuse it for anybody else — and
+  /// costs no reads: what exists is already in [_scales].
+  Future<String?> gerarProximos({
+    required List<ScheduleSlot> slots,
+    required Map<String, TeamModel> equipes,
+    String? createdBy,
+  }) async {
+    if (slots.isEmpty) return null;
+    final r = await FirestoreService.ensureUpcomingServices(
+      slots: slots,
+      equipes: equipes,
+      existentes: _scales,
+      createdBy: createdBy,
+    );
+    // The realtime listener brings the new services in; nothing to merge here.
+    return r.error;
+  }
+
+  /// Puts a team's current line-up back on its future services.
+  /// Returns (how many changed, message) — the count is worth showing.
+  Future<({int atualizados, String? error})> aplicarEquipeNosProximos(
+      TeamModel equipe) {
+    return FirestoreService.applyTeamToFutureServices(
+      equipe: equipe,
+      existentes: _scales,
+    );
   }
 
   /// Mirrors a confirmed change in the list already on screen, so the user

@@ -96,6 +96,82 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
     );
   }
 
+  /// Cancels (or reinstates) without deleting.
+  ///
+  /// A service from the standing schedule has an id built from its date and
+  /// time: deleting it would only make the next app start create it again.
+  Future<void> _cancelarOuReativar(bool cancelar) async {
+    if (cancelar) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Cancelar este culto?'),
+          content: const Text(
+            'Ele deixa de aparecer como próximo culto e ninguém é cobrado '
+            'para confirmar presença. A agenda fixa continua igual: só este '
+            'dia é cancelado.',
+            style: TextStyle(fontFamily: 'Poppins', fontSize: 13, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Voltar')),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Cancelar culto',
+                  style: TextStyle(color: AppColors.red)),
+            ),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+
+    final erro =
+        await context.read<ScaleProvider>().setCanceled(_scale.id, cancelar);
+    if (!mounted) return;
+    if (erro == null) setState(() => _scale = _scale.copyWith(canceled: cancelar));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(erro ??
+            (cancelar ? 'Culto cancelado.' : 'Culto reativado.')),
+        backgroundColor: erro == null ? AppColors.success : AppColors.red,
+      ),
+    );
+  }
+
+  Future<void> _excluir() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Excluir Culto'),
+        content: const Text('Deseja excluir este culto?'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Excluir',
+                style: TextStyle(color: AppColors.red)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    final error = await context.read<ScaleProvider>().deleteScale(_scale.id);
+    if (!mounted) return;
+    if (error == null) {
+      Navigator.pop(context);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: AppColors.red),
+      );
+    }
+  }
+
   Future<void> _saveObservations() async {
     setState(() => _isSaving = true);
     final texto = _observationsCtrl.text;
@@ -343,53 +419,54 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
           if (auth.isAdmin)
             PopupMenuButton<String>(
               onSelected: (v) async {
-                if (v == 'delete') {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: const Text('Excluir Culto'),
-                      content: const Text('Deseja excluir este culto?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancelar'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Excluir',
-                              style: TextStyle(color: AppColors.red)),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (confirm == true && mounted) {
-                    final scaleProvider = context.read<ScaleProvider>();
-                    final error = await scaleProvider.deleteScale(_scale.id);
-                    if (!mounted) return;
-                    if (error == null) {
-                      Navigator.pop(context);
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text(error),
-                            backgroundColor: AppColors.red),
-                      );
-                    }
-                  }
+                if (v == 'cancel') {
+                  await _cancelarOuReativar(!_scale.canceled);
+                } else if (v == 'delete') {
+                  await _excluir();
                 }
               },
               itemBuilder: (_) => [
-                const PopupMenuItem(
-                  value: 'delete',
+                PopupMenuItem(
+                  value: 'cancel',
                   child: Row(
                     children: [
-                      Icon(Icons.delete_outline, color: AppColors.red, size: 18),
-                      SizedBox(width: 8),
-                      Text('Excluir culto',
-                          style: TextStyle(color: AppColors.red)),
+                      Icon(
+                        _scale.canceled
+                            ? Icons.event_available_rounded
+                            : Icons.event_busy_rounded,
+                        size: 18,
+                        color: _scale.canceled
+                            ? AppColors.success
+                            : AppColors.red,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        _scale.canceled ? 'Reativar culto' : 'Cancelar culto',
+                        style: TextStyle(
+                          color: _scale.canceled
+                              ? AppColors.success
+                              : AppColors.red,
+                        ),
+                      ),
                     ],
                   ),
                 ),
+                // Um culto da agenda fixa não oferece excluir: o id vem da
+                // data e hora, então ele voltaria sozinho na próxima abertura.
+                // Para esses, cancelar é a única saída que funciona.
+                if (!_scale.daAgendaFixa)
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline,
+                            color: AppColors.red, size: 18),
+                        SizedBox(width: 8),
+                        Text('Excluir culto',
+                            style: TextStyle(color: AppColors.red)),
+                      ],
+                    ),
+                  ),
               ],
             ),
         ],
@@ -399,6 +476,41 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Um culto cancelado continua existindo (o gerador não o recria),
+            // então precisa dizer isso na cara, e não sumir em silêncio.
+            if (_scale.canceled)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 14),
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 14, vertical: 11),
+                decoration: BoxDecoration(
+                  color: AppColors.red.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(10),
+                  border:
+                      Border.all(color: AppColors.red.withValues(alpha: 0.35)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.event_busy_rounded,
+                        size: 18, color: AppColors.red),
+                    SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Culto cancelado. Ele não aparece como próximo culto '
+                        'e ninguém precisa confirmar presença.',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 12.5,
+                          height: 1.35,
+                          color: AppColors.red,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
             // Service info header. The leader taps it to fix the date or the
             // time — without this, a wrong time could never be corrected.
             GestureDetector(

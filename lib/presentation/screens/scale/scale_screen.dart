@@ -529,16 +529,48 @@ class _ServiceCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        scale.serviceType,
-                        style: TextStyle(
-                          fontFamily: 'Poppins',
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                          color: isDark
-                              ? AppColors.textPrimaryDark
-                              : AppColors.textPrimaryLight,
-                        ),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              scale.serviceType,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                decoration: scale.canceled
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                                color: scale.canceled
+                                    ? AppColors.textSecondaryLight
+                                    : (isDark
+                                        ? AppColors.textPrimaryDark
+                                        : AppColors.textPrimaryLight),
+                              ),
+                            ),
+                          ),
+                          if (scale.canceled) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: AppColors.red.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(5),
+                              ),
+                              child: const Text(
+                                'cancelado',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.red,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       Text(
                         // Com a hora, "domingo" deixa de ser ambíguo entre o

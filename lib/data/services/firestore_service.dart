@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/song_model.dart';
 import '../models/arrangement_model.dart';
+import '../models/team_model.dart';
 import '../models/scale_model.dart';
 import '../models/message_model.dart';
 import '../../core/utils/crypto_utils.dart';
@@ -241,9 +242,27 @@ class FirestoreService {
 
   // ─── SCALES ───────────────────────────────────────────────────────────────
 
+  /// How far back and forward the app keeps services in memory.
+  ///
+  /// The standing schedule produces about five services a week — roughly 260
+  /// a year — and the app used to read the whole collection on every start.
+  /// The window bounds that to about a hundred documents, for ever.
+  static const Duration janelaPassado = Duration(days: 60);
+  static const Duration janelaFuturo = Duration(days: 90);
+
+  static DateTime get _inicioDaJanela {
+    final agora = DateTime.now();
+    return DateTime(agora.year, agora.month, agora.day)
+        .subtract(janelaPassado);
+  }
+
+  static DateTime get _fimDaJanela => DateTime.now().add(janelaFuturo);
+
   static Stream<List<ScaleModel>> watchScales() {
     return _db
         .collection(_scales)
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(_inicioDaJanela))
+        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(_fimDaJanela))
         .orderBy('date')
         .snapshots()
         .map((snap) => snap.docs
@@ -252,7 +271,13 @@ class FirestoreService {
   }
 
   static Future<List<ScaleModel>> getScales() async {
-    final snap = await _db.collection(_scales).orderBy('date').get();
+    final snap = await _db
+        .collection(_scales)
+        .where('date',
+            isGreaterThanOrEqualTo: Timestamp.fromDate(_inicioDaJanela))
+        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(_fimDaJanela))
+        .orderBy('date')
+        .get();
     return snap.docs
         .map((doc) => ScaleModel.fromFirestore(doc.data()))
         .toList();
@@ -373,8 +398,18 @@ class FirestoreService {
     return _updateScaleField(
       scaleId,
       'o repertório do culto',
-      (_) => {'songs': songs.map((s) => s.toMap()).toList()},
+      (scale) => {
+        'songs': songs.map((s) => s.toMap()).toList(),
+        ..._marcaEdicaoManual(scale),
+      },
     );
+  }
+
+  /// Marks a generated service as touched by hand, so reapplying a team later
+  /// leaves it alone. One-off services need no mark: nothing bulk-updates them.
+  static Map<String, dynamic> _marcaEdicaoManual(ScaleModel scale) {
+    if (!scale.daAgendaFixa || scale.manuallyEdited) return const {};
+    return const {'manuallyEdited': true};
   }
 
   /// Adds one song to the end of a service's list, inside a transaction.
@@ -392,7 +427,10 @@ class FirestoreService {
         return null;
       }
       final songs = [...scale.songs, song];
-      return {'songs': songs.map((s) => s.toMap()).toList()};
+      return {
+        'songs': songs.map((s) => s.toMap()).toList(),
+        ..._marcaEdicaoManual(scale),
+      };
     });
   }
 
@@ -410,7 +448,7 @@ class FirestoreService {
           .map((l) => l.copyWith(confirmed: previous[l.userId] ?? l.confirmed))
           .map((l) => l.toMap())
           .toList();
-      return {'levitas': merged};
+      return {'levitas': merged, ..._marcaEdicaoManual(scale)};
     });
   }
 
@@ -422,12 +460,13 @@ class FirestoreService {
     String? serviceType,
     String? observations,
   }) async {
-    return _updateScaleField(scaleId, 'os dados do culto', (_) {
+    return _updateScaleField(scaleId, 'os dados do culto', (scale) {
       final data = <String, dynamic>{};
       if (date != null) data['date'] = Timestamp.fromDate(date);
       if (serviceType != null) data['serviceType'] = serviceType;
       if (observations != null) data['observations'] = observations;
-      return data.isEmpty ? null : data;
+      if (data.isEmpty) return null;
+      return {...data, ..._marcaEdicaoManual(scale)};
     });
   }
 
@@ -473,6 +512,246 @@ class FirestoreService {
       serviceType: serviceType,
       createdBy: createdBy,
       createdAt: DateTime.now(),
+    );
+  }
+
+  // ─── TEAMS AND THE STANDING SCHEDULE ──────────────────────────────────────
+
+  static const String _teams = 'teams';
+  static const String _config = 'config';
+  static const String _agendaDoc = 'agendaFixa';
+
+  static Stream<List<TeamModel>> watchTeams() {
+    return _db.collection(_teams).orderBy('name').snapshots().map(
+          (snap) => snap.docs
+              .map((d) => TeamModel.fromFirestore(d.data()))
+              .toList(),
+        );
+  }
+
+  static Future<({bool success, String? error})> saveTeam(
+      TeamModel team) async {
+    try {
+      await _db.collection(_teams).doc(team.id).set(team.toFirestore());
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: _describe(e, 'salvar a equipe'));
+    }
+  }
+
+  static Future<({bool success, String? error})> deleteTeam(
+      String teamId) async {
+    try {
+      await _db.collection(_teams).doc(teamId).delete();
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: _describe(e, 'apagar a equipe'));
+    }
+  }
+
+  static TeamModel createTeamModel({
+    required String name,
+    List<TeamMember> members = const [],
+    String? createdBy,
+  }) {
+    return TeamModel(
+      id: CryptoUtils.generateId(),
+      name: name,
+      members: members,
+      createdBy: createdBy,
+      updatedAt: DateTime.now(),
+    );
+  }
+
+  static Stream<FixedSchedule?> watchSchedule() {
+    return _db.collection(_config).doc(_agendaDoc).snapshots().map(
+          (d) => d.exists ? FixedSchedule.fromFirestore(d.data()!) : null,
+        );
+  }
+
+  static Future<({bool success, String? error})> saveSchedule(
+      FixedSchedule agenda) async {
+    try {
+      await _db
+          .collection(_config)
+          .doc(_agendaDoc)
+          .set(agenda.toFirestore());
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: _describe(e, 'salvar a agenda fixa'));
+    }
+  }
+
+  // ─── GENERATING THE NEXT WEEKS ────────────────────────────────────────────
+
+  /// Which services of the next [semanas] weeks do not exist yet.
+  ///
+  /// Pure on purpose: no Firestore, no clock of its own. All the thinking
+  /// that can go wrong — which dates, in which order, what counts as already
+  /// there — lives here and is covered by tests; what is left in
+  /// [ensureUpcomingServices] is the writing.
+  ///
+  /// A service already in [existentes] is never proposed again, cancelled
+  /// ones included: they exist, and recreating them is exactly what
+  /// cancelling must not undo.
+  static List<ScaleModel> servicosFaltando({
+    required List<ScheduleSlot> slots,
+    required Map<String, TeamModel> equipes,
+    required List<ScaleModel> existentes,
+    required DateTime agora,
+    int semanas = 4,
+    String? createdBy,
+  }) {
+    if (slots.isEmpty) return const [];
+
+    final jaExistem = {for (final s in existentes) s.id};
+    final limite = agora.add(Duration(days: 7 * semanas));
+    final aCriar = <ScaleModel>[];
+
+    for (final slot in slots) {
+      var quando = slot.proximaData(agora);
+      while (!quando.isAfter(limite)) {
+        final id = ScaleModel.idPara(quando);
+        // `isAfter(agora)` descarta o culto de hoje que já passou.
+        if (quando.isAfter(agora) && !jaExistem.contains(id)) {
+          aCriar.add(_servicoDoSlot(slot, quando, id, equipes, createdBy));
+          jaExistem.add(id);
+        }
+        quando = quando.add(const Duration(days: 7));
+      }
+    }
+
+    aCriar.sort((a, b) => a.date.compareTo(b.date));
+    return aCriar;
+  }
+
+  /// Creates the services of the next [semanas] weeks that do not exist yet.
+  ///
+  /// [existentes] are the services the app already holds in memory, so the
+  /// check for what is missing costs no extra reads. Each creation runs in a
+  /// transaction that first looks for the document: because the id comes from
+  /// the date and time, two leaders opening the app at the same moment try to
+  /// write the same document, and the second one finds it and does nothing.
+  ///
+  /// A cancelled service still exists, so it is not recreated — which is why
+  /// cancelling is a field and never a deletion.
+  static Future<({int criados, String? error})> ensureUpcomingServices({
+    required List<ScheduleSlot> slots,
+    required Map<String, TeamModel> equipes,
+    required List<ScaleModel> existentes,
+    int semanas = 4,
+    String? createdBy,
+  }) async {
+    final aCriar = servicosFaltando(
+      slots: slots,
+      equipes: equipes,
+      existentes: existentes,
+      agora: DateTime.now(),
+      semanas: semanas,
+      createdBy: createdBy,
+    );
+
+    if (aCriar.isEmpty) return (criados: 0, error: null);
+
+    var criados = 0;
+    for (final servico in aCriar) {
+      final ref = _db.collection(_scales).doc(servico.id);
+      try {
+        final novo = await _db.runTransaction((tx) async {
+          final snap = await tx.get(ref);
+          if (snap.exists) return false;
+          tx.set(ref, servico.toFirestore());
+          return true;
+        });
+        if (novo) criados++;
+      } on FirebaseException catch (e) {
+        // One failure must not stop the rest: the next start tries again.
+        return (criados: criados, error: _describe(e, 'criar os cultos'));
+      }
+    }
+    return (criados: criados, error: null);
+  }
+
+  static ScaleModel _servicoDoSlot(
+    ScheduleSlot slot,
+    DateTime quando,
+    String id,
+    Map<String, TeamModel> equipes,
+    String? createdBy,
+  ) {
+    final equipe = equipes[slot.teamId];
+    return ScaleModel(
+      id: id,
+      date: quando,
+      serviceType: slot.name,
+      // Everyone starts unconfirmed: being scheduled is not the same as
+      // having said yes.
+      levitas: equipe == null
+          ? const []
+          : equipe.members
+              .map((m) => ScaleLevita(
+                    userId: m.userId,
+                    userName: '',
+                    instrument: m.instrument,
+                  ))
+              .toList(),
+      createdBy: createdBy,
+      createdAt: DateTime.now(),
+      fromSlot: slot.id,
+      teamId: slot.teamId,
+    );
+  }
+
+  /// Puts a team's current line-up back on its future services.
+  ///
+  /// Skips anything a leader touched by hand and anything already cancelled,
+  /// and keeps the answer of whoever was already scheduled and stays — being
+  /// re-applied must not wipe a "yes" that was already given.
+  static Future<({int atualizados, String? error})> applyTeamToFutureServices({
+    required TeamModel equipe,
+    required List<ScaleModel> existentes,
+  }) async {
+    final agora = DateTime.now();
+    final alvos = existentes.where((s) =>
+        s.teamId == equipe.id &&
+        !s.manuallyEdited &&
+        !s.canceled &&
+        s.date.isAfter(agora));
+
+    var atualizados = 0;
+    for (final servico in alvos) {
+      final anteriores = {
+        for (final l in servico.levitas) l.userId: l.confirmed
+      };
+      final levitas = equipe.members
+          .map((m) => ScaleLevita(
+                userId: m.userId,
+                userName: '',
+                instrument: m.instrument,
+                confirmed: anteriores[m.userId] ?? false,
+              ).toMap())
+          .toList();
+
+      final r = await _updateScaleField(
+        servico.id,
+        'atualizar a equipe dos próximos cultos',
+        (_) => {'levitas': levitas},
+      );
+      if (!r.success) return (atualizados: atualizados, error: r.error);
+      atualizados++;
+    }
+    return (atualizados: atualizados, error: null);
+  }
+
+  /// Cancels or reinstates one service, without touching the schedule.
+  static Future<({bool success, String? error})> setScaleCanceled(
+    String scaleId,
+    bool canceled,
+  ) {
+    return _updateScaleField(
+      scaleId,
+      canceled ? 'cancelar o culto' : 'reativar o culto',
+      (_) => {'canceled': canceled},
     );
   }
 

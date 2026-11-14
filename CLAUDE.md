@@ -13,13 +13,13 @@ nenhuma falha silenciosa.
 flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
-flutter test                   # 66 testes
+flutter test                   # 101 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 40 testes
+cd test_regras && npm install && npm test    # 57 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -66,6 +66,9 @@ songs/{songId}                        a obra: nome, artista, letra, tom original
 songs/{songId}/arrangements/{id}      como a NOSSA igreja toca: cifra, tom, bpm
 users/{userId}/songPrefs/{songId}     meu tom e minhas anotações (privado)
 scales/{scaleId}.songs[]              só referências: {songId, arrangementId, keyOverride}
+
+teams/{teamId}                        Equipe Manhã, Equipe Noite: [{userId, instrument}]
+config/agendaFixa                     um doc só: os horários fixos da semana
 ```
 
 A escala guarda **referências, nunca cópias**. Antes ela copiava nome e
@@ -74,6 +77,38 @@ resolvem pelo id com `SongsProvider.nameOf/artistOf/keyOf`.
 
 A cifra fica no arranjo, não na música: é o que impede o app de baixar o
 repertório inteiro de cifras só para abrir a lista.
+
+### Agenda fixa e equipes
+
+Os cultos da igreja se repetem (quarta 8h e 19h30, sexta 19h30, domingo 8h e
+19h), então o líder configura isso uma vez em Perfil → Agenda fixa e o app
+cria as próximas 4 semanas sozinho, já com a equipe padrão escalada e todos
+como não confirmados.
+
+- **O id do culto vem da data e hora:** `2026-11-15_0800`. É isso que impede
+  duplicata: dois líderes abrindo o app ao mesmo tempo calculam o mesmo id e
+  escrevem o mesmo documento, cada um dentro de uma transação que confere se
+  ele já existe.
+- **Cancelar é um campo, nunca exclusão.** Apagar um culto gerado não
+  adianta: o gerador o recriaria na próxima abertura. Por isso o menu do
+  culto oferece "Cancelar" e só mostra "Excluir" para culto avulso.
+- **`manuallyEdited`** marca o culto que o líder ajustou à mão. "Aplicar aos
+  próximos cultos?", ao salvar uma equipe, pula esses e preserva quem já
+  confirmou. Confirmar presença NÃO marca — é ação do levita, não edição.
+- **A geração só roda para o líder**, porque as regras só deixam ele criar.
+  Fragilidade conhecida: se nenhum líder abrir o app por semanas, os cultos
+  param de ser criados. O conserto de verdade é uma Cloud Function agendada,
+  que depende do plano Blaze.
+- **A decisão de quais cultos faltam é uma função pura**
+  (`FirestoreService.servicosFaltando`), testada em `test/agenda_fixa_test.dart`.
+  Toda lógica nova de geração entra ali, não dentro da transação.
+
+### Janela de leitura dos cultos
+
+`watchScales` lê apenas de 60 dias atrás até 90 dias à frente
+(`FirestoreService.janelaPassado` / `janelaFuturo`). Com 5 cultos por semana
+são ~260 por ano, e antes o app lia a coleção inteira a cada abertura. O
+efeito colateral: meses muito antigos aparecem vazios no calendário.
 
 ## Regras do jogo neste projeto
 
@@ -107,6 +142,8 @@ repertório inteiro de cifras só para abrir a lista.
 ## Próximos passos combinados (fase 2)
 
 Nesta ordem, e **nada disso antes de testar o app num iPhone real**:
+
+0. ~~Agenda fixa + equipes~~ — **feito.**
 
 1. **Aprovação do líder.** Quem se cadastra entra com `role: 'pendente'`; as
    regras não liberam leitura nenhuma para pendente; o líder aprova ou recusa

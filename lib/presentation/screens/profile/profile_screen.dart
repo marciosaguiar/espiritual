@@ -10,7 +10,9 @@ import '../../../core/constants/app_strings.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/auth_service.dart';
 import '../songs/song_detail_screen.dart';
+import 'fixed_schedule_screen.dart';
 import 'members_screen.dart';
+import 'teams_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -577,6 +579,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         context,
                         MaterialPageRoute(
                             builder: (_) => const MembersScreen()),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _SettingRow(
+                      icon: Icons.event_repeat_rounded,
+                      label: 'Agenda fixa',
+                      trailing: const Icon(Icons.chevron_right_rounded,
+                          color: AppColors.textSecondaryLight),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const FixedScheduleScreen()),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    _SettingRow(
+                      icon: Icons.diversity_3_rounded,
+                      label: 'Equipes',
+                      trailing: const Icon(Icons.chevron_right_rounded,
+                          color: AppColors.textSecondaryLight),
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const TeamsScreen()),
                       ),
                     ),
                   ],

@@ -145,14 +145,45 @@ service cloud.firestore {
       }
     }
 
+    // ── Equipes ─────────────────────────────────────────────────────────────
+    // "Equipe Manhã", "Equipe Noite": quem toca, e em quê. Todo mundo lê
+    // (os nomes aparecem na escala); só o líder monta.
+    match /teams/{teamId} {
+      allow read: if logado();
+
+      allow create, update: if ehLider()
+        && tamanhoRazoavel()
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 60
+        && request.resource.data.members is list
+        && request.resource.data.members.size() <= 50;
+
+      allow delete: if ehLider();
+    }
+
+    // ── Agenda fixa ─────────────────────────────────────────────────────────
+    // Um documento só: config/agendaFixa, com as linhas da semana.
+    match /config/{documento} {
+      allow read: if logado();
+
+      allow write: if ehLider()
+        && request.resource.data.slots is list
+        && request.resource.data.slots.size() <= 30;
+    }
+
     // ── Cultos / escalas ────────────────────────────────────────────────────
     match /scales/{scaleId} {
       allow read: if logado();
 
+      // Vale tanto para o culto avulso do "+" quanto para os que a agenda
+      // fixa gera com id determinístico (2026-11-15_0800).
       allow create: if ehLider()
         && tamanhoRazoavel()
         && texto('serviceType', 60)
-        && texto('observations', 5000);
+        && texto('observations', 5000)
+        && texto('fromSlot', 40)
+        && texto('teamId', 40);
 
       // O líder edita o culto à vontade. Um levita só pode tocar na lista de
       // presença — nenhum outro campo.
@@ -162,6 +193,9 @@ service cloud.firestore {
       // linha dentro dele. Garantir isso exigiria uma confirmação por pessoa,
       // em subcoleção. Como são todos do mesmo ministério e a mudança fica
       // visível na tela, fica assim por ora.
+      //
+      // Cancelar um culto, mudar a equipe ou marcar como editado à mão são
+      // campos do líder: o levita só alcança `levitas`, nada mais.
       allow update: if tamanhoRazoavel()
         && (
           (ehLider() && texto('serviceType', 60) && texto('observations', 5000))
