@@ -875,7 +875,14 @@ class _LevitaRow extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  levita.instrument,
+                  // O campo guarda o nome técnico do enum ("other", "keyboard").
+                  // Mostrar isso cru fazia a tela exibir "other" para quem
+                  // escolheu "Outro".
+                  () {
+                    final i =
+                        UserInstrumentExtension.fromString(levita.instrument);
+                    return '${i.emoji} ${i.label}';
+                  }(),
                   style: const TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 11,

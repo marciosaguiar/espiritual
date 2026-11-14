@@ -15,6 +15,12 @@
        borda direita (o sábado do calendário, o "+", o botão de enviar) e certa
        na esquerda. Sem o cover, o navegador mantém o app dentro da área
        segura, e não existe borda para transbordar. -->
+  <!-- Sem maximum-scale de propósito: MEDIDO que o Flutter reescreve esta meta
+       ao iniciar e a troca por maximum-scale=5.0, então pôr 1.0 aqui não tem
+       efeito nenhum — e ainda daria falsa sensação de proteção. O que impede o
+       zoom do iOS é a fonte de 16px nos campos, no estilo abaixo. Deixar o 5.0
+       do Flutter também preserva o zoom com dois dedos, que importa para quem
+       enxerga pouco. -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <!-- Instalado na tela de início: abre sem a barra do navegador. É isto que
@@ -37,6 +43,21 @@
     /* Abertura com a identidade do app enquanto o Flutter carrega.
        Sem isto o primeiro acesso mostra uma tela branca por alguns segundos,
        que num celular se lê como "não funcionou". */
+    /* O iOS dá zoom automático ao focar um campo cuja fonte seja menor que
+       16px — e, no app instalado na tela de início, esse zoom NÃO volta quando
+       o teclado fecha: a tela fica cortada à direita e embaixo até recarregar.
+       Era o que acontecia depois de digitar no cadastro, em Nova Música ou no
+       Chat.
+
+       O Flutter desenha o texto no canvas e mantém um campo invisível só para
+       receber o teclado; a fonte dele vem do estilo do widget, que é menor que
+       16px. Como esse campo não aparece, forçar 16px nele não muda nada do que
+       se vê — só remove a causa do zoom. */
+    input, textarea, select, [contenteditable],
+    .flt-text-editing, flt-text-editing-host * {
+      font-size: 16px !important;
+    }
+
     /* Um app Flutter nunca precisa rolar a página de lado: se algum dia algo
        passar da largura, é defeito, e esta linha evita que vire tela cortada. */
     html, body {

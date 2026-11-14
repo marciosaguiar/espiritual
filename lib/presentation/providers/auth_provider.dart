@@ -30,10 +30,8 @@ class AuthProvider extends ChangeNotifier {
   /// copy — decides whether someone is logged in. The local copy is only used
   /// to fill the screens while offline, when the profile cannot be fetched.
   Future<void> checkSession() async {
-    _status = AuthStatus.loading;
-    notifyListeners();
-
     final account = AuthService.currentAuthUser;
+
     if (account == null) {
       // No account: drop any profile left over from an older version.
       await LocalStorageService.clearSession();
@@ -43,17 +41,36 @@ class AuthProvider extends ChangeNotifier {
       return;
     }
 
-    final profile = await AuthService.getUserById(account.uid) ??
-        LocalStorageService.getSession();
+    // Opens on the cached profile, without waiting for the network.
+    //
+    // This used to set `loading` and then await a Firestore read before
+    // releasing the screen, so every start showed the splash for as long as
+    // that round trip took — seconds on mobile data, with the profile already
+    // on the device. An installed web app is reloaded by the system more often
+    // than a native one, and each reload paid that price again.
+    final cached = LocalStorageService.getSession();
+    if (cached != null) {
+      _user = cached;
+      _status = AuthStatus.authenticated;
+      notifyListeners();
+    } else {
+      // Nothing cached: there is no screen to show yet, so the wait is real.
+      _status = AuthStatus.loading;
+      notifyListeners();
+    }
 
-    if (profile == null) {
-      // Signed in, but the profile could not be read and nothing is cached.
-      _errorMessage = 'Não foi possível carregar seu perfil. Verifique a internet.';
+    // Now refresh from the server, with the app already usable.
+    final fresh = await AuthService.getUserById(account.uid);
+
+    if (fresh == null && cached == null) {
+      _errorMessage =
+          'Não foi possível carregar seu perfil. Verifique a internet.';
       _status = AuthStatus.unauthenticated;
       notifyListeners();
       return;
     }
 
+    final profile = fresh ?? cached!;
     _user = profile;
     _status = AuthStatus.authenticated;
     await LocalStorageService.saveSession(profile);

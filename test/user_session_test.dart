@@ -76,4 +76,35 @@ void main() {
       expect(restored.isAdmin, isFalse);
     });
   });
+
+  group('instrumento na tela', () {
+    // A escala guarda o nome técnico do enum ("other"), e a tela do culto
+    // mostrava isso cru: quem escolheu "Outro" aparecia como "other".
+    test('todo instrumento tem rótulo em português', () {
+      const esperado = {
+        'vocalist': 'Cantor(a)',
+        'guitar': 'Violão/Guitarra',
+        'bass': 'Baixo',
+        'drums': 'Bateria',
+        'keyboard': 'Teclado',
+        'other': 'Outro',
+      };
+      for (final e in esperado.entries) {
+        expect(UserInstrumentExtension.fromString(e.key).label, e.value,
+            reason: e.key);
+      }
+    });
+
+    test('nenhum rótulo é o nome técnico', () {
+      for (final i in UserInstrument.values) {
+        expect(i.label, isNot(equals(i.name)), reason: i.name);
+        expect(i.emoji, isNotEmpty);
+      }
+    });
+
+    test('valor desconhecido vira Outro em vez de quebrar', () {
+      expect(UserInstrumentExtension.fromString('gaita').label, 'Outro');
+      expect(UserInstrumentExtension.fromString('').label, 'Outro');
+    });
+  });
 }
