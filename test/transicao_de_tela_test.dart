@@ -46,6 +46,19 @@ void main() {
       expect(rota.opaque, isTrue);
     });
 
+    test('a tela raiz segura o gesto de voltar', () {
+      // No app instalado, arrastar da borda esquerda é um "voltar" do
+      // navegador. Na raiz não há tela para onde voltar, e o Flutter
+      // responde saindo do documento: medido no app no ar, um history.back()
+      // leva a página para fora e o app recarrega do zero — os segundos de
+      // tela de abertura. `canPop: false` faz o gesto parar dentro do app.
+      final fonte =
+          File('lib/presentation/screens/main_screen.dart').readAsStringSync();
+      expect(fonte, contains('PopScope('),
+          reason: 'a raiz precisa de PopScope para o voltar não sair do app');
+      expect(fonte, contains('canPop: false'));
+    });
+
     test('nenhuma tela volta a usar MaterialPageRoute', () {
       final telas = Directory('lib/presentation/screens');
       expect(telas.existsSync(), isTrue,

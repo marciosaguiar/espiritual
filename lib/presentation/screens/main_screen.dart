@@ -127,29 +127,45 @@ class _MainScreenState extends State<MainScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return Scaffold(
-      body: IndexedStack(
-        index: _currentIndex,
-        children: _screens,
-      ),
-      bottomNavigationBar: context.watch<AuthProvider>().isAdmin
-          // O selo precisa aparecer sem o líder ir procurar: quem está
-          // esperando não vê NADA do app, e um pedido esquecido por dias é
-          // uma pessoa achando que o app não funciona.
-          ? StreamBuilder<List<UserModel>>(
-              stream: AuthService.watchPendentes(),
-              builder: (_, snap) => _GlassNavBar(
+    // O gesto de arrastar da borda esquerda, no app instalado, é um "voltar"
+    // do navegador. Na raiz não há tela para onde voltar, e o Flutter
+    // responde saindo do documento — o app recarrega do zero e a abertura
+    // aparece de novo. `canPop: false` faz o gesto parar aqui dentro.
+    //
+    // As telas abertas por cima (detalhe do culto, Membros, Equipes) não
+    // passam por aqui: elas estão acima desta rota e fecham normalmente.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (jaFechou, _) {
+        if (jaFechou) return;
+        // Fora do Início, o voltar faz o que a pessoa espera: volta para o
+        // Início, em vez de não fazer nada.
+        if (_currentIndex != 0) _goToTab(0);
+      },
+      child: Scaffold(
+        body: IndexedStack(
+          index: _currentIndex,
+          children: _screens,
+        ),
+        bottomNavigationBar: context.watch<AuthProvider>().isAdmin
+            // O selo precisa aparecer sem o líder ir procurar: quem está
+            // esperando não vê NADA do app, e um pedido esquecido por dias é
+            // uma pessoa achando que o app não funciona.
+            ? StreamBuilder<List<UserModel>>(
+                stream: AuthService.watchPendentes(),
+                builder: (_, snap) => _GlassNavBar(
+                  currentIndex: _currentIndex,
+                  onTap: _goToTab,
+                  isDark: isDark,
+                  pendentes: snap.data?.length ?? 0,
+                ),
+              )
+            : _GlassNavBar(
                 currentIndex: _currentIndex,
                 onTap: _goToTab,
                 isDark: isDark,
-                pendentes: snap.data?.length ?? 0,
               ),
-            )
-          : _GlassNavBar(
-              currentIndex: _currentIndex,
-              onTap: _goToTab,
-              isDark: isDark,
-            ),
+      ),
     );
   }
 }
@@ -172,10 +188,16 @@ class _GlassNavBar extends StatelessWidget {
   static const _items = [
     (Icons.home_outlined, Icons.home_rounded, AppStrings.home),
     (Icons.music_note_outlined, Icons.music_note_rounded, AppStrings.songs),
-    (Icons.calendar_month_outlined, Icons.calendar_month_rounded,
-        AppStrings.scale),
-    (Icons.chat_bubble_outline_rounded, Icons.chat_bubble_rounded,
-        AppStrings.chat),
+    (
+      Icons.calendar_month_outlined,
+      Icons.calendar_month_rounded,
+      AppStrings.scale
+    ),
+    (
+      Icons.chat_bubble_outline_rounded,
+      Icons.chat_bubble_rounded,
+      AppStrings.chat
+    ),
     (Icons.person_outline_rounded, Icons.person_rounded, AppStrings.profile),
   ];
 
@@ -244,7 +266,8 @@ class _GlassNavItem extends StatelessWidget {
         margin: const EdgeInsets.symmetric(horizontal: 2),
         padding: const EdgeInsets.symmetric(vertical: 7),
         decoration: BoxDecoration(
-          color: selected ? AppColors.blue.withOpacity(0.14) : Colors.transparent,
+          color:
+              selected ? AppColors.blue.withOpacity(0.14) : Colors.transparent,
           borderRadius: BorderRadius.circular(20),
         ),
         child: Column(

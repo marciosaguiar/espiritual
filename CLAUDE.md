@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 143 testes
+flutter test                   # 144 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -226,15 +226,25 @@ efeito colateral: meses muito antigos aparecem vazios no calendário.
   diferença entre a trava funcionar ou não. Foi pego por um teste escrito
   justamente para perguntar "e se o campo não existir?" — vale repetir essa
   pergunta em todo `?? valor` que decide acesso.
-- **O app instalado serve a versão em cache.** Na tela de início quem entrega
-  as telas é o service worker, e o iOS só procura versão nova numa carga de
-  página de verdade — coisa que um app instalado quase nunca faz. Resultado:
-  um defeito corrigido, publicado e no ar continua aparecendo no celular.
-  Aconteceu com o instrumento em inglês: a correção estava no build do
-  GitHub Pages e a tela vinha de um cache antigo. O `web/index.html` agora
-  pergunta por versão nova quando o app volta ao primeiro plano e recarrega
-  uma vez quando ela assume. **Ao investigar um defeito "que não sumiu",
-  confirme primeiro de qual build veio a tela.**
+- **O Flutter tirou o cache do app e ninguém percebeu.** O
+  `flutter_service_worker.js` das versões novas é um arquivo de 784 bytes que
+  só se desregistra. O app continuou funcionando — e passou a baixar 3,26 MB
+  a cada abertura, 1,49 MB deles de `canvaskit.wasm` vindo do servidor do
+  Google. Era a tela de abertura de ~5 s que aparecia toda vez que se voltava
+  ao app no iPhone. Agora o cache é nosso (`web/sw.js`), a lista do que
+  guardar sai do build na publicação, e a CI falha se o canvaskit voltar ao
+  CDN ou se o Flutter voltar a registrar um service worker. **Medido: de 3,26
+  MB e 2,5 s por abertura para abrir sem internet nenhuma.**
+- **Diagnóstico errado que custou tempo:** quando o instrumento continuou
+  aparecendo em inglês depois de corrigido, eu disse que era cache do service
+  worker. Não era: não havia service worker nenhum. **Antes de culpar o
+  cache, confira se ele existe** — `navigator.serviceWorker.getRegistration()`
+  responde em um segundo.
+- **O gesto de voltar saía do app.** Arrastar da borda esquerda, no app
+  instalado, é um `history.back()`. Na raiz o Flutter respondia saindo do
+  documento e o app recarregava do zero. Medido no app no ar: um
+  `history.back()` deixava a página e `performance` registrava
+  `back_forward`. A raiz agora usa `PopScope(canPop: false)`.
 
 ## Próximos passos combinados (fase 2)
 
