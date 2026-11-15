@@ -43,6 +43,11 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+    # Os textos bíblicos. Ativo do Flutter, não código: na web o arquivo só é
+    # baixado quando a tela de leitura pede, então não entra no pacote
+    # inicial nem atrasa a abertura do app. Ver assets/biblia/LEIA-ME.md.
+    - assets/biblia/blivre.json
+    - assets/biblia/alm1911.json
   fonts:
     - family: Poppins
       fonts:

@@ -13,6 +13,7 @@ import '../../../data/services/firestore_service.dart';
 import '../../providers/agenda_provider.dart';
 import '../../providers/scale_provider.dart';
 import '../songs/song_detail_screen.dart';
+import '../biblia/biblia_screen.dart';
 import 'fixed_schedule_screen.dart';
 import 'members_screen.dart';
 import 'teams_screen.dart';
@@ -592,6 +593,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       activeColor: AppColors.blue,
                     ),
                     onTap: () => theme.toggleTheme(),
+                  ),
+                  const SizedBox(height: 8),
+                  _SettingRow(
+                    icon: Icons.menu_book_rounded,
+                    label: 'Bíblia',
+                    trailing: const Icon(Icons.chevron_right_rounded,
+                        color: AppColors.textSecondaryLight),
+                    onTap: () => Navigator.push(
+                      context,
+                      GlassPageRoute(builder: (_) => const BibliaScreen()),
+                    ),
                   ),
                   if (auth.isAdmin) ...[
                     const SizedBox(height: 8),

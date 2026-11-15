@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 153 testes
+flutter test                   # 164 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -302,6 +302,44 @@ campo, nunca exclusão"**:
 subcoleção `arrangements` não — no console ela aparece como documento em
 itálico, com a cifra dentro. E cultos anteriores ao modelo de três camadas
 ainda guardam nome e artista copiados dentro de `songs[]`.
+
+### Bíblia
+
+Leitura offline, dentro do app: atalho no Início e em Perfil, grade de livros
+AT/NT com busca, capítulos, versículos numerados, fonte ajustável, copiar e
+compartilhar com a referência, e "Abrir no YouVersion" para quem quer outra
+tradução.
+
+- **O texto é ATIVO, não código.** `assets/biblia/<id>.json`, declarado no
+  `pubspec.yaml`. Na web, um ativo do Flutter só sai pela rede quando alguém
+  o pede: a Bíblia não entra no pacote inicial e não atrasa a abertura de
+  quem nunca a abre. **Medido: zero pedidos de Bíblia ao abrir o app.**
+- **A CI falha se o pacote inicial passar de 100 KB acima da base** medida em
+  15/11/2026 (3.610.328 bytes). É a trava contra alguém transformar o texto
+  em código sem perceber.
+- **O `web/sw.js` deixa a Bíblia fora do que guarda na instalação** e a guarda
+  quando a tradução é aberta. Sem essa exclusão, toda abertura de app
+  baixaria 7,7 MB. **Medido: depois de abrir uma vez, a tradução abre sem
+  internet nenhuma.**
+- **Nada disso vai para o Firestore.** Seriam ~31 mil documentos por
+  tradução, e a cota gratuita do Spark acabaria num domingo.
+- **Só texto que pode ser distribuído.** Hoje: Bíblia Livre, que é
+  **Creative Commons Atribuição 3.0 Brasil — não é domínio público** e exige
+  crédito (por isso o crédito viaja dentro do arquivo e aparece no rodapé da
+  leitura); e Almeida 1911, em domínio público. NVI, ARA, NAA, ARC e
+  companhia pertencem a editoras e **não entram**, nem que se ache o arquivo
+  pronto na internet. Um teste falha se alguma delas aparecer na lista.
+- **Os `.json` não estão no histórico como patch:** são gerados por
+  `bash ferramentas/baixar-biblia.sh`, que busca na fonte, confere os 66
+  livros e grava sempre igual. Estão commitados no repositório, porque é o
+  GitHub Pages que os serve. Se `flutter test` reclamar de arquivo faltando,
+  é esse script que não rodou.
+- Acrescentar uma tradução é um arquivo em `assets/biblia` mais uma linha em
+  `traducoesDisponiveis`. Nenhum código novo. Ver `assets/biblia/LEIA-ME.md`
+  para o formato e a procedência de cada texto.
+- A última tradução e o último capítulo ficam no aparelho
+  (`LocalStorageService`), não no banco: é o marcador de quem lê, não há o
+  que sincronizar, e no Firestore custaria uma leitura por abertura.
 
 ### Quando a tela diz "vazio"
 

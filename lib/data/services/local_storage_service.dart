@@ -113,6 +113,41 @@ class LocalStorageService {
     await clearSession();
   }
 
+  // ─── Bíblia ───────────────────────────────────────────────────────────────
+
+  static const String _bibliaKey = 'biblia_ultima_leitura';
+  static const String _bibliaFonteKey = 'biblia_fonte';
+
+  /// Onde a pessoa parou de ler, por aparelho.
+  ///
+  /// Fica aqui e não no Firestore porque não há nada a sincronizar: é o
+  /// marcador do celular de quem lê, e guardá-lo no banco custaria uma
+  /// leitura por abertura para resolver um problema que não existe.
+  static Future<void> salvarUltimaLeitura({
+    required String traducao,
+    required String livro,
+    required int capitulo,
+  }) async {
+    await prefs.setString(_bibliaKey, '$traducao|$livro|$capitulo');
+  }
+
+  /// A última leitura, ou null se nunca leu neste aparelho.
+  static ({String traducao, String livro, int capitulo})? getUltimaLeitura() {
+    final bruto = prefs.getString(_bibliaKey);
+    if (bruto == null) return null;
+    final partes = bruto.split('|');
+    if (partes.length != 3) return null;
+    final capitulo = int.tryParse(partes[2]);
+    if (capitulo == null || partes[0].isEmpty || partes[1].isEmpty) return null;
+    return (traducao: partes[0], livro: partes[1], capitulo: capitulo);
+  }
+
+  static Future<void> salvarFonteBiblia(double tamanho) async {
+    await prefs.setDouble(_bibliaFonteKey, tamanho);
+  }
+
+  static double get fonteBiblia => prefs.getDouble(_bibliaFonteKey) ?? 17;
+
   static bool isSongOffline(String songId) =>
       _offlineCache.containsKey(songId);
 

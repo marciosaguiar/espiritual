@@ -71,6 +71,12 @@ jobs:
             // guardado depois.
             const fora = new RegExp(
               "^canvaskit/webparagraph/" +
+              // A Bíblia são 7,7 MB de texto. Guardá-la na instalação faria
+              // toda abertura de app pagar por uma tela que talvez nunca
+              // seja aberta. Ela é guardada no aparelho quando a pessoa
+              // abre a tradução pela primeira vez, pelo mesmo service
+              // worker, no caminho de quando a página pede.
+              "|^assets/assets/biblia/" +
               "|(^|/)(skwasm[^/]*|wimp\\.wasm|NOTICES|sw\\.js|\\.last_build_id)$");
             const arquivos = [];
             (function anda(dir) {
@@ -103,6 +109,27 @@ jobs:
           #    do nosso, e o dele hoje só se desregistra.
           if grep -qE 'serviceWorkerVersion: *"' build/web/flutter_bootstrap.js; then
             echo "::error::o Flutter voltou a registrar um service worker"
+            exit 1
+          fi
+
+          # 4. O pacote inicial não pode engordar.
+          #
+          #    Tudo o que entra em main.dart.js é baixado antes da primeira
+          #    tela. A Bíblia é ativo, baixada só quando a tela dela abre —
+          #    se um dia alguém a transformar em código (uma lista embutida,
+          #    um import que puxa o texto), isto aqui fica vermelho em vez de
+          #    o app ficar lento para todo mundo.
+          #
+          #    BASE é o tamanho medido no site no ar em 15/11/2026, antes da
+          #    Bíblia. A folga de 100 KB é o que a tela da Bíblia em si pode
+          #    custar.
+          BASE=3610328
+          FOLGA=102400
+          TAMANHO=$(wc -c < build/web/main.dart.js)
+          LIMITE=$((BASE + FOLGA))
+          echo "main.dart.js: $TAMANHO bytes (limite $LIMITE)"
+          if [ "$TAMANHO" -gt "$LIMITE" ]; then
+            echo "::error::o pacote inicial passou de $LIMITE bytes ($TAMANHO). Algo que devia ser ativo virou código."
             exit 1
           fi
 

@@ -12,6 +12,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../data/models/scale_model.dart';
 import '../scale/scale_detail_screen.dart';
 import '../songs/song_detail_screen.dart';
+import '../biblia/biblia_screen.dart';
 import '../../widgets/common/glass.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -145,6 +146,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
                   // Verse of the Day Card
                   _VerseCard(verse: AppStrings.verses[_verseIndex]),
+                  const SizedBox(height: 12),
+
+                  // A Bíblia fica logo abaixo do versículo do dia, que é
+                  // onde a pessoa já está com a cabeça no texto.
+                  const _AtalhoBiblia(),
                   const SizedBox(height: 20),
 
                   // Next Service Card
@@ -170,6 +176,85 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Atalho para a Bíblia.
+///
+/// A tela e o texto são carregados só quando este botão é tocado: a Bíblia
+/// não entra no pacote inicial do app nem atrasa a abertura de quem nunca a
+/// abre.
+class _AtalhoBiblia extends StatelessWidget {
+  const _AtalhoBiblia();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        GlassPageRoute(builder: (_) => const BibliaScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.white.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.white.withValues(alpha: 0.7),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                gradient: AppColors.primaryGradient,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.menu_book_rounded,
+                  color: Colors.white, size: 21),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Bíblia',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight,
+                    ),
+                  ),
+                  Text(
+                    'Ler offline, no aparelho',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 12.5,
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondaryLight,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textSecondaryLight),
+          ],
+        ),
       ),
     );
   }
