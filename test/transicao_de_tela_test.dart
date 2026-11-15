@@ -59,6 +59,17 @@ void main() {
       expect(fonte, contains('canPop: false'));
     });
 
+    test('o app não empilha entrada no histórico do navegador', () {
+      // Medido no app no ar: o Flutter empilhava uma entrada própria
+      // (history.length 3 contra 2, com state {"flutter":true}). Era ela que
+      // fazia o WebKit do iPhone aceitar o gesto de arrastar da borda — e,
+      // durante o gesto, mostrar a tela de abertura por baixo. Sem entrada
+      // anterior não há para onde voltar, e o gesto deixa de existir.
+      final main = File('lib/main.dart').readAsStringSync();
+      expect(main, contains('setUrlStrategy(null)'),
+          reason: 'sem isto o Flutter volta a empilhar a entrada dele');
+    });
+
     test('nenhuma tela volta a usar MaterialPageRoute', () {
       final telas = Directory('lib/presentation/screens');
       expect(telas.existsSync(), isTrue,

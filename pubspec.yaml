@@ -10,6 +10,11 @@ dependencies:
   flutter:
     sdk: flutter
 
+  # Só para desligar a integração com o histórico do navegador (ver main.dart).
+  # Vem do SDK e tem versão para Android e iOS, onde as funções não fazem nada.
+  flutter_web_plugins:
+    sdk: flutter
+
   # Firebase: conta, banco de dados
   firebase_core: ^2.24.0
   firebase_auth: ^4.17.0

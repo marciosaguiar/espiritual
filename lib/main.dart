@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:flutter_web_plugins/url_strategy.dart';
 
 import 'firebase_options.dart';
 import 'core/constants/app_strings.dart';
@@ -38,6 +39,25 @@ bool get _firebaseConfigured {
 }
 
 void main() async {
+  // Desliga a integração do Flutter com o histórico do navegador.
+  //
+  // Por padrão o Flutter empilha uma entrada própria no histórico logo que
+  // começa, para que o botão "voltar" do navegador feche telas do app. No
+  // aplicativo instalado no iPhone isso tem um preço alto: existir uma
+  // entrada anterior é justamente o que faz o WebKit aceitar o gesto de
+  // arrastar da borda esquerda, e durante o gesto ele mostra o documento
+  // anterior — a tela de abertura — deslizando por baixo. O `PopScope` segura
+  // o Flutter, mas não o gesto, porque quem o desenha é o WebKit.
+  //
+  // Sem entrada nenhuma não há para onde voltar, e o gesto deixa de existir.
+  // O que se perde: endereço por tela e o botão "voltar" do navegador — nada
+  // disso é usado aqui, porque a navegação é por abas e por telas que abrem
+  // por cima.
+  //
+  // Em Android e iOS nativos esta chamada não faz nada: o próprio pacote tem
+  // uma versão vazia para fora da web.
+  setUrlStrategy(null);
+
   WidgetsFlutterBinding.ensureInitialized();
 
   // Initialize localization for pt_BR dates
