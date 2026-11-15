@@ -303,20 +303,43 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                   return;
                 }
                 if (v == 'delete') {
+                  // A pergunta dizia apenas "Deseja excluir esta música?",
+                  // sem nome. Quem abrisse este menu por engano — ele fica
+                  // logo abaixo de "Colar cifra" — não tinha como saber o
+                  // que ia perder, nem que a perda é definitiva e aparece
+                  // nos cultos já realizados.
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (_) => AlertDialog(
-                      title: const Text('Excluir Música'),
-                      content: const Text('Deseja excluir esta música?'),
+                      title: Text('Excluir "${widget.song.name}"?'),
+                      content: Text(
+                        [
+                          if (widget.song.artist.isNotEmpty)
+                            '${widget.song.name} — ${widget.song.artist}'
+                          else
+                            widget.song.name,
+                          '',
+                          'A música sai do repertório para todo mundo, com a '
+                              'cifra e as anotações. Nos cultos em que ela já '
+                              'foi tocada, passa a aparecer como "Música '
+                              'removida".',
+                          '',
+                          'Não dá para desfazer pelo app.',
+                        ].join('\n'),
+                        style: const TextStyle(
+                            fontFamily: 'Poppins', fontSize: 13.5, height: 1.45),
+                      ),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.pop(context, false),
                           child: const Text('Cancelar'),
                         ),
-                        TextButton(
+                        ElevatedButton(
                           onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Excluir',
-                              style: TextStyle(color: AppColors.red)),
+                          style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.red,
+                              foregroundColor: Colors.white),
+                          child: const Text('Excluir'),
                         ),
                       ],
                     ),

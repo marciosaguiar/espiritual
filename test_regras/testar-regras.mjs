@@ -152,6 +152,53 @@ await teste('levita NÃO apaga música', () =>
 await teste('líder apaga música', () =>
   assertSucceeds(deleteDoc(doc(lider(), 'songs', 's2'))));
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Quem pode apagar música
+//
+// O repertório inteiro sumiu do banco uma vez, sem ninguém assumir. Estes
+// testes fixam a resposta de "quem conseguiria", para a pergunta não precisar
+// ser investigada de novo: só o líder, e mais ninguém.
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n── apagar música ──');
+
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  for (const id of ['s-lider', 's-levita', 's-pendente', 's-removido', 's-deslogado']) {
+    await setDoc(doc(db, 'songs', id), {
+      id, name: 'Digno', artist: 'x', lyrics: '', originalKey: 'G',
+      links: [], isOfflineAvailable: false, createdAt: new Date(), addedBy: LIDER,
+    });
+  }
+  // PENDENTE e REMOVIDO, cada um no seu estado, para não depender da ordem
+  // dos testes anteriores.
+  await setDoc(doc(db, 'users', 'uid-pendente'), perfil('uid-pendente', 'Pedro', 'pendente'));
+  await setDoc(doc(db, 'users', 'uid-removido'), perfil('uid-removido', 'Rita', 'removido'));
+});
+
+const pendente = () => env.authenticatedContext('uid-pendente').firestore();
+const removido = () => env.authenticatedContext('uid-removido').firestore();
+
+await teste('levita não apaga música de ninguém', () =>
+  assertFails(deleteDoc(doc(levita(), 'songs', 's-levita'))));
+
+await teste('pendente não apaga música', () =>
+  assertFails(deleteDoc(doc(pendente(), 'songs', 's-pendente'))));
+
+await teste('removido não apaga música', () =>
+  assertFails(deleteDoc(doc(removido(), 'songs', 's-removido'))));
+
+await teste('deslogado não apaga música', () =>
+  assertFails(deleteDoc(doc(deslogado(), 'songs', 's-deslogado'))));
+
+await teste('levita também não apaga o arranjo', () =>
+  assertFails(deleteDoc(doc(levita(), 'songs', 's-levita', 'arrangements', 'a1'))));
+
+await teste('levita não esvazia a música por update', () =>
+  assertFails(updateDoc(doc(levita(), 'songs', 's-levita'), { name: '', lyrics: '' })));
+
+await teste('o líder apaga', () =>
+  assertSucceeds(deleteDoc(doc(lider(), 'songs', 's-lider'))));
+
 console.log('\n── arranjos ──');
 await teste('levita lê o arranjo', () =>
   assertSucceeds(getDocs(collection(levita(), 'songs', 's1', 'arrangements'))));
