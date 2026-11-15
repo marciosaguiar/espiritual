@@ -72,23 +72,6 @@ class SongsProvider extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<void> loadSongs() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
-    try {
-      _songs = await FirestoreService.getSongs();
-      _applyFilter();
-    } catch (e) {
-      // Try offline
-      _songs = LocalStorageService.offlineSongsList;
-      _applyFilter();
-    } finally {
-      _isLoading = false;
-      notifyListeners();
-    }
-  }
-
   void search(String query) {
     _searchQuery = query;
     _applyFilter();

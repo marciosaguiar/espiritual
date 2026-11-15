@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 144 testes
+flutter test                   # 145 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -241,10 +241,18 @@ efeito colateral: meses muito antigos aparecem vazios no calendário.
   cache, confira se ele existe** — `navigator.serviceWorker.getRegistration()`
   responde em um segundo.
 - **O gesto de voltar saía do app.** Arrastar da borda esquerda, no app
-  instalado, é um `history.back()`. Na raiz o Flutter respondia saindo do
-  documento e o app recarregava do zero. Medido no app no ar: um
-  `history.back()` deixava a página e `performance` registrava
-  `back_forward`. A raiz agora usa `PopScope(canPop: false)`.
+  instalado, é um `history.back()`. Duas coisas foram precisas, nesta ordem:
+  `PopScope(canPop: false)` na raiz, que segura o Flutter, e
+  **`setUrlStrategy(null)` em `main()`**, que é o que resolve de verdade.
+  O Flutter empilha uma entrada própria no histórico ao iniciar, para o
+  botão "voltar" do navegador fechar telas; é a existência dessa entrada que
+  faz o WebKit aceitar o gesto e desenhar o documento anterior — a tela de
+  abertura — deslizando por baixo. Medido: `history.length` 3 com estado
+  `{"flutter":true}` antes, 2 e estado `null` depois (o 2 é a página em
+  branco do próprio teste; no app instalado sobra uma só).
+  **O que se perde:** endereço por tela e o botão "voltar" do navegador.
+  Nenhum dos dois é usado aqui — a navegação é por abas e por telas que
+  abrem por cima, todas com seta de voltar na barra.
 
 ## Próximos passos combinados (fase 2)
 
@@ -266,6 +274,19 @@ Nesta ordem, e **nada disso antes de testar o app num iPhone real**:
 Quando as Functions existirem, mover a função do usuário para um *custom
 claim* no token: as regras passam a ler `request.auth.token.role` e somem as
 leituras extras que hoje cada `get()` dentro da regra cobra.
+
+### Quando a tela diz "vazio"
+
+Lista vazia e lista que não carregou são coisas diferentes, e a pessoa lê as
+duas como defeito do app. O repertório vazio agora diz qual dos quatro casos
+é — busca sem resultado, nenhuma favorita, nada salvo offline, ou repertório
+realmente vazio — e o que fazer. **Vale para toda lista nova:** erro mostra o
+motivo com "tentar de novo"; vazio diz por que está vazio.
+
+Foi removido também um `loadSongs()` que ninguém chamava e que, no `catch`,
+trocava a falha pela lista de músicas guardadas no aparelho. Depois de
+reinstalar o app essa lista é vazia, então uma falha de leitura teria virado
+"nenhuma música", sem erro nenhum na tela.
 
 ## O que não existe (e o relatório de auditoria aponta)
 

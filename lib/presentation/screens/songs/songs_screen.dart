@@ -166,27 +166,7 @@ class _SongsScreenState extends State<SongsScreen>
     }
 
     if (songs.songs.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.music_off_rounded,
-              size: 64,
-              color: isDark ? Colors.grey.shade700 : Colors.grey.shade300,
-            ),
-            const SizedBox(height: 16),
-            Text(
-              AppStrings.noSongsFound,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 16,
-                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
-              ),
-            ),
-          ],
-        ),
-      );
+      return _ListaVazia(songs: songs, isDark: isDark);
     }
 
     return ListView.builder(
@@ -196,6 +176,92 @@ class _SongsScreenState extends State<SongsScreen>
         final song = songs.songs[i];
         return _SongListTile(song: song);
       },
+    );
+  }
+}
+
+/// A lista sem nada, dizendo POR QUE não há nada.
+///
+/// Antes era sempre a mesma frase, "Nenhuma música". Buscar por uma palavra
+/// que não existe, abrir a aba de favoritas vazia e ter o repertório
+/// realmente vazio produziam a mesma tela — e, depois de reinstalar o app,
+/// essa frase foi lida como defeito. Cada caso agora diz o que é e o que
+/// fazer a respeito.
+class _ListaVazia extends StatelessWidget {
+  final SongsProvider songs;
+  final bool isDark;
+
+  const _ListaVazia({required this.songs, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    final ehLider = context.watch<AuthProvider>().isAdmin;
+
+    late final IconData icone;
+    late final String titulo;
+    late final String detalhe;
+
+    if (songs.searchQuery.isNotEmpty) {
+      icone = Icons.search_off_rounded;
+      titulo = 'Nada encontrado';
+      detalhe = 'Nenhuma música com "${songs.searchQuery}" no nome ou no '
+          'artista.';
+    } else if (songs.filter == SongsFilter.favorites) {
+      icone = Icons.favorite_border_rounded;
+      titulo = 'Nenhuma favorita ainda';
+      detalhe = 'Toque no coração de uma música para ela aparecer aqui.';
+    } else if (songs.filter == SongsFilter.offline) {
+      icone = Icons.cloud_off_rounded;
+      titulo = 'Nenhuma música salva no aparelho';
+      detalhe = 'Abra uma música e toque em "Salvar offline" para poder '
+          'tocá-la sem internet.';
+    } else {
+      icone = Icons.music_off_rounded;
+      titulo = 'O repertório está vazio';
+      detalhe = ehLider
+          ? 'Toque no + para cadastrar a primeira música.'
+          : 'Ainda não há músicas cadastradas. Fale com o líder do '
+              'ministério.';
+    }
+
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icone,
+                size: 60,
+                color: isDark ? Colors.grey.shade700 : Colors.grey.shade300),
+            const SizedBox(height: 16),
+            Text(
+              titulo,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 17,
+                fontWeight: FontWeight.w600,
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              detalhe,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 14,
+                height: 1.5,
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

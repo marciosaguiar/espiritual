@@ -18,14 +18,21 @@ class FirestoreService {
 
   // ─── SONGS ────────────────────────────────────────────────────────────────
 
+  /// Ordena no app, não no banco.
+  ///
+  /// `orderBy('name')` no Firestore descarta em silêncio todo documento que
+  /// não tenha o campo `name` — a música simplesmente não existiria para o
+  /// app, sem erro nenhum. Ordenar aqui custa nada nesta escala e faz uma
+  /// música torta aparecer (ainda que sem nome) em vez de sumir.
   static Stream<List<SongModel>> watchSongs() {
-    return _db
-        .collection(_songs)
-        .orderBy('name')
-        .snapshots()
-        .map((snap) => snap.docs
-            .map((doc) => SongModel.fromFirestore(doc.data()))
-            .toList());
+    return _db.collection(_songs).snapshots().map((snap) {
+      final songs = snap.docs
+          .map((doc) => SongModel.fromFirestore(doc.data()))
+          .toList();
+      songs.sort(
+          (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      return songs;
+    });
   }
 
   static Future<List<SongModel>> getSongs() async {
