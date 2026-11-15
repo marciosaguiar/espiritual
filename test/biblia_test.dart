@@ -93,15 +93,35 @@ void main() {
   });
 
   group('o link do YouVersion', () {
-    test('leva a referência do capítulo aberto', () {
+    test('abre o MESMO capítulo, na NVI', () {
+      // Conferido no próprio site: /pt/bible/129/JHN.3 é João 3 em NVI.
       final u = BibliaService.noYouVersion('jo', 3);
       expect(u.host, 'www.bible.com');
-      expect(u.queryParameters['q'], 'João 3');
+      expect(u.path, '/pt/bible/129/JHN.3');
     });
 
-    test('usa o nome do livro, não a sigla', () {
-      expect(BibliaService.noYouVersion('1co', 13).queryParameters['q'],
-          '1 Coríntios 13');
+    test('usa o código USFM, que nem sempre lembra o nome', () {
+      // Cantares é SNG, Filipenses é PHP: errar aqui levaria a pessoa a um
+      // capítulo de outro livro, sem nenhum aviso.
+      expect(BibliaService.noYouVersion('ct', 2).path, '/pt/bible/129/SNG.2');
+      expect(BibliaService.noYouVersion('fp', 4).path, '/pt/bible/129/PHP.4');
+      expect(BibliaService.noYouVersion('1co', 13).path,
+          '/pt/bible/129/1CO.13');
+    });
+
+    test('todos os 66 livros têm código, senão o botão cai na busca', () {
+      for (final l in livrosDaBiblia) {
+        expect(l.usfm, isNotEmpty, reason: 'livro ${l.sigla} sem USFM');
+        expect(l.usfm.length, inInclusiveRange(3, 3),
+            reason: '${l.sigla}: "${l.usfm}" não é um código de três letras');
+      }
+    });
+
+    test('livro desconhecido não vira endereço inventado', () {
+      // Melhor uma busca que leva a algum lugar do que uma página de erro.
+      final u = BibliaService.noYouVersion('xx', 1);
+      expect(u.path, '/search/bible');
+      expect(u.queryParameters['q'], 'xx 1');
     });
   });
 }

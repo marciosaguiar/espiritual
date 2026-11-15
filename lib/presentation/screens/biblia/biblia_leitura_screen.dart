@@ -168,7 +168,7 @@ class _BibliaLeituraScreenState extends State<BibliaLeituraScreen> {
                   child: TextButton.icon(
                     onPressed: _abrirYouVersion,
                     icon: const Icon(Icons.open_in_new_rounded, size: 17),
-                    label: const Text('Abrir no YouVersion'),
+                    label: const Text('Ler este capítulo na NVI'),
                     style:
                         TextButton.styleFrom(foregroundColor: AppColors.blue),
                   ),

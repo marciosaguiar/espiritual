@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 164 testes
+flutter test                   # 166 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -326,9 +326,19 @@ tradução.
 - **Só texto que pode ser distribuído.** Hoje: Bíblia Livre, que é
   **Creative Commons Atribuição 3.0 Brasil — não é domínio público** e exige
   crédito (por isso o crédito viaja dentro do arquivo e aparece no rodapé da
-  leitura); e Almeida 1911, em domínio público. NVI, ARA, NAA, ARC e
+  leitura); e Almeida 1911, em domínio público. NVI, NTLH, ARA, ARC e
   companhia pertencem a editoras e **não entram**, nem que se ache o arquivo
-  pronto na internet. Um teste falha se alguma delas aparecer na lista.
+  pronto num repositório público, nem baixando em vez de hospedando: quem
+  copia a obra para o aparelho da pessoa continua sendo o app. Um teste falha
+  se alguma delas aparecer na lista.
+  **O caminho legítimo, se um dia for preciso:** `api.bible` (American Bible
+  Society) licencia por tradução e tem plano gratuito com 3 Bíblias e 5 mil
+  chamadas por mês — exige chave e conferir se a NVI em português está no
+  catálogo; ou pedir autorização à SBB (ARA, ARC, NTLH) e à Biblica (NVI).
+- **O botão leva ao capítulo certo na NVI**, em `bible.com`, que é de quem
+  tem o direito de publicá-la. `129` é a NVI em português e os livros usam o
+  código USFM de três letras (`JHN`, `SNG`); os dois foram conferidos no
+  próprio site, e um teste cobre os 66 códigos.
 - **Os `.json` não estão no histórico como patch:** são gerados por
   `bash ferramentas/baixar-biblia.sh`, que busca na fonte, confere os 66
   livros e grava sempre igual. Estão commitados no repositório, porque é o

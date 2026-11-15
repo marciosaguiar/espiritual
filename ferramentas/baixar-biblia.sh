@@ -24,12 +24,16 @@ trap 'rm -rf "$TEMPORARIA"' EXIT
 
 mkdir -p assets/biblia
 
-for PAR in "blivre:BLIVRE" "alm1911:ALM1911"; do
-  ID="${PAR%%:*}"
-  ARQUIVO="${PAR##*:}"
-  echo "Baixando $ARQUIVO…"
-  curl -sSL --fail --max-time 300 -o "$TEMPORARIA/$ARQUIVO.json" "$ORIGEM/$ARQUIVO.json"
-done
+# Uma função com dois argumentos, e nada de expansão esperta dentro do laço.
+# O bash do macOS é o 3.2, de 2007, e com `set -u` ele tropeçava em
+# "${PAR##*:}" — "unbound variable" num script que roda redondo no Linux.
+baixar() {
+  echo "Baixando $1…"
+  curl -sSL --fail --max-time 300 -o "$TEMPORARIA/$1.json" "$ORIGEM/$1.json"
+}
+
+baixar BLIVRE
+baixar ALM1911
 
 python3 - "$TEMPORARIA" <<'PYTHON'
 import json, sys, gzip, os

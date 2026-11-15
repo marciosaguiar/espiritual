@@ -133,13 +133,28 @@ class BibliaService {
     return traducao;
   }
 
-  /// Endereço da busca do YouVersion com a referência já digitada.
+  /// O MESMO capítulo, aberto na NVI do YouVersion.
   ///
-  /// Só abre a página do site no navegador: o app não lê nada de lá, e é
-  /// assim que quem prefere NVI ou ARA chega ao texto sem este projeto
-  /// distribuir um texto que não pode.
+  /// É a ponte para as traduções que este app não pode trazer para dentro:
+  /// NVI, NTLH, ARA e ARC são de editoras, e distribuí-las exigiria licença.
+  /// Em vez de fingir que não existem, o botão leva a pessoa ao capítulo
+  /// certo, no site de quem tem o direito de publicá-lo — e lá ela troca para
+  /// NTLH, ARA ou ARC num toque.
+  ///
+  /// `129` é a NVI em português e os códigos de três letras são o padrão
+  /// USFM. Conferidos no próprio site: /pt/bible/129/JHN.3 abre João 3 em
+  /// NVI, e /pt/bible/129/SNG.2 abre Cântico dos Cânticos 2.
+  static const int _nviNoYouVersion = 129;
+
   static Uri noYouVersion(String siglaLivro, int capitulo) {
-    final referencia = '${nomeDoLivro(siglaLivro)} $capitulo';
-    return Uri.https('www.bible.com', '/search/bible', {'q': referencia});
+    final livro = livroPorSigla(siglaLivro);
+    if (livro == null || livro.usfm.isEmpty) {
+      // Livro que não conhecemos: a busca pelo nome ainda leva a algum lugar
+      // útil, em vez de a um endereço inventado que daria página de erro.
+      return Uri.https('www.bible.com', '/search/bible',
+          {'q': '${nomeDoLivro(siglaLivro)} $capitulo'});
+    }
+    return Uri.https('www.bible.com',
+        '/pt/bible/$_nviNoYouVersion/${livro.usfm}.$capitulo');
   }
 }
