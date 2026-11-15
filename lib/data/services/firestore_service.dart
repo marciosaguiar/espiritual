@@ -73,26 +73,47 @@ class FirestoreService {
     }
   }
 
-  static Future<({bool success, String? error})> deleteSong(
-      String songId) async {
+  /// Tira a música do repertório sem apagar nada.
+  ///
+  /// O documento fica: é o que mantém o nome dela nos cultos em que foi
+  /// tocada, em vez de "Música removida", e é o que permite desfazer. Apagar
+  /// de verdade não existe mais no app — as regras recusam `delete` em
+  /// `songs` para todo mundo, líder incluído. Isso só pelo console.
+  static Future<({bool success, String? error})> arquivarSong(
+    String songId,
+    String porQuemId,
+  ) async {
     try {
-      await _db.collection(_songs).doc(songId).delete();
+      await _db.collection(_songs).doc(songId).update({
+        'archived': true,
+        'archivedAt': FieldValue.serverTimestamp(),
+        'archivedBy': porQuemId,
+      });
       return (success: true, error: null);
     } on FirebaseException catch (e) {
-      return (success: false, error: _describe(e, 'apagar a música'));
-    } catch (e) {
-      return (success: false, error: 'Não foi possível apagar a música: $e');
+      return (
+        success: false,
+        error: 'Não foi possível tirar do repertório: ${e.message}'
+      );
     }
   }
 
-  static Future<List<SongModel>> searchSongs(String query) async {
-    if (query.isEmpty) return getSongs();
-    final q = query.toLowerCase();
-    final all = await getSongs();
-    return all.where((s) {
-      return s.name.toLowerCase().contains(q) ||
-          s.artist.toLowerCase().contains(q);
-    }).toList();
+  /// Devolve a música ao repertório, limpando o carimbo.
+  static Future<({bool success, String? error})> desarquivarSong(
+      String songId) async {
+    try {
+      await _db.collection(_songs).doc(songId).update({
+        'archived': false,
+        'archivedAt': null,
+        'archivedBy': null,
+      });
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (
+        success: false,
+        error: 'Não foi possível devolver ao repertório: ${e.message}'
+      );
+    }
   }
 
   static SongModel createSongModel({

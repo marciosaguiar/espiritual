@@ -60,6 +60,18 @@ class SongModel {
   final DateTime createdAt;
   final String? addedBy;
 
+  /// Tirada do repertório, mas NÃO apagada.
+  ///
+  /// Mesma decisão que já valia para os cultos — "cancelar é um campo, nunca
+  /// exclusão" — e pelo mesmo motivo prático: o documento continua existindo,
+  /// então os cultos em que a música foi tocada seguem mostrando o nome dela
+  /// em vez de "Música removida", e um toque errado tem conserto. Apagar de
+  /// verdade só pelo console do Firebase; as regras não deixam mais nem o
+  /// líder apagar pelo app.
+  final bool archived;
+  final DateTime? archivedAt;
+  final String? archivedBy;
+
   const SongModel({
     required this.id,
     required this.name,
@@ -70,6 +82,9 @@ class SongModel {
     this.isOfflineAvailable = false,
     required this.createdAt,
     this.addedBy,
+    this.archived = false,
+    this.archivedAt,
+    this.archivedBy,
   });
 
   /// First video link, for the "watch" button.
@@ -90,6 +105,10 @@ class SongModel {
     bool? isOfflineAvailable,
     DateTime? createdAt,
     String? addedBy,
+    bool? archived,
+    DateTime? archivedAt,
+    String? archivedBy,
+    bool limparArquivamento = false,
   }) {
     return SongModel(
       id: id ?? this.id,
@@ -101,6 +120,11 @@ class SongModel {
       isOfflineAvailable: isOfflineAvailable ?? this.isOfflineAvailable,
       createdAt: createdAt ?? this.createdAt,
       addedBy: addedBy ?? this.addedBy,
+      archived: limparArquivamento ? false : (archived ?? this.archived),
+      // `?? this.x` nunca consegue voltar para nulo, e devolver a música ao
+      // repertório precisa exatamente disso.
+      archivedAt: limparArquivamento ? null : (archivedAt ?? this.archivedAt),
+      archivedBy: limparArquivamento ? null : (archivedBy ?? this.archivedBy),
     );
   }
 
@@ -115,6 +139,9 @@ class SongModel {
       'isOfflineAvailable': isOfflineAvailable,
       'createdAt': Timestamp.fromDate(createdAt),
       'addedBy': addedBy,
+      'archived': archived,
+      'archivedAt': archivedAt == null ? null : Timestamp.fromDate(archivedAt!),
+      'archivedBy': archivedBy,
     };
   }
 
@@ -129,6 +156,11 @@ class SongModel {
       isOfflineAvailable: data['isOfflineAvailable'] as bool? ?? false,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       addedBy: data['addedBy'] as String?,
+      // Música gravada antes do arquivamento não tem o campo: está no
+      // repertório, como sempre esteve.
+      archived: data['archived'] as bool? ?? false,
+      archivedAt: (data['archivedAt'] as Timestamp?)?.toDate(),
+      archivedBy: data['archivedBy'] as String?,
     );
   }
 
@@ -143,6 +175,10 @@ class SongModel {
       'isOfflineAvailable': isOfflineAvailable,
       'createdAt': createdAt.toIso8601String(),
       'addedBy': addedBy,
+      'archived': archived,
+      // Timestamp não vira JSON — ver CLAUDE.md.
+      'archivedAt': archivedAt?.toIso8601String(),
+      'archivedBy': archivedBy,
     };
   }
 
@@ -158,6 +194,9 @@ class SongModel {
       createdAt: DateTime.tryParse(data['createdAt'] as String? ?? '') ??
           DateTime.now(),
       addedBy: data['addedBy'] as String?,
+      archived: data['archived'] as bool? ?? false,
+      archivedAt: DateTime.tryParse(data['archivedAt'] as String? ?? ''),
+      archivedBy: data['archivedBy'] as String?,
     );
   }
 

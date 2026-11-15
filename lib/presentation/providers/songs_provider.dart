@@ -6,7 +6,7 @@ import '../../data/models/song_model.dart';
 import '../../data/services/firestore_service.dart';
 import '../../data/services/local_storage_service.dart';
 
-enum SongsFilter { all, favorites, offline }
+enum SongsFilter { all, favorites, offline, arquivadas }
 
 class SongsProvider extends ChangeNotifier {
   List<SongModel> _songs = [];
@@ -20,7 +20,16 @@ class SongsProvider extends ChangeNotifier {
   StreamSubscription<List<SongModel>>? _songsSub;
 
   List<SongModel> get songs => _filteredSongs;
+  /// TUDO, arquivadas incluídas. Serve para RESOLVER por id — é o que faz um
+  /// culto antigo continuar mostrando o nome da música em vez de "Música
+  /// removida". Nunca use para oferecer músicas a escolher.
   List<SongModel> get allSongs => _songs;
+
+  /// O repertório de hoje: o que se pode escolher, escalar, buscar.
+  /// Tirar do repertório não serviria de nada se a música continuasse
+  /// aparecendo na hora de montar o culto.
+  List<SongModel> get repertorio =>
+      _songs.where((s) => !s.archived).toList();
   SongsFilter get filter => _filter;
   String get searchQuery => _searchQuery;
   bool get isLoading => _isLoading;
@@ -88,15 +97,24 @@ class SongsProvider extends ChangeNotifier {
     List<SongModel> base;
 
     switch (_filter) {
+      // As arquivadas continuam em `_songs`, para os cultos antigos
+      // resolverem o nome; o que muda é só o que a tela mostra.
       case SongsFilter.all:
-        base = List.from(_songs);
+        base = _songs.where((s) => !s.archived).toList();
         break;
       case SongsFilter.favorites:
-        base = _songs.where((s) => _favoriteSongIds.contains(s.id)).toList();
+        base = _songs
+            .where((s) => !s.archived && _favoriteSongIds.contains(s.id))
+            .toList();
         break;
       case SongsFilter.offline:
         final offlineIds = LocalStorageService.getOfflineSongs().keys.toSet();
-        base = _songs.where((s) => offlineIds.contains(s.id)).toList();
+        base = _songs
+            .where((s) => !s.archived && offlineIds.contains(s.id))
+            .toList();
+        break;
+      case SongsFilter.arquivadas:
+        base = _songs.where((s) => s.archived).toList();
         break;
     }
 
@@ -132,15 +150,24 @@ class SongsProvider extends ChangeNotifier {
     return null;
   }
 
-  /// Deletes a song. Returns null on success, or the message to show.
-  Future<String?> deleteSong(String songId) async {
-    final result = await FirestoreService.deleteSong(songId);
-    if (!result.success) return result.error;
-
-    _songs.removeWhere((s) => s.id == songId);
-    _applyFilter();
-    notifyListeners();
+  /// Tira a música do repertório. Devolve null quando dá certo.
+  ///
+  /// A música NÃO sai de `_songs`: sai só das listas que a tela mostra. É
+  /// isso que mantém `nameOf` respondendo o nome certo nos cultos em que ela
+  /// foi tocada — tirar daqui faria voltar o "Música removida" que o
+  /// arquivamento existe para evitar.
+  Future<String?> arquivar(String songId, String porQuemId) async {
+    final r = await FirestoreService.arquivarSong(songId, porQuemId);
+    if (!r.success) return r.error;
+    // A cópia guardada no aparelho sai junto: a música não está mais no
+    // repertório, e deixá-la ali só confundiria quem procura offline.
+    await LocalStorageService.removeSongOffline(songId);
     return null;
+  }
+
+  Future<String?> desarquivar(String songId) async {
+    final r = await FirestoreService.desarquivarSong(songId);
+    return r.success ? null : r.error;
   }
 
   Future<void> toggleOffline(SongModel song) async {
@@ -186,10 +213,10 @@ class SongsProvider extends ChangeNotifier {
   bool exists(ScaleSong ref) => getSongById(ref.songId) != null;
 
   List<SongModel> suggestRepertoire({int count = 6}) {
-    if (_songs.isEmpty) return const [];
+    if (repertorio.isEmpty) return const [];
     final now = DateTime.now();
     final seed = now.year * 10000 + now.month * 100 + now.day;
-    final shuffled = List<SongModel>.from(_songs)..shuffle(Random(seed));
+    final shuffled = List<SongModel>.from(repertorio)..shuffle(Random(seed));
     return shuffled.take(count).toList();
   }
 }

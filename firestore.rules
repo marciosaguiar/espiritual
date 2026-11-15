@@ -115,6 +115,17 @@ service cloud.firestore {
             && request.resource.data[campo].size() <= maximo);
     }
 
+    // "Tirada do repertório": o campo e o carimbo de quem tirou e quando.
+    // Nulo é válido — é assim que devolver ao repertório os limpa.
+    function arquivamentoValido() {
+      return (!('archived' in request.resource.data)
+              || request.resource.data.archived is bool)
+        && (!('archivedAt' in request.resource.data)
+            || request.resource.data.archivedAt == null
+            || request.resource.data.archivedAt is timestamp)
+        && texto('archivedBy', 128);
+    }
+
     function tamanhoRazoavel() {
       return request.resource.data.keys().size() <= 30;
     }
@@ -200,14 +211,27 @@ service cloud.firestore {
     match /songs/{songId} {
       allow read: if aprovado();
 
+      // Só o líder cadastra, corrige, tira do repertório e devolve. Como
+      // tirar do repertório é um update comum, a mesma linha cobre as duas
+      // coisas: ninguém além do líder arquiva ou desarquiva.
       allow create, update: if ehLider()
         && tamanhoRazoavel()
         && texto('name', 150)
         && texto('artist', 150)
         && texto('lyrics', 20000)
-        && texto('originalKey', 10);
+        && texto('originalKey', 10)
+        && arquivamentoValido();
 
-      allow delete: if ehLider();
+      // NINGUÉM apaga música pelo app, nem o líder.
+      //
+      // O repertório inteiro sumiu do banco uma vez, em 14/11/2026, com a
+      // confirmação de excluir sem sequer dizer o nome da música. Apagar
+      // passou a ser "tirar do repertório": um campo, como cancelar culto.
+      // Assim o nome continua aparecendo nos cultos em que a música foi
+      // tocada, e um engano tem conserto. Apagar de verdade, se um dia for
+      // mesmo preciso, só pelo console do Firebase — onde não se chega por
+      // engano no meio de um culto.
+      allow delete: if false;
 
       // ── Arranjo da igreja ─────────────────────────────────────────────────
       // Como a NOSSA igreja toca a música: cifra, tom, estrutura, andamento.
@@ -220,7 +244,9 @@ service cloud.firestore {
           && texto('churchKey', 10)
           && texto('notes', 5000);
 
-        allow delete: if ehLider();
+        // Pelo mesmo motivo da música: a cifra da igreja é trabalho de
+        // muita gente e não some por um toque errado.
+        allow delete: if false;
       }
     }
 

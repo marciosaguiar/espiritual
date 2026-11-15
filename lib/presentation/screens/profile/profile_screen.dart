@@ -314,7 +314,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       return const Center(child: CircularProgressIndicator());
     }
 
-    final favoriteSongs = songs.allSongs
+    final favoriteSongs = songs.repertorio
         .where((s) => user.favoriteSongs.contains(s.id))
         .toList();
 

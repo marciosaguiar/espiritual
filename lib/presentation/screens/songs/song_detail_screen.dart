@@ -302,16 +302,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                   await _colarCifra();
                   return;
                 }
-                if (v == 'delete') {
-                  // A pergunta dizia apenas "Deseja excluir esta música?",
-                  // sem nome. Quem abrisse este menu por engano — ele fica
-                  // logo abaixo de "Colar cifra" — não tinha como saber o
-                  // que ia perder, nem que a perda é definitiva e aparece
-                  // nos cultos já realizados.
+                if (v == 'arquivar') {
+                  // Não apaga: tira do repertório. O documento fica, então
+                  // os cultos em que a música foi tocada seguem mostrando o
+                  // nome dela, e dá para voltar atrás.
                   final confirm = await showDialog<bool>(
                     context: context,
                     builder: (_) => AlertDialog(
-                      title: Text('Excluir "${widget.song.name}"?'),
+                      title: Text('Tirar "${widget.song.name}" do repertório?'),
                       content: Text(
                         [
                           if (widget.song.artist.isNotEmpty)
@@ -319,12 +317,12 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           else
                             widget.song.name,
                           '',
-                          'A música sai do repertório para todo mundo, com a '
-                              'cifra e as anotações. Nos cultos em que ela já '
-                              'foi tocada, passa a aparecer como "Música '
-                              'removida".',
+                          'Ela sai da lista e da busca para todo mundo, com a '
+                              'cifra e as anotações.',
                           '',
-                          'Não dá para desfazer pelo app.',
+                          'Nada é apagado: os cultos em que ela já foi tocada '
+                              'continuam mostrando o nome, e você pode '
+                              'devolvê-la em Músicas → Arquivadas.',
                         ].join('\n'),
                         style: const TextStyle(
                             fontFamily: 'Poppins', fontSize: 13.5, height: 1.45),
@@ -339,13 +337,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.red,
                               foregroundColor: Colors.white),
-                          child: const Text('Excluir'),
+                          child: const Text('Tirar do repertório'),
                         ),
                       ],
                     ),
                   );
                   if (confirm == true && mounted) {
-                    final error = await songs.deleteSong(widget.song.id);
+                    final error = await songs.arquivar(
+                        widget.song.id, auth.user?.id ?? '');
                     if (!mounted) return;
                     if (error == null) {
                       Navigator.pop(context);
@@ -373,12 +372,13 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                   ),
                 ),
                 const PopupMenuItem(
-                  value: 'delete',
+                  value: 'arquivar',
                   child: Row(
                     children: [
-                      Icon(Icons.delete_outline, color: AppColors.red, size: 18),
+                      Icon(Icons.archive_outlined,
+                          color: AppColors.red, size: 18),
                       SizedBox(width: 8),
-                      Text('Excluir música',
+                      Text('Tirar do repertório',
                           style: TextStyle(color: AppColors.red)),
                     ],
                   ),

@@ -149,8 +149,8 @@ await teste('líder cria música', () =>
       links: [], isOfflineAvailable: false, createdAt: new Date(), addedBy: LIDER })));
 await teste('levita NÃO apaga música', () =>
   assertFails(deleteDoc(doc(levita(), 'songs', 's1'))));
-await teste('líder apaga música', () =>
-  assertSucceeds(deleteDoc(doc(lider(), 'songs', 's2'))));
+await teste('líder também não apaga música (só tira do repertório)', () =>
+  assertFails(deleteDoc(doc(lider(), 'songs', 's2'))));
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Quem pode apagar música
@@ -159,18 +159,28 @@ await teste('líder apaga música', () =>
 // testes fixam a resposta de "quem conseguiria", para a pergunta não precisar
 // ser investigada de novo: só o líder, e mais ninguém.
 // ─────────────────────────────────────────────────────────────────────────────
-console.log('\n── apagar música ──');
-
+// ─────────────────────────────────────────────────────────────────────────────
+// Tirar música do repertório
+//
+// O repertório inteiro sumiu do banco uma vez, sem ninguém assumir. Apagar
+// deixou de existir no app: ficou "tirar do repertório", que é um campo, como
+// cancelar culto. Estes testes fixam quem consegue mexer nesse campo — e que
+// apagar está fechado para todos, líder incluído.
+// ─────────────────────────────────────────────────────────────────────────────
 await env.withSecurityRulesDisabled(async (ctx) => {
   const db = ctx.firestore();
   for (const id of ['s-lider', 's-levita', 's-pendente', 's-removido', 's-deslogado']) {
     await setDoc(doc(db, 'songs', id), {
       id, name: 'Digno', artist: 'x', lyrics: '', originalKey: 'G',
       links: [], isOfflineAvailable: false, createdAt: new Date(), addedBy: LIDER,
+      archived: false, archivedAt: null, archivedBy: null,
     });
   }
-  // PENDENTE e REMOVIDO, cada um no seu estado, para não depender da ordem
-  // dos testes anteriores.
+  await setDoc(doc(db, 'songs', 's-lider', 'arrangements', 'a1'), {
+    id: 'a1', songId: 's-lider', chords: 'G C D', churchKey: 'G', notes: '',
+    createdAt: new Date(),
+  });
+  // Cada estado no seu próprio uid, para não depender da ordem dos testes.
   await setDoc(doc(db, 'users', 'uid-pendente'), perfil('uid-pendente', 'Pedro', 'pendente'));
   await setDoc(doc(db, 'users', 'uid-removido'), perfil('uid-removido', 'Rita', 'removido'));
 });
@@ -178,26 +188,59 @@ await env.withSecurityRulesDisabled(async (ctx) => {
 const pendente = () => env.authenticatedContext('uid-pendente').firestore();
 const removido = () => env.authenticatedContext('uid-removido').firestore();
 
-await teste('levita não apaga música de ninguém', () =>
+console.log('\n── tirar música do repertório ──');
+
+await teste('levita não arquiva música', () =>
+  assertFails(updateDoc(doc(levita(), 'songs', 's-levita'),
+    { archived: true, archivedAt: serverTimestamp(), archivedBy: LEVITA })));
+
+await teste('pendente não arquiva música', () =>
+  assertFails(updateDoc(doc(pendente(), 'songs', 's-pendente'),
+    { archived: true, archivedAt: serverTimestamp(), archivedBy: 'uid-pendente' })));
+
+await teste('removido não arquiva música', () =>
+  assertFails(updateDoc(doc(removido(), 'songs', 's-removido'),
+    { archived: true, archivedAt: serverTimestamp(), archivedBy: 'uid-removido' })));
+
+await teste('deslogado não arquiva música', () =>
+  assertFails(updateDoc(doc(deslogado(), 'songs', 's-deslogado'),
+    { archived: true })));
+
+await teste('o líder tira do repertório', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'songs', 's-lider'),
+    { archived: true, archivedAt: serverTimestamp(), archivedBy: LIDER })));
+
+await teste('levita não devolve ao repertório', () =>
+  assertFails(updateDoc(doc(levita(), 'songs', 's-lider'),
+    { archived: false, archivedAt: null, archivedBy: null })));
+
+await teste('o líder devolve ao repertório', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'songs', 's-lider'),
+    { archived: false, archivedAt: null, archivedBy: null })));
+
+await teste('archived com tipo errado é recusado', () =>
+  assertFails(updateDoc(doc(lider(), 'songs', 's-lider'), { archived: 'sim' })));
+
+await teste('carimbo de arquivamento com tipo errado é recusado', () =>
+  assertFails(updateDoc(doc(lider(), 'songs', 's-lider'),
+    { archived: true, archivedAt: 'ontem', archivedBy: LIDER })));
+
+console.log('\n── apagar música não existe mais ──');
+
+await teste('NEM O LÍDER apaga música', () =>
+  assertFails(deleteDoc(doc(lider(), 'songs', 's-lider'))));
+
+await teste('nem o líder apaga o arranjo', () =>
+  assertFails(deleteDoc(doc(lider(), 'songs', 's-lider', 'arrangements', 'a1'))));
+
+await teste('levita continua sem apagar música', () =>
   assertFails(deleteDoc(doc(levita(), 'songs', 's-levita'))));
 
-await teste('pendente não apaga música', () =>
-  assertFails(deleteDoc(doc(pendente(), 'songs', 's-pendente'))));
-
-await teste('removido não apaga música', () =>
+await teste('removido continua sem apagar música', () =>
   assertFails(deleteDoc(doc(removido(), 'songs', 's-removido'))));
 
-await teste('deslogado não apaga música', () =>
-  assertFails(deleteDoc(doc(deslogado(), 'songs', 's-deslogado'))));
-
-await teste('levita também não apaga o arranjo', () =>
-  assertFails(deleteDoc(doc(levita(), 'songs', 's-levita', 'arrangements', 'a1'))));
-
-await teste('levita não esvazia a música por update', () =>
-  assertFails(updateDoc(doc(levita(), 'songs', 's-levita'), { name: '', lyrics: '' })));
-
-await teste('o líder apaga', () =>
-  assertSucceeds(deleteDoc(doc(lider(), 'songs', 's-lider'))));
+await teste('o líder ainda consegue corrigir o nome da música', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'songs', 's-lider'), { name: 'Digno É' })));
 
 console.log('\n── arranjos ──');
 await teste('levita lê o arranjo', () =>

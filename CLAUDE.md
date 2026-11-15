@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 145 testes
+flutter test                   # 153 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 114 testes
+cd test_regras && npm install && npm test    # 121 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -35,7 +35,7 @@ de dentro do `firebase-tools` — os dois comandos acima se contradiziam.
 O `test_regras/.npmrc` também não é enfeite: `@firebase/rules-unit-testing@3`
 pede `firebase@^10` e aqui se usa o 13. As versões novas do npm recusam
 instalar por isso, então `npm install` falhava num computador limpo, embora os
-114 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
+121 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
 só com `npm install --legacy-peer-deps`.
 
 ## Estado atual
@@ -275,33 +275,33 @@ Quando as Functions existirem, mover a função do usuário para um *custom
 claim* no token: as regras passam a ler `request.auth.token.role` e somem as
 leituras extras que hoje cada `get()` dentro da regra cobra.
 
-### Apagar música
+### Tirar música do repertório (nunca apagar)
 
-O repertório inteiro sumiu do banco uma vez, em 14/11/2026, sem ninguém
-assumir. O levantamento está registrado porque a pergunta "quem consegue
-apagar?" não deve precisar ser investigada duas vezes:
+O repertório inteiro sumiu do banco em 14/11/2026, sem ninguém assumir. A
+investigação mostrou que o app tinha um caminho só para apagar — menu ⋮ do
+líder → confirmação que **não dizia o nome da música** — e que nenhuma
+limpeza alcançava `songs`. A causa provável foi um toque no menu errado.
 
-- **A regra**: `match /songs/{songId}` → `allow delete: if ehLider()`. Levita,
-  pendente, removido e deslogado são recusados. Há teste de emulador para
-  cada um desses quatro casos, mais o arranjo e um `update` que esvaziaria a
-  música por outro caminho.
-- **No app há UM caminho só**: detalhe da música → menu ⋮ (que só o líder vê)
-  → Excluir → confirmação. Uma música por vez. Não existe deslizar para
-  apagar, nem apagar pela lista, nem nada que espelhe a lista local no
-  servidor.
-- **Nenhuma limpeza alcança `songs`**: a transação de remoção do ministério
-  só escreve em `users`, `teams.members` e `scales.levitas`;
-  `limparTudoDoMinisterio` só mexe no aparelho; a migração de `recusado` é
-  leitura, não escreve nada.
-- A confirmação **não dizia o nome da música** e ficava logo abaixo de
-  "Colar cifra" no mesmo menu. Hoje mostra nome, artista, o que se perde e
-  que os cultos passados passam a exibir "Música removida".
+Apagar deixou de existir. Vale a mesma regra dos cultos, **"cancelar é um
+campo, nunca exclusão"**:
 
-**Se precisar recuperar:** o documento da música some, mas a subcoleção
-`arrangements` dele não — no console ela aparece como documento em itálico, e
-a cifra está lá dentro. Cultos antigos, anteriores ao modelo de três camadas,
-ainda guardam o nome e o artista copiados dentro de `songs[]`, campos que o
-app hoje ignora.
+- `SongModel.archived` + `archivedAt` + `archivedBy`. O documento FICA.
+- **`allow delete: if false` em `songs` e em `arrangements`** — para todos,
+  líder incluído. Apagar de verdade só pelo console do Firebase, onde não se
+  chega por engano no meio de um culto.
+- Arquivar e desarquivar são `update` comuns, e `update` em `songs` já era só
+  do líder: a mesma linha cobre as duas coisas.
+- **A música arquivada continua em `SongsProvider.allSongs`**, e é por isso
+  que o culto em que ela foi tocada segue mostrando o nome em vez de "Música
+  removida". Quem oferece música para escolher usa
+  **`SongsProvider.repertorio`**, que exclui as arquivadas. Confundir as duas
+  é o jeito de estragar isto: `allSongs` resolve por id, `repertorio` oferece.
+- A lista "Arquivadas" aparece só para o líder, com "Devolver" em cada linha.
+
+**Se precisar recuperar algo apagado antes disto:** o documento some, mas a
+subcoleção `arrangements` não — no console ela aparece como documento em
+itálico, com a cifra dentro. E cultos anteriores ao modelo de três camadas
+ainda guardam nome e artista copiados dentro de `songs[]`.
 
 ### Quando a tela diz "vazio"
 

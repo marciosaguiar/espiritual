@@ -195,7 +195,7 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
 
   Future<void> _showAddSongDialog() async {
     final songs = context.read<SongsProvider>();
-    final allSongs = songs.allSongs;
+    final allSongs = songs.repertorio;
 
     if (allSongs.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(

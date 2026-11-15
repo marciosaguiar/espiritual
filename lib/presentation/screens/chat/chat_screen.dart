@@ -633,7 +633,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Widget _buildSongSearchPanel(
       AuthProvider auth, SongsProvider songs, bool isDark) {
-    final results = songs.allSongs.where((s) {
+    final results = songs.repertorio.where((s) {
       final q = _songSearchCtrl.text.toLowerCase();
       if (q.isEmpty) return true;
       return s.name.toLowerCase().contains(q) ||

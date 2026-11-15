@@ -38,8 +38,7 @@ class _SongsScreenState extends State<SongsScreen>
     // so there is no per-frame work here anymore.
 
     // Body extends behind the frosted app bar so the list blurs underneath it.
-    final topInset =
-        MediaQuery.of(context).padding.top + kToolbarHeight + 120;
+    final topInset = MediaQuery.of(context).padding.top + kToolbarHeight + 120;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -81,7 +80,9 @@ class _SongsScreenState extends State<SongsScreen>
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 14,
-                    color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
                   ),
                   decoration: InputDecoration(
                     hintText: AppStrings.searchSongs,
@@ -96,7 +97,8 @@ class _SongsScreenState extends State<SongsScreen>
                           )
                         : null,
                     filled: true,
-                    fillColor: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+                    fillColor:
+                        isDark ? Colors.grey.shade800 : Colors.grey.shade100,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(12),
                       borderSide: BorderSide.none,
@@ -122,7 +124,8 @@ class _SongsScreenState extends State<SongsScreen>
                     _FilterChip(
                       label: AppStrings.favorites,
                       isSelected: songsProvider.filter == SongsFilter.favorites,
-                      onTap: () => songsProvider.setFilter(SongsFilter.favorites),
+                      onTap: () =>
+                          songsProvider.setFilter(SongsFilter.favorites),
                       icon: Icons.favorite_rounded,
                     ),
                     const SizedBox(width: 8),
@@ -132,6 +135,20 @@ class _SongsScreenState extends State<SongsScreen>
                       onTap: () => songsProvider.setFilter(SongsFilter.offline),
                       icon: Icons.download_done_rounded,
                     ),
+                    // Só o líder tira e devolve música, então só ele tem o
+                    // que fazer aqui. Para o levita seria uma aba que nunca
+                    // muda de estado.
+                    if (context.watch<AuthProvider>().isAdmin) ...[
+                      const SizedBox(width: 8),
+                      _FilterChip(
+                        label: 'Arquivadas',
+                        isSelected:
+                            songsProvider.filter == SongsFilter.arquivadas,
+                        onTap: () =>
+                            songsProvider.setFilter(SongsFilter.arquivadas),
+                        icon: Icons.archive_outlined,
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -210,6 +227,11 @@ class _ListaVazia extends StatelessWidget {
       icone = Icons.favorite_border_rounded;
       titulo = 'Nenhuma favorita ainda';
       detalhe = 'Toque no coração de uma música para ela aparecer aqui.';
+    } else if (songs.filter == SongsFilter.arquivadas) {
+      icone = Icons.archive_outlined;
+      titulo = 'Nenhuma música arquivada';
+      detalhe = 'As músicas que você tirar do repertório ficam guardadas '
+          'aqui, e podem voltar quando quiser.';
     } else if (songs.filter == SongsFilter.offline) {
       icone = Icons.cloud_off_rounded;
       titulo = 'Nenhuma música salva no aparelho';
@@ -262,6 +284,61 @@ class _ListaVazia extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// "Devolver ao repertório", na linha de uma música arquivada.
+///
+/// Fica na própria lista de arquivadas em vez de dentro do detalhe: quem
+/// chega aqui já sabe o que quer, e obrigar a abrir a música para desfazer
+/// um engano é um passo a mais sem motivo.
+class _BotaoDevolver extends StatefulWidget {
+  final SongModel song;
+  const _BotaoDevolver({required this.song});
+
+  @override
+  State<_BotaoDevolver> createState() => _BotaoDevolverState();
+}
+
+class _BotaoDevolverState extends State<_BotaoDevolver> {
+  bool _salvando = false;
+
+  Future<void> _devolver() async {
+    setState(() => _salvando = true);
+    final erro =
+        await context.read<SongsProvider>().desarquivar(widget.song.id);
+    if (!mounted) return;
+    setState(() => _salvando = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(erro ?? '${widget.song.name} voltou ao repertório.'),
+        backgroundColor: erro == null ? AppColors.success : AppColors.red,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_salvando) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12),
+        child: SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(strokeWidth: 2.2)),
+      );
+    }
+    return OutlinedButton(
+      onPressed: _devolver,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: AppColors.blue,
+        side: BorderSide(color: AppColors.blue.withValues(alpha: 0.5)),
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        visualDensity: VisualDensity.compact,
+        textStyle: const TextStyle(fontFamily: 'Poppins', fontSize: 12.5),
+      ),
+      child: const Text('Devolver'),
     );
   }
 }
@@ -402,35 +479,39 @@ class _SongListTile extends StatelessWidget {
               ),
             ),
             const SizedBox(width: 8),
-            // Key badge
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppColors.blue.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(6),
-              ),
-              child: Text(
-                song.originalKey,
-                style: const TextStyle(
-                  fontFamily: 'Poppins',
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.blue,
+            if (song.archived)
+              _BotaoDevolver(song: song)
+            else ...[
+              // Key badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(
+                  song.originalKey,
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.blue,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 8),
-            // Icons
-            Column(
-              children: [
-                if (isFav)
-                  const Icon(Icons.favorite_rounded,
-                      size: 16, color: AppColors.red),
-                if (isOffline)
-                  const Icon(Icons.download_done_rounded,
-                      size: 16, color: AppColors.success),
-              ],
-            ),
+              const SizedBox(width: 8),
+              // Icons
+              Column(
+                children: [
+                  if (isFav)
+                    const Icon(Icons.favorite_rounded,
+                        size: 16, color: AppColors.red),
+                  if (isOffline)
+                    const Icon(Icons.download_done_rounded,
+                        size: 16, color: AppColors.success),
+                ],
+              ),
+            ],
             const SizedBox(width: 4),
             const Icon(Icons.chevron_right_rounded,
                 color: AppColors.textSecondaryLight, size: 20),
