@@ -369,8 +369,8 @@ service cloud.firestore {
         && request.resource.data.userId == eu()
         && request.resource.data.bytes is bytes
         && request.resource.data.bytes.size() > 0
-        // 600 KiB. O documento do Firestore vai até 1 MiB, e dois minutos a
-        // 32 kbps mono dão ~469 KiB; a folga cobre um aparelho que grave
+        // 800 KiB. O documento do Firestore vai até 1 MiB, e dois minutos
+        // medidos saíram com 531 KiB; a folga cobre um aparelho que grave
         // mais gordo sem a escrita inteira ser recusada pelo banco.
         && request.resource.data.bytes.size() <= 819200
         && request.resource.data.duracaoMs is int
@@ -386,6 +386,50 @@ service cloud.firestore {
 
       // O líder (e a faxina, que entra como líder) apaga; o autor apaga o
       // próprio. Ninguém apaga áudio alheio.
+      allow delete: if ehLider()
+        || (aprovado() && resource.data.userId == eu());
+    }
+
+    // ── Avisos do chat ──────────────────────────────────────────────────────
+    // Uma inscrição por APARELHO, não por pessoa: quem usa o app no celular e
+    // no computador recebe nos dois, e o id do documento é um número sorteado
+    // guardado naquele navegador.
+    //
+    // POR QUE A LEITURA É FECHADA
+    //
+    // O `endpoint` é uma CHAVE, não um endereço: quem o tem manda notificação
+    // para aquele celular direto, sem passar pelo Worker e sem limite nenhum.
+    // Então ninguém lê a inscrição de outra pessoa — nem um levita aprovado.
+    // Quem lê a lista inteira é o robô dos avisos, que entra como líder, pelo
+    // mesmo motivo e com a mesma senha da faxina do chat: chave de
+    // administrador ignoraria todas estas regras.
+    match /pushSubs/{aparelhoId} {
+      allow read: if ehLider()
+        || (aprovado() && resource.data.userId == eu());
+
+      allow create, update: if aprovado()
+        && tamanhoRazoavel()
+        && request.resource.data.userId == eu()
+        && request.resource.data.endpoint is string
+        && request.resource.data.endpoint.size() > 0
+        && request.resource.data.endpoint.size() <= 500
+        // Só https: o endpoint vem do próprio navegador, e um valor http
+        // aqui significa que alguém o escreveu à mão.
+        && request.resource.data.endpoint.matches('https://.*')
+        && request.resource.data.p256dh is string
+        && request.resource.data.p256dh.size() > 0
+        && request.resource.data.p256dh.size() <= 200
+        && request.resource.data.auth is string
+        && request.resource.data.auth.size() > 0
+        && request.resource.data.auth.size() <= 60
+        && request.resource.data.avisosLigados is bool
+        // Nulo é o normal: só quem tocou em "Silenciar até amanhã" tem data.
+        && (request.resource.data.silenciarAte == null
+            || request.resource.data.silenciarAte is timestamp)
+        && texto('userName', 60);
+
+      // O dono apaga (sair do app, trocar de aparelho) e o líder também — é
+      // como o robô limpa as inscrições que o serviço de push já recusa.
       allow delete: if ehLider()
         || (aprovado() && resource.data.userId == eu());
     }

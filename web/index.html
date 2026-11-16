@@ -316,6 +316,11 @@
        porque MediaRecorder e <audio> são do navegador. -->
   <script src="audio.js"></script>
 
+  <!-- Avisos do chat. Tem de carregar ANTES do Flutter: ele lê o
+       ?abrir=chat do endereço, que é como a notificação diz para onde ir, e
+       o Flutter apaga o endereço ao iniciar (setUrlStrategy(null)). -->
+  <script src="avisos.js"></script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

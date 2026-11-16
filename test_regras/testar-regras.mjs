@@ -753,6 +753,97 @@ await teste('mensagem sem texto E sem áudio é recusada', () =>
     fixada: false, fixadaPor: null, expiraEm: new Date(Date.now() + 864e5),
   })));
 
+console.log('\n── avisos do chat (pushSubs) ──');
+
+// A inscrição como o app a grava (AvisosService._gravar).
+const inscricao = (dono, extra = {}) => ({
+  userId: dono,
+  userName: dono === LIDER ? 'Marcio' : 'Ana',
+  endpoint: 'https://fcm.googleapis.com/fcm/send/abc123',
+  p256dh: 'BPu0'.repeat(20),
+  auth: 'abcdefghijklmnop',
+  avisosLigados: true,
+  silenciarAte: null,
+  atualizadoEm: new Date(),
+  ...extra,
+});
+
+await teste('aprovado inscreve o próprio aparelho', () =>
+  assertSucceeds(setDoc(doc(levita(), 'pushSubs', 'aparelho-ana'),
+    inscricao(LEVITA))));
+
+await teste('pendente não inscreve nada', () =>
+  assertFails(setDoc(doc(novato(), 'pushSubs', 'aparelho-novato'),
+    inscricao(OUTRO))));
+
+await teste('não dá para inscrever em nome de outra pessoa', () =>
+  assertFails(setDoc(doc(levita(), 'pushSubs', 'aparelho-falso'),
+    inscricao(LIDER))));
+
+await teste('endpoint que não é https é recusado', () =>
+  assertFails(setDoc(doc(levita(), 'pushSubs', 'aparelho-http'),
+    inscricao(LEVITA, { endpoint: 'http://exemplo.org/push' }))));
+
+await teste('inscrição sem as chaves é recusada', () =>
+  assertFails(setDoc(doc(levita(), 'pushSubs', 'aparelho-sem-chave'),
+    { ...inscricao(LEVITA), p256dh: '' })));
+
+await teste('avisosLigados tem de ser bool', () =>
+  assertFails(setDoc(doc(levita(), 'pushSubs', 'aparelho-ruim'),
+    { ...inscricao(LEVITA), avisosLigados: 'sim' })));
+
+await teste('silenciarAte aceita data, e aceita nulo', async () => {
+  await assertSucceeds(setDoc(doc(levita(), 'pushSubs', 'aparelho-ana'),
+    inscricao(LEVITA, { silenciarAte: new Date(Date.now() + 36e5) })));
+  await assertSucceeds(setDoc(doc(levita(), 'pushSubs', 'aparelho-ana'),
+    inscricao(LEVITA)));
+});
+
+await teste('silenciarAte com texto no lugar da data é recusado', () =>
+  assertFails(setDoc(doc(levita(), 'pushSubs', 'aparelho-ana'),
+    inscricao(LEVITA, { silenciarAte: 'amanhã' }))));
+
+await teste('a pessoa lê a própria inscrição', () =>
+  assertSucceeds(getDoc(doc(levita(), 'pushSubs', 'aparelho-ana'))));
+
+await teste('NINGUÉM lê a inscrição de outra pessoa', async () => {
+  // O endpoint é uma chave: quem o tem manda notificação para aquele
+  // celular direto, sem passar pelo Worker. Por isso nem levita aprovado lê.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'pushSubs', 'aparelho-do-lider'),
+      inscricao(LIDER));
+  });
+  await assertFails(getDoc(doc(levita(), 'pushSubs', 'aparelho-do-lider')));
+});
+
+await teste('o líder lê todas — é como o robô dos avisos manda', async () => {
+  await assertSucceeds(getDoc(doc(lider(), 'pushSubs', 'aparelho-ana')));
+  await assertSucceeds(getDocs(collection(lider(), 'pushSubs')));
+});
+
+await teste('levita não lista a coleção inteira', () =>
+  assertFails(getDocs(collection(levita(), 'pushSubs'))));
+
+await teste('deslogado não lê nem escreve', async () => {
+  await assertFails(getDoc(doc(deslogado(), 'pushSubs', 'aparelho-ana')));
+  await assertFails(setDoc(doc(deslogado(), 'pushSubs', 'x'),
+    inscricao(LEVITA)));
+});
+
+await teste('a pessoa apaga a própria inscrição', () =>
+  assertSucceeds(deleteDoc(doc(levita(), 'pushSubs', 'aparelho-ana'))));
+
+await teste('o líder apaga as mortas', () =>
+  assertSucceeds(deleteDoc(doc(lider(), 'pushSubs', 'aparelho-do-lider'))));
+
+await teste('não dá para apagar inscrição alheia', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'pushSubs', 'aparelho-do-lider'),
+      inscricao(LIDER));
+  });
+  await assertFails(deleteDoc(doc(levita(), 'pushSubs', 'aparelho-do-lider')));
+});
+
 console.log('\n── coleção desconhecida ──');
 await teste('coleção sem regra fica bloqueada', () =>
   assertFails(setDoc(doc(lider(), 'qualquerCoisa', 'x'), { a: 1 })));

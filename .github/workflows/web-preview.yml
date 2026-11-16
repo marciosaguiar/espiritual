@@ -37,6 +37,12 @@ jobs:
       - name: Install dependencies
         run: flutter pub get
 
+      - name: Testar o mini-servidor dos avisos
+        # A cifra do Web Push não dá erro quando está errada: o serviço de
+        # push aceita os bytes, o aviso chega ao aparelho e some sem nada na
+        # tela. O teste faz o papel do aparelho e decifra de volta.
+        run: node --test worker/teste/*.mjs
+
       - name: Build web
         # --pwa-strategy=none: o service worker que o Flutter gera hoje só se
         #   desregistra, e registrá-lo apagaria o nosso (web/sw.js), que é

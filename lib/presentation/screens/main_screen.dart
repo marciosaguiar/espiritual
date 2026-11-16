@@ -11,7 +11,9 @@ import '../../data/models/user_model.dart';
 import '../../data/services/auth_service.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/platform/avisos.dart';
 import '../../../core/platform/tela_atual.dart';
+import '../../data/services/avisos_service.dart';
 import '../widgets/common/glass.dart';
 import 'home/home_screen.dart';
 import 'songs/songs_screen.dart';
@@ -33,6 +35,12 @@ class _MainScreenState extends State<MainScreen> {
   /// Guards against generating twice in one session.
   bool _gerou = false;
 
+  /// Vigia se alguém tocou numa notificação do chat.
+  Timer? _olhoNoAviso;
+
+  /// Índice da aba Chat, para a notificação saber onde abrir.
+  static const int _abaChat = 3;
+
   /// Índice da aba Perfil, usado por quem precisa levar a pessoa até lá.
   static const int _abaPerfil = 4;
 
@@ -53,6 +61,21 @@ class _MainScreenState extends State<MainScreen> {
       if (mounted) _initData();
     });
     informarTelaInicial(_currentIndex == 0);
+    _vigiarAvisos();
+  }
+
+  /// Leva para o Chat quando a pessoa toca numa notificação.
+  ///
+  /// É uma pergunta de 1 em 1 segundo, e não um `stream`, porque o pedido
+  /// pode chegar por dois caminhos diferentes — o service worker avisando a
+  /// página, ou o `?abrir=chat` do app que acabou de abrir — e os dois
+  /// acontecem fora do Flutter. Perguntar é mais simples que fazer o
+  /// JavaScript empurrar, e 1 s de atraso ninguém percebe.
+  void _vigiarAvisos() {
+    _olhoNoAviso = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      if (pediuAbrirChat() && _currentIndex != _abaChat) _goToTab(_abaChat);
+    });
   }
 
   void _goToTab(int index) {
@@ -85,6 +108,14 @@ class _MainScreenState extends State<MainScreen> {
 
     final agenda = context.read<AgendaProvider>();
     agenda.listen();
+
+    // Regrava a inscrição dos avisos se o navegador a trocou, ou se a pessoa
+    // mudou de nome. Sem isto, o aparelho continuaria na lista do robô com
+    // um endereço que o serviço de push já recusa.
+    final eu = _auth!.user;
+    if (eu != null) {
+      AvisosService.conferirNaAbertura(userId: eu.id, userName: eu.name);
+    }
 
     if (_auth!.isAdmin) _agendarGeracao(agenda, scale);
   }
@@ -124,6 +155,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    _olhoNoAviso?.cancel();
     _auth?.removeListener(_syncFavorites);
     super.dispose();
   }

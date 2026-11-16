@@ -2,3 +2,7 @@ include: package:flutter_lints/flutter.yaml
 analyzer:
   exclude:
     - test_regras/node_modules/**
+    # O mini-servidor dos avisos é JavaScript, mas o wrangler traz um
+    # node_modules enorme — e já aconteceu uma vez de um arquivo de exemplo
+    # dentro de uma dependência fazer o `flutter analyze` acusar erro.
+    - worker/node_modules/**

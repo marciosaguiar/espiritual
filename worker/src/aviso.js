@@ -1,0 +1,93 @@
+// O que o aviso diz, e quem deve receber. Funções puras, porque é aqui que
+// dá para errar sem ninguém ver: um aviso em branco, ou um aviso indo para
+// quem pediu silêncio.
+
+/// Quanto tempo depois de gravada uma mensagem ainda pode gerar aviso.
+///
+/// É a trava contra alguém pegar o id de uma mensagem antiga — do chat, que
+/// todo aprovado lê — e usá-lo para fazer o Worker avisar o ministério de
+/// novo. Dois minutos cobrem uma conexão ruim e nada além disso.
+export const JANELA_DO_AVISO_MS = 2 * 60 * 1000;
+
+/// O título e o corpo do aviso, a partir da mensagem gravada.
+///
+/// O título é só o nome porque é assim que o Android e o iPhone desenham:
+/// nome em negrito, recado embaixo. Lido em voz alta dá "Fulano: começo da
+/// mensagem", que é o que foi pedido.
+export function textoDoAviso(mensagem) {
+  const nome = (mensagem?.userName ?? '').trim() || 'Alguém';
+
+  if (mensagem?.audioId) {
+    return { titulo: nome, corpo: '🎤 Mensagem de voz' };
+  }
+
+  // Quebras de linha viram espaço: o aviso é uma linha só, e um recado
+  // colado de outro lugar chegaria com um buraco no meio.
+  const texto = String(mensagem?.text ?? '').replace(/\s+/g, ' ').trim();
+  if (!texto) {
+    // Não deveria acontecer — a regra do banco exige texto ou áudio —, mas
+    // um aviso em branco é pior que um aviso genérico.
+    return { titulo: nome, corpo: 'Mandou uma mensagem' };
+  }
+
+  const limite = 120;
+  const corpo = texto.length > limite
+    ? `${texto.slice(0, limite - 1).trimEnd()}…`
+    : texto;
+
+  if (mensagem?.linkedSongName) {
+    return { titulo: nome, corpo: `🎵 ${mensagem.linkedSongName} · ${corpo}` };
+  }
+  return { titulo: nome, corpo };
+}
+
+/// Este aparelho deve receber o aviso desta mensagem?
+///
+/// Um "não" aqui não é erro: é alguém que desligou os avisos, pediu silêncio
+/// ou é o próprio autor da mensagem.
+export function deveAvisar(inscricao, autorId, agoraMs) {
+  if (!inscricao) return false;
+  if (inscricao.userId === autorId) return false;
+  if (!inscricao.endpoint || !inscricao.p256dh || !inscricao.auth) return false;
+  if (inscricao.avisosLigados === false) return false;
+
+  const ate = inscricao.silenciarAte;
+  if (ate) {
+    const quando = Date.parse(ate);
+    if (!Number.isNaN(quando) && quando > (agoraMs ?? Date.now())) return false;
+  }
+  return true;
+}
+
+/// Limite por remetente, na memória deste isolate.
+///
+/// É de propósito simples: a Cloudflare roda vários isolates, então o limite
+/// de verdade é por isolate e não é exato. A trava que segura abuso é outra —
+/// token verificado, remetente aprovado e a mensagem tem de existir, ser
+/// dele e ter acabado de ser escrita. Isto aqui é o cinto: impede que um
+/// script em laço queime a cota de leitura do Firestore.
+const contagem = new Map();
+
+export function dentroDoLimite(autorId, maximoPorMinuto = 30, agoraMs) {
+  const agora = agoraMs ?? Date.now();
+  const janela = 60 * 1000;
+  const antes = contagem.get(autorId) ?? [];
+  const recentes = antes.filter((t) => agora - t < janela);
+  if (recentes.length >= maximoPorMinuto) {
+    contagem.set(autorId, recentes);
+    return false;
+  }
+  recentes.push(agora);
+  contagem.set(autorId, recentes);
+  // Não deixa o mapa crescer para sempre num isolate de vida longa.
+  if (contagem.size > 500) {
+    for (const [quem, quando] of contagem) {
+      if (!quando.some((t) => agora - t < janela)) contagem.delete(quem);
+    }
+  }
+  return true;
+}
+
+export function esquecerLimites() {
+  contagem.clear();
+}

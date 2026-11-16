@@ -1,0 +1,16 @@
+name = "levitasync-avisos"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+
+# Daqui NÃO sai nada secreto. Este arquivo vai para o repositório, que é
+# público; as sete credenciais entram por `wrangler secret put` e ficam só na
+# Cloudflare. Ver LEIA-ME.md.
+[vars]
+# De onde o app pode chamar o Worker. Qualquer outra origem leva a resposta
+# sem o cabeçalho de CORS e o navegador recusa — é o que impede um site
+# qualquer de usar o Worker com o token de quem estiver logado.
+ORIGENS = "https://marciosaguiar.github.io,http://localhost:8080"
+LIMITE_POR_MINUTO = "30"
+
+[observability]
+enabled = true

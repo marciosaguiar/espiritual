@@ -1,0 +1,15 @@
+{
+  "name": "levitasync-avisos",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Mini-servidor dos avisos do chat do LevitaSync, num Worker da Cloudflare.",
+  "scripts": {
+    "test": "node --test teste/*.mjs",
+    "dev": "wrangler dev",
+    "publicar": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.42.0"
+  }
+}

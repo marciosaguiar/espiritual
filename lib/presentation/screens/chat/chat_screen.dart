@@ -9,6 +9,7 @@ import '../../providers/songs_provider.dart';
 import '../../providers/scale_provider.dart';
 import '../../widgets/common/error_banner.dart';
 import '../../widgets/chat/voz.dart';
+import '../../../data/services/avisos_service.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../../core/platform/voz.dart';
 import '../../../core/constants/app_colors.dart';
@@ -360,6 +361,12 @@ class _ChatScreenState extends State<ChatScreen> {
       tipo: audio.tipo,
       duracaoMs: audio.duracaoMs,
     );
+    if (r.success && r.mensagemId != null) {
+      // Depois de gravado, e sem esperar: o áudio já está no chat de quem
+      // tem o app aberto. O aviso é para quem está com o app fechado, e uma
+      // falha nele não pode virar erro na tela de quem acabou de enviar.
+      AvisosService.avisarDoChat(r.mensagemId!);
+    }
     if (!mounted) return;
     if (!r.success) {
       ScaffoldMessenger.of(context).showSnackBar(

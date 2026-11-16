@@ -86,6 +86,101 @@ self.addEventListener('activate', (evento) => {
   );
 });
 
+// ── Avisos do chat ──────────────────────────────────────────────────────────
+//
+// Quem manda é o Worker da Cloudflare (ver `worker/`), porque aviso com o app
+// fechado precisa de alguém de pé — e no Firebase isso seria Cloud Function,
+// que exige o plano Blaze.
+//
+// A etiqueta é fixa de propósito: é ela que faz várias mensagens seguidas
+// virarem UM aviso que se atualiza, em vez de empilhar cinco na tela.
+
+const ETIQUETA = 'levita-chat';
+
+self.addEventListener('push', (evento) => {
+  evento.waitUntil((async () => {
+    let dados = {};
+    try {
+      dados = evento.data ? evento.data.json() : {};
+    } catch (_) {
+      // Aviso sem corpo legível ainda tem de aparecer: o navegador exige
+      // uma notificação visível para cada push, e não mostrar nada faria o
+      // navegador descadastrar o aparelho por abuso.
+    }
+
+    const titulo = dados.titulo || 'LevitaSync';
+    const corpo = dados.corpo || 'Mensagem nova no chat';
+
+    // Quantas já estão na tela sem ninguém ter visto?
+    let quantas = 1;
+    if (!dados.teste) {
+      try {
+        const abertas = await self.registration.getNotifications({ tag: ETIQUETA });
+        for (const n of abertas) quantas += (n.data && n.data.quantas) || 1;
+      } catch (_) {
+        // Safari antigo não lista as abertas: cai no aviso simples.
+      }
+    }
+
+    await self.registration.showNotification(
+      quantas > 1 ? `${quantas} mensagens novas` : titulo,
+      {
+        body: quantas > 1 ? `${titulo}: ${corpo}` : corpo,
+        tag: ETIQUETA,
+        // Sem isto, o aviso atualizado trocaria o texto em silêncio e a
+        // pessoa não saberia que chegou mais uma.
+        renotify: true,
+        icon: 'icons/Icon-192.png',
+        badge: 'icons/Icon-192.png',
+        data: { quantas, abrir: 'chat' },
+      },
+    );
+  })());
+});
+
+self.addEventListener('notificationclick', (evento) => {
+  evento.notification.close();
+  evento.waitUntil((async () => {
+    const abertos = await self.clients.matchAll({
+      type: 'window', includeUncontrolled: true,
+    });
+    // App aberto: foca e PEDE a troca de aba. Não dá para navegar até o
+    // Chat — o app não tem endereço por tela (ver `setUrlStrategy(null)`).
+    for (const cliente of abertos) {
+      if (cliente.url.startsWith(self.registration.scope)) {
+        await cliente.focus();
+        cliente.postMessage({ tipo: 'ABRIR_CHAT' });
+        return;
+      }
+    }
+    // App fechado: abre com a marca no endereço, que o `avisos.js` lê e
+    // apaga assim que o Flutter sobe.
+    await self.clients.openWindow(`${self.registration.scope}?abrir=chat`);
+  })());
+});
+
+// O navegador pode trocar a inscrição sozinho (atualização, limpeza).
+//
+// Aqui não há como gravar a inscrição nova no Firestore: o service worker
+// não tem o login da pessoa. Então o que se faz é reinscrever para os avisos
+// não pararem, e o app regrava o registro na próxima abertura — ele confere
+// a inscrição toda vez que abre, justamente por isto. O iOS não dispara este
+// evento; lá a conferência na abertura é o único caminho.
+self.addEventListener('pushsubscriptionchange', (evento) => {
+  evento.waitUntil((async () => {
+    try {
+      const chave = evento.oldSubscription?.options?.applicationServerKey;
+      if (!chave) return;
+      await self.registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: chave,
+      });
+    } catch (e) {
+      console.warn('[sw] não reinscreveu:', e);
+    }
+  })());
+});
+
 /// Vale a pena guardar? Só o que é nosso, só GET, e nada de Firebase.
 function guardavel(pedido) {
   if (pedido.method !== 'GET') return false;

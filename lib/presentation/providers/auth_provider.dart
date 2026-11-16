@@ -5,6 +5,7 @@ import '../../data/models/arrangement_model.dart';
 import '../../data/models/user_model.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/firestore_service.dart';
+import '../../data/services/avisos_service.dart';
 import '../../data/services/local_storage_service.dart';
 
 enum AuthStatus { initial, loading, authenticated, unauthenticated, error }
@@ -54,6 +55,10 @@ class AuthProvider extends ChangeNotifier {
         // sem internet continuaria no celular. Some junto.
         _prefs = {};
         LocalStorageService.limparTudoDoMinisterio();
+        // E o aparelho continuaria recebendo aviso de cada mensagem do chat
+        // de um ministério do qual a pessoa já não faz parte. A regra do
+        // banco não pegaria isso: quem manda é o robô, que é líder.
+        AvisosService.esquecerEsteAparelho();
       } else {
         LocalStorageService.saveSession(perfil);
       }

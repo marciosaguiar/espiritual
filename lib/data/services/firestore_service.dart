@@ -1002,7 +1002,8 @@ class FirestoreService {
   /// Os dois num lote só: uma mensagem apontando para um áudio que não
   /// existe seria um play eternamente carregando, e um áudio sem mensagem
   /// seria lixo que ninguém vê e a faxina só apaga em 30 dias.
-  static Future<({bool success, String? error})> enviarAudio({
+  static Future<({bool success, String? error, String? mensagemId})>
+      enviarAudio({
     required String userId,
     required String userName,
     required Uint8List bytes,
@@ -1013,7 +1014,8 @@ class FirestoreService {
       return (
         success: false,
         error: 'Áudio grande demais (${(bytes.length / 1024).round()} KB). '
-            'Grave um mais curto.'
+            'Grave um mais curto.',
+        mensagemId: null,
       );
     }
 
@@ -1050,9 +1052,13 @@ class FirestoreService {
         audioTipo: tipo,
       ).toFirestore());
       await lote.commit();
-      return (success: true, error: null);
+      return (success: true, error: null, mensagemId: mensagemId);
     } on FirebaseException catch (e) {
-      return (success: false, error: _describe(e, 'enviar o áudio'));
+      return (
+        success: false,
+        error: _describe(e, 'enviar o áudio'),
+        mensagemId: null,
+      );
     }
   }
 

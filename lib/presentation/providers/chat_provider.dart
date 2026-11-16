@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../data/models/message_model.dart';
+import '../../data/services/avisos_service.dart';
 import '../../data/services/firestore_service.dart';
 
 typedef TypingUser = ({String userId, String userName, DateTime updatedAt});
@@ -118,6 +119,13 @@ class ChatProvider extends ChangeNotifier {
     );
 
     final result = await FirestoreService.sendMessage(message);
+    if (result.success) {
+      // O aviso vem DEPOIS de a mensagem estar gravada, e de propósito sem
+      // `await`: quem enviou já vê a mensagem na tela, e esperar o
+      // mini-servidor da Cloudflare para isso seria atraso sem motivo. Uma
+      // falha aqui não volta como erro — ver o comentário em AvisosService.
+      AvisosService.avisarDoChat(message.id);
+    }
     return result.error;
   }
 

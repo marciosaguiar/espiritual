@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 187 testes
+flutter test                   # 203 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 134 testes
+cd test_regras && npm install && npm test    # 171 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -35,8 +35,15 @@ de dentro do `firebase-tools` — os dois comandos acima se contradiziam.
 O `test_regras/.npmrc` também não é enfeite: `@firebase/rules-unit-testing@3`
 pede `firebase@^10` e aqui se usa o 13. As versões novas do npm recusam
 instalar por isso, então `npm install` falhava num computador limpo, embora os
-134 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
+171 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
 só com `npm install --legacy-peer-deps`.
+
+O mini-servidor dos avisos tem testes próprios, que não precisam de emulador
+nem de Flutter:
+
+```bash
+node --test worker/teste/*.mjs               # 30 testes
+```
 
 ## Estado atual
 
@@ -286,11 +293,13 @@ Nesta ordem, e **nada disso antes de testar o app num iPhone real**:
 
 1. ~~Aprovação do líder~~ — **feito.**
 1. ~~Remover do ministério, devolver acesso e sair sozinho~~ — **feito.**
-2. **Notificações push**, Android e iPhone. No iOS funciona por Web Push com
-   VAPID em PWA instalado (16.4+) — **não** exige conta paga da Apple. Exige
-   Cloud Functions para os gatilhos: escalado, lembrete da véspera, mensagem
-   nova e "novo pedido de entrada" para o líder.
-3. **Líder redefine senha de um membro.** Só com o Admin SDK, em Cloud
+2. ~~**Aviso de mensagem nova** no chat~~ — **feito**, por Worker da
+   Cloudflare em vez de Cloud Function (ver "Avisos do chat"). Os outros
+   gatilhos combinados ficam para depois, e agora são pequenos: escalado,
+   lembrete da véspera e "novo pedido de entrada" para o líder são a mesma
+   cifra e o mesmo leque de envio, com outro gatilho.
+3. **Reações e "visto por"** no chat.
+4. **Líder redefine senha de um membro.** Só com o Admin SDK, em Cloud
    Function — o Firebase não deixa um app trocar a senha de outra pessoa.
    Fica pequeno depois que as Functions existirem.
 
@@ -456,6 +465,82 @@ plano grátis** desde fev/2026.
   silêncio. **O que NÃO pude testar aqui é o microfone de verdade num
   iPhone** — a permissão e o formato que o Safari escolhe.
 
+### Avisos do chat
+
+Notificação de mensagem nova, com o app fechado, no Android e no iPhone. Sem
+Cloud Functions: **o gatilho é um Worker da Cloudflare**, no plano gratuito de
+100 mil pedidos por dia. O código fica em `worker/`, e o passo a passo de
+publicar está em `worker/LEIA-ME.md`.
+
+- **O Worker não grava nada.** Quem grava a mensagem é o app, com as regras do
+  Firestore valendo. O Worker confere e manda o aviso. Se ele cair, o chat
+  continua inteiro — só não chega notificação. Foi o que permitiu pendurar
+  isto no app sem risco: `avisarDoChat` nem devolve erro para a tela.
+- **O caminho que MOSTRA erro é o "Testar aviso"**, no Perfil. Aviso é
+  invisível por natureza: sem um botão que diga "não chegou, e por quê",
+  ninguém leigo descobriria que está quebrado.
+- **Três conferências fazem o Worker não ser um megafone aberto**, porque o
+  endereço dele é público: o ID token é verificado com as chaves do Google
+  (e o `aud` tem de ser ESTE projeto, senão qualquer conta Firebase do mundo
+  passaria); a pessoa tem de estar aprovada; e a mensagem tem de existir, ser
+  dela e ter **menos de 2 minutos**. Essa última é o que impede pegar o id de
+  uma mensagem antiga do chat — que todo aprovado lê — e reavisar o
+  ministério com ela.
+- **A cifra é feita à mão, com a WebCrypto** (RFC 8291 e 8292, em
+  `worker/src/push.js`): a biblioteca `web-push` do npm usa o `crypto` do
+  Node, que não existe num Worker. São ~120 linhas, e o teste faz **o papel do
+  aparelho que recebe**: gera as chaves como o navegador geraria, manda cifrar
+  e decifra de volta. Isso importa porque **erro de cifra não aparece no
+  envio** — o serviço de push aceita os bytes, responde 201, o aviso chega ao
+  aparelho e some sem nada na tela.
+- **Não é FCM.** Web Push com VAPID é padrão e funciona no Chrome, no Firefox
+  e no Safari — no iPhone, em PWA instalado, desde o iOS 16.4. O FCM exigiria
+  uma chave de conta de serviço do Google, que é o tipo de credencial que este
+  projeto evita.
+- **O robô entra como líder comum, com e-mail e senha**, igual à faxina do
+  chat, e pode ser a mesma conta. Chave de administrador ignoraria todas as
+  regras do banco.
+- **`endpoint` é uma CHAVE, não um endereço.** Quem o tem manda notificação
+  para aquele celular direto, sem passar pelo Worker e sem limite. Por isso a
+  regra de `pushSubs` **não deixa um levita aprovado ler a inscrição de
+  outro** — só a própria. Quem lê a lista inteira é o líder, que é como o robô
+  entra.
+- **Uma inscrição por APARELHO**, com id sorteado guardado naquele navegador
+  (`LocalStorageService.idDoAparelho`). Sem id estável, cada abertura criaria
+  um registro novo e o ministério acumularia inscrições mortas — e cada aviso
+  tentaria mandar para todas. As que o serviço de push recusa (404/410) o
+  Worker apaga na hora.
+- **Um aviso só, que se atualiza.** Etiqueta fixa `levita-chat` e a contagem
+  lida das notificações que já estão na tela: a segunda mensagem vira "2
+  mensagens novas". **Medido no Chromium:** três mensagens seguidas deixam
+  **uma** notificação aberta, com a contagem certa.
+- **A permissão só se pede dentro de um toque** — o iPhone não abre a caixa
+  fora de um gesto. E negado **não se pergunta de novo**, nem reinstalando o
+  app: por isso desligar os avisos no Perfil mantém a inscrição e só marca o
+  registro, em vez de desinscrever.
+- **Sem o app na tela de início, o iPhone não tem Push nenhum** — o
+  `PushManager` nem existe no Safari comum. A tela então mostra o passo a
+  passo de instalar, em vez de um botão que não funcionaria.
+- **"Silenciar até amanhã" não é meia-noite.** Às 23h50 isso silenciaria por
+  dez minutos e a pessoa acharia o botão quebrado. É o próximo 7h que esteja a
+  mais de uma hora; de madrugada vale o 7h de hoje. Função pura que recebe
+  `agora`, testada na virada do dia, do mês e do ano.
+- **Tocar na notificação leva ao Chat por dois caminhos**, porque o app pode
+  estar aberto ou fechado — e porque o app **não tem endereço por tela** (o
+  `setUrlStrategy(null)` tirou isso para o gesto de voltar não sair do app).
+  Com o app aberto, o service worker manda `{tipo:'ABRIR_CHAT'}` para a
+  página; fechado, abre com `?abrir=chat`, que o `avisos.js` lê e apaga do
+  endereço. O Flutter pergunta de 1 em 1 segundo e troca de aba. Os dois
+  caminhos foram medidos no Chromium.
+- **Perder o acesso apaga a inscrição.** Sem isso o aparelho continuaria
+  recebendo aviso de cada mensagem de um ministério de que a pessoa já não faz
+  parte — e a regra do banco não pegaria, porque quem manda é o robô, que é
+  líder.
+- **O limite de 30 por minuto é o cinto, não o cadeado.** Ele mora na memória
+  do isolate, e a Cloudflare roda vários — então não é exato. O que segura
+  abuso são as três conferências acima; o limite só impede um script em laço
+  queimar a cota de leitura do Firestore.
+
 ### Quando a tela diz "vazio"
 
 Lista vazia e lista que não carregou são coisas diferentes, e a pessoa lê as
@@ -471,5 +556,7 @@ reinstalar o app essa lista é vazia, então uma falha de leitura teria virado
 
 ## O que não existe (e o relatório de auditoria aponta)
 
-Busca de música na internet, anexo de áudio e imagem no chat, PDF da escala,
-foto de perfil, transformar uma mensagem do chat em decisão da agenda.
+Busca de música na internet, anexo de imagem no chat, PDF da escala, foto de
+perfil, transformar uma mensagem do chat em decisão da agenda, reações e
+"visto por" no chat, e aviso de escalado / lembrete da véspera / "novo pedido
+de entrada" (o mecanismo já existe; falta o gatilho).

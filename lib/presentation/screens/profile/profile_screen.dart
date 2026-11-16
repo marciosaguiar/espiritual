@@ -1,5 +1,6 @@
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/songs_provider.dart';
@@ -8,7 +9,9 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/chord_transposer.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/user_model.dart';
+import '../../../core/platform/install.dart';
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/avisos_service.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../providers/agenda_provider.dart';
 import '../../providers/scale_provider.dart';
@@ -594,6 +597,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     onTap: () => theme.toggleTheme(),
                   ),
+                  const SizedBox(height: 8),
+                  const _AvisosDoChat(),
                   const SizedBox(height: 8),
                   _SettingRow(
                     icon: Icons.menu_book_rounded,
@@ -1305,6 +1310,252 @@ class _EscolhaLeitura extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+/// "Avisos do chat", no Perfil.
+///
+/// São SETE estados, e cada um tem de dizer uma coisa diferente — é a razão
+/// de isto ser um widget à parte em vez de um `Switch` na lista. O pior
+/// desfecho possível aqui é a pessoa tocar em algo e não saber se funcionou:
+/// aviso de mensagem é invisível por natureza, então cada caminho termina ou
+/// num aviso de verdade chegando, ou numa frase dizendo o que falta.
+///
+/// O caso do iPhone é o que obriga a maior parte disto: lá o Push só existe
+/// com o app instalado na tela de início, e a permissão só se pede dentro de
+/// um toque. Fora da tela de início não há botão para mostrar — há um passo
+/// a passo de instalação.
+class _AvisosDoChat extends StatefulWidget {
+  const _AvisosDoChat();
+
+  @override
+  State<_AvisosDoChat> createState() => _AvisosDoChatState();
+}
+
+class _AvisosDoChatState extends State<_AvisosDoChat> {
+  EstadoDosAvisos? _estado;
+  DateTime? _silenciadoAte;
+  bool _trabalhando = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _conferir();
+  }
+
+  Future<void> _conferir() async {
+    final s = await AvisosService.situacao(instalado: estaInstalado);
+    if (!mounted) return;
+    setState(() {
+      _estado = s.estado;
+      _silenciadoAte = s.silenciadoAte;
+    });
+  }
+
+  void _dizer(String texto, {bool erro = false}) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(texto),
+      backgroundColor: erro ? AppColors.red : AppColors.success,
+    ));
+  }
+
+  Future<void> _comEspera(Future<String?> Function() acao,
+      {required String deuCerto}) async {
+    if (_trabalhando) return;
+    setState(() => _trabalhando = true);
+    final erro = await acao();
+    if (!mounted) return;
+    setState(() => _trabalhando = false);
+    await _conferir();
+    _dizer(erro ?? deuCerto, erro: erro != null);
+  }
+
+  Future<void> _ativar() async {
+    final eu = context.read<AuthProvider>().user;
+    if (eu == null) return;
+    // Sem `_comEspera` aqui: a permissão do iPhone precisa ser pedida DENTRO
+    // do toque, e um `setState` antes já basta para o Safari considerar que
+    // o gesto acabou.
+    final erro = await AvisosService.ativar(userId: eu.id, userName: eu.name);
+    if (!mounted) return;
+    await _conferir();
+    _dizer(erro ?? 'Avisos ativados neste aparelho.', erro: erro != null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final estado = _estado;
+
+    if (estado == null) {
+      return const _SettingRow(
+        icon: Icons.notifications_none_rounded,
+        label: 'Avisos do chat',
+        trailing: SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+
+    final corFraca = isDark
+        ? AppColors.textSecondaryDark
+        : AppColors.textSecondaryLight;
+
+    Widget explicacao(String texto) => Padding(
+          padding: const EdgeInsets.only(top: 8),
+          child: Text(
+            texto,
+            style: TextStyle(fontFamily: 'Poppins', fontSize: 12.5,
+                height: 1.45, color: corFraca),
+          ),
+        );
+
+    final miolo = <Widget>[];
+
+    switch (estado) {
+      case EstadoDosAvisos.naoConfigurado:
+        miolo.add(explicacao(
+          'Os avisos ainda não foram configurados neste app. Falta publicar '
+          'o mini-servidor e colar as duas linhas em avisos_config.dart.',
+        ));
+
+      case EstadoDosAvisos.precisaInstalar:
+        miolo.add(explicacao(
+          'No iPhone, o aviso só funciona com o app instalado na tela de '
+          'início. Toque no botão de Compartilhar do Safari (o quadrado com '
+          'a seta para cima), depois em "Adicionar à Tela de Início" e abra '
+          'o app por lá. Este botão aparece quando você voltar.',
+        ));
+
+      case EstadoDosAvisos.semSuporte:
+        miolo.add(explicacao(
+          'Este navegador não sabe receber avisos. No computador, use o '
+          'Chrome; no celular, instale o app na tela de início.',
+        ));
+
+      case EstadoDosAvisos.negado:
+        miolo.add(explicacao(
+          'Você recusou os avisos neste aparelho, e o navegador não pergunta '
+          'de novo. Para liberar: ajustes do navegador → Notificações → '
+          'procure o LevitaSync e permita.',
+        ));
+
+      case EstadoDosAvisos.podeAtivar:
+        miolo
+          ..add(explicacao(
+            'Receba um aviso quando alguém escrever no chat, mesmo com o app '
+            'fechado. Você pode desligar depois.',
+          ))
+          ..add(const SizedBox(height: 10))
+          ..add(SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: _ativar,
+              icon: const Icon(Icons.notifications_active_rounded, size: 18),
+              label: const Text('Ativar avisos'),
+              style: FilledButton.styleFrom(backgroundColor: AppColors.blue),
+            ),
+          ));
+
+      case EstadoDosAvisos.ligado:
+      case EstadoDosAvisos.desligado:
+        final ligado = estado == EstadoDosAvisos.ligado;
+        final ate = _silenciadoAte;
+        miolo.add(explicacao(ligado
+            ? (ate != null
+                ? 'Silenciado até ${DateFormat('HH:mm', 'pt_BR').format(ate)} '
+                    'de ${DateFormat('d/MM', 'pt_BR').format(ate)}.'
+                : 'Ligados neste aparelho.')
+            : 'Desligados neste aparelho.'));
+        miolo.add(const SizedBox(height: 4));
+        if (ligado) {
+          miolo.add(Row(children: [
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _trabalhando || ate != null
+                    ? null
+                    : () => _comEspera(
+                          () => AvisosService.silenciar(DateTime.now()),
+                          deuCerto: 'Silenciado até amanhã de manhã.',
+                        ),
+                child: const Text('Silenciar até amanhã',
+                    style: TextStyle(fontSize: 12.5)),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton(
+                onPressed: _trabalhando
+                    ? null
+                    : () => _comEspera(
+                          AvisosService.testar,
+                          deuCerto: 'Aviso de teste enviado.',
+                        ),
+                child: const Text('Testar aviso',
+                    style: TextStyle(fontSize: 12.5)),
+              ),
+            ),
+          ]));
+        }
+    }
+
+    final podeAlternar = estado == EstadoDosAvisos.ligado ||
+        estado == EstadoDosAvisos.desligado;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.cardDark : AppColors.cardLight,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(children: [
+            Icon(
+              estado == EstadoDosAvisos.ligado
+                  ? Icons.notifications_active_rounded
+                  : Icons.notifications_none_rounded,
+              size: 20,
+              color: AppColors.blue,
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Avisos do chat',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 14,
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimaryLight,
+                ),
+              ),
+            ),
+            if (podeAlternar)
+              Switch(
+                value: estado == EstadoDosAvisos.ligado,
+                activeColor: AppColors.blue,
+                onChanged: _trabalhando
+                    ? null
+                    : (quer) => _comEspera(
+                          () => AvisosService.ligar(quer),
+                          deuCerto: quer
+                              ? 'Avisos ligados.'
+                              : 'Avisos desligados neste aparelho.',
+                        ),
+              ),
+          ]),
+          ...miolo,
+        ],
+      ),
     );
   }
 }

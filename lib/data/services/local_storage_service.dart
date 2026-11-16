@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../core/utils/crypto_utils.dart';
 import '../models/user_model.dart';
 import '../models/song_model.dart';
 
@@ -111,6 +112,28 @@ class LocalStorageService {
     _offlineCache.clear();
     await _persistOffline();
     await clearSession();
+  }
+
+  // ─── Avisos do chat ───────────────────────────────────────────────────────
+
+  static const String _aparelhoKey = 'id_do_aparelho';
+
+  /// Um id fixo para ESTE aparelho, criado na primeira vez e guardado.
+  ///
+  /// É a chave do registro de inscrição no Firestore. Sem um id estável, cada
+  /// abertura do app criaria um registro novo e o ministério acumularia
+  /// inscrições mortas — e cada aviso tentaria mandar para todas elas.
+  ///
+  /// Não identifica a pessoa: é sorteado, fica só neste navegador, e some
+  /// quando ela limpa os dados do site (que também mata a inscrição).
+  static String get idDoAparelho {
+    final guardado = prefs.getString(_aparelhoKey);
+    if (guardado != null && guardado.isNotEmpty) return guardado;
+    final novo = CryptoUtils.generateId();
+    // Sem `await`: o id já vale nesta chamada, e perder a gravação só
+    // custaria um registro extra na próxima abertura.
+    prefs.setString(_aparelhoKey, novo);
+    return novo;
   }
 
   // ─── Bíblia ───────────────────────────────────────────────────────────────
