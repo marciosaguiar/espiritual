@@ -23,6 +23,7 @@ import 'teams_screen.dart';
 import '../../widgets/common/glass.dart';
 import '../../widgets/common/install_banner.dart';
 import '../../widgets/common/selecao_de_funcoes.dart';
+import '../../widgets/common/recuperacao_por_email.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -630,6 +631,38 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                   ],
+                  const SizedBox(height: 8),
+                  // Vem ANTES de "Alterar minha senha" de propósito: esta é a
+                  // que a pessoa precisa ter feito antes de precisar dela.
+                  // Sem e-mail cadastrado, senha esquecida é acesso perdido —
+                  // não existe quem destrave depois, nem o líder.
+                  _SettingRow(
+                    icon: user.recuperacaoPorEmail
+                        ? Icons.verified_user_outlined
+                        : Icons.shield_outlined,
+                    label: 'Recuperar a senha',
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          user.recuperacaoPorEmail
+                              ? 'Pronto'
+                              : 'Falta cadastrar',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: user.recuperacaoPorEmail
+                                ? AppColors.success
+                                : AppColors.red,
+                          ),
+                        ),
+                        const Icon(Icons.chevron_right_rounded,
+                            color: AppColors.textSecondaryLight),
+                      ],
+                    ),
+                    onTap: () => mostrarRecuperacaoPorEmail(context),
+                  ),
                   const SizedBox(height: 8),
                   _SettingRow(
                     icon: Icons.key_outlined,

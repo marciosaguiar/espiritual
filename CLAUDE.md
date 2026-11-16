@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 329 testes
+flutter test                   # 342 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 237 testes
+cd test_regras && npm install && npm test    # 240 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -354,9 +354,11 @@ Nesta ordem, e **nada disso antes de testar o app num iPhone real**:
    vivo").
 4. ~~**Reações e "visto por"** no chat~~ — **feito**, com responder citando
    e @menção (ver "Reações, citação e visto por").
-5. **Líder redefine senha de um membro.** Só com o Admin SDK, em Cloud
-   Function — o Firebase não deixa um app trocar a senha de outra pessoa.
-   Fica pequeno depois que as Functions existirem.
+5. ~~**Líder redefine senha de um membro.**~~ — **decidido que NÃO**, e o
+   motivo está em "Recuperar a senha". Exigiria chave de administrador, que
+   não serve só para trocar senha: quem a tem entra como qualquer pessoa do
+   ministério, líder incluído. O caminho que substituiu isso é o e-mail de
+   recuperação.
 
 Quando as Functions existirem, mover a função do usuário para um *custom
 claim* no token: as regras passam a ler `request.auth.token.role` e somem as
@@ -371,10 +373,10 @@ vez:
    que já leu"). Medido: 202 documentos na segunda abertura → zero.
 2. ~~"Excluir culto" deixa de existir~~ — **feito**, com `allow delete: if
    false` em `scales`.
-3. **Recuperar senha**, por dois caminhos: e-mail opcional no cadastro e no
-   Perfil, com o "esqueci minha senha" do próprio Firebase; e, para quem não
-   tem e-mail — que é a maioria —, um pedido que chega ao líder, que define
-   uma senha provisória, trocada na primeira entrada.
+3. ~~**Recuperar senha**~~ — **feito**, pelo e-mail (ver "Recuperar a
+   senha"). O segundo caminho pedido — líder define senha provisória — foi
+   recusado com motivo: é impossível sem chave de administrador, e a chave
+   não tem escopo menor que "entrar como qualquer um".
 4. **"Novo pedido de entrada"** avisa o líder (o mecanismo já existe; falta o
    gatilho).
 5. **O Worker gera os cultos da agenda fixa**, para não depender de um líder
@@ -464,6 +466,92 @@ tradução.
 - A última tradução e o último capítulo ficam no aparelho
   (`LocalStorageService`), não no banco: é o marcador de quem lê, não há o
   que sincronizar, e no Firestore custaria uma leitura por abertura.
+
+### Recuperar a senha
+
+Ninguém entrava com e-mail: entra com o NOME, e o Firebase, que exige um
+endereço, recebe um inventado a partir dele — `ana@levitas.app`. Esse domínio
+não é de ninguém. Então o "esqueci minha senha" do Firebase mandava o link
+para o vazio, e **senha esquecida era acesso perdido, para todo mundo.**
+
+- **Trocar a senha de outra pessoa é impossível sem chave de administrador.**
+  O Firebase só deixa cada conta trocar a sua. E o console do Firebase
+  também não faz isso: lá dá para criar conta, apagar conta e mandar e-mail
+  de recuperação — não definir a senha de uma conta que já existe.
+- **A chave de administrador foi recusada, e o motivo não é cautela vaga.**
+  Ela não serve só para trocar senha: quem tem a chave privada assina um
+  token para QUALQUER conta e entra como o líder do ministério. Não existe
+  permissão menor no Firebase — a menor é "Firebase Authentication Admin", que
+  já troca a senha de todos, o líder incluído. Ela ficaria atrás de um
+  endereço público (o Worker), onde hoje uma falha de autenticação custa um
+  aviso indevido e passaria a custar o projeto inteiro. Revogar exige IAM no
+  Google Cloud, que não é operação de leigo; trocar a senha de um robô é. E o
+  registro de "quem trocou a senha de quem" seria escrito pelo mesmo
+  componente que tem a chave, com o Admin SDK ignorando as regras do banco —
+  não é prova de nada.
+- **Sobrou um caminho só, e ele só funciona ANTES:** cadastrar um e-mail de
+  verdade enquanto a pessoa ainda consegue entrar. Daí o desenho todo ser
+  sobre chegar nisso antes de alguém esquecer a senha.
+
+Como ficou:
+
+- **Um e-mail de verdade substitui o endereço interno da conta**, porque uma
+  conta do Firebase tem UM endereço. Consequência direta: **quem cadastra
+  e-mail passa a entrar com ele**. Por isso o campo da tela de login virou
+  "Nome ou e-mail" (`UserModel.emailParaEntrar`: com arroba é e-mail, sem
+  arroba é nome). No celular da pessoa isso é invisível, porque a sessão fica
+  salva; aparece no aparelho novo.
+- **O e-mail só passa a valer quando a pessoa clica no link**
+  (`verifyBeforeUpdateEmail`). Sem essa confirmação, um e-mail digitado
+  errado viraria o endereço da conta — e aí a pessoa não entraria mais nem
+  receberia o link para consertar.
+- **O endereço NÃO vem para o Firestore**, só o sim/não
+  (`UserModel.recuperacaoPorEmail`). Todo aprovado lê `users`: gravar o
+  e-mail de cada um entregaria a lista de e-mails do ministério a qualquer
+  membro.
+- **Quem grava o sim/não é uma conferência na abertura do app**
+  (`AuthProvider.conferirRecuperacao`), porque o endereço muda FORA do app —
+  a pessoa clica no link quando quiser, às vezes dias depois, no computador.
+  Não existe momento melhor. A conferência só escreve quando o valor muda:
+  uma escrita por abertura por pessoa seria cota jogada fora.
+- **"Esqueci minha senha" pede o E-MAIL, nunca o nome.** Pedir o nome
+  mandaria o link para `ana@levitas.app`, a tela diria "enviamos" e nada
+  chegaria nunca — a falha silenciosa que este projeto não aceita. O
+  endereço interno é recusado antes de tentar (`UserModel.enderecoInterno`).
+- **A tela não promete que chegou.** O Firebase não conta se a conta existe
+  (é proteção contra descobrir quem tem conta no app), então o texto é "se
+  existir uma conta com esse e-mail, o link chega" e diz o que fazer se não
+  chegar.
+- **`setLanguageCode('pt-BR')` antes de cada envio**, senão o e-mail do
+  Firebase chega em inglês — para quem "só sabe usar WhatsApp", um e-mail em
+  inglês é um e-mail que não existe.
+- **O líder vê quem ainda está desprotegido**, numa tarja na Equipe: "3
+  pessoas não conseguem recuperar a senha". Fica na cara, e não num menu,
+  porque é a única coisa deste app sem conserto depois. Zero não vira tarja
+  verde: aviso que fica na tela quando não há nada a fazer ensina a não olhar.
+- **O link de recuperação funciona sem Firebase Hosting publicado.** Medido:
+  `espiritual-d2403.firebaseapp.com/__/auth/action` responde 200 com o
+  `action.js` do Firebase, enquanto a raiz do domínio dá 404.
+
+**O defeito que esta mudança quase criou:** `changePassword` reautenticava com
+o endereço derivado do nome. Quem cadastrasse e-mail passaria a ter outro
+endereço na conta, e a troca de senha falharia com "a sua senha está
+incorreta" — com a senha certa, e só para quem se protegeu. Agora o endereço
+sai de `account.email`, e um teste varre o arquivo para garantir que nenhuma
+reautenticação volte a derivar do nome.
+
+**Limites conhecidos:**
+
+- **Quem está `pendente` não alcança o Perfil**, então só cadastra e-mail no
+  próprio cadastro (o campo existe lá, opcional) ou depois de ser aprovado.
+- **O nome deixa de ficar reservado.** A unicidade de nome vinha de o
+  endereço interno ser único no Firebase. Quando alguém troca para um e-mail
+  de verdade, `ana@levitas.app` fica livre e outra pessoa poderia se cadastrar
+  como "Ana" — o líder vê o nome repetido na hora de aprovar, e é aí que isso
+  se resolve. Conferir no app antes do cadastro exigiria ler `users` sem
+  estar logado, o que as regras proíbem de propósito.
+- **Quem não cadastrar e-mail e esquecer a senha perde o acesso.** Não há
+  conserto, e o app diz isso em vez de prometer o contrário.
 
 ### O chat some depois de 30 dias
 
@@ -983,3 +1071,7 @@ Busca de música na internet, anexo de imagem no chat, PDF da escala, foto de
 perfil, transformar uma mensagem do chat em decisão da agenda, e aviso de
 "novo pedido de entrada" para o líder (o mecanismo já existe; falta o
 gatilho).
+
+E **o líder não define a senha de ninguém** — não por falta de código, mas
+porque exigiria uma chave de administrador cujo escopo menor possível é
+"entrar como qualquer pessoa do ministério". Ver "Recuperar a senha".

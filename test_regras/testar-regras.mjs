@@ -126,6 +126,20 @@ await teste('levita escolhe "Eu canto" no perfil', () =>
   assertSucceeds(updateDoc(doc(levita(), 'users', LEVITA), { leitura: 'canto' })));
 await teste('modo de leitura só aceita canto ou toco', () =>
   assertFails(updateDoc(doc(levita(), 'users', LEVITA), { leitura: 'admin' })));
+
+// ── e-mail de recuperação ──
+// Só o sim/não vem para o banco; o endereço fica no Firebase Authentication,
+// porque todo aprovado lê `users` e gravar o e-mail pessoal de cada um daria
+// a lista de e-mails do ministério a qualquer membro.
+await teste('marco que a minha conta já tem e-mail de recuperação', () =>
+  assertSucceeds(updateDoc(doc(levita(), 'users', LEVITA),
+    { recuperacaoPorEmail: true })));
+await teste('o campo só aceita sim ou não', () =>
+  assertFails(updateDoc(doc(levita(), 'users', LEVITA),
+    { recuperacaoPorEmail: 'ana@gmail.com' })));
+await teste('ninguém marca o e-mail de recuperação de outra pessoa', () =>
+  assertFails(updateDoc(doc(levita(), 'users', LIDER),
+    { recuperacaoPorEmail: true })));
 await teste('levita não edita o perfil de outra pessoa', () =>
   assertFails(updateDoc(doc(levita(), 'users', LIDER), { instrument: 'drums' })));
 await teste('líder promove um levita', () =>

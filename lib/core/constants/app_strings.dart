@@ -11,6 +11,10 @@ class AppStrings {
   static const String password = 'Senha';
   static const String confirmPassword = 'Confirmar Senha';
   static const String namePlaceholder = 'Seu nome no ministério';
+  /// A tela de login aceita os dois: o nome, como sempre, e o e-mail, para
+  /// quem cadastrou um de verdade para poder recuperar a senha.
+  static const String nomeOuEmail = 'Nome ou e-mail';
+  static const String esqueciASenha = 'Esqueci minha senha';
   static const String passwordPlaceholder = 'Mínimo 6 caracteres';
   static const String dontHaveAccount = 'Não tem conta? ';
   static const String alreadyHaveAccount = 'Já tem conta? ';

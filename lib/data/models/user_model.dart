@@ -141,6 +141,25 @@ class UserModel {
   /// aviso, e não conta como líder.
   final bool bot;
 
+  /// Esta conta tem um e-mail DE VERDADE, que recebe o link de recuperação.
+  ///
+  /// É a única coisa que separa "esqueci a senha" de "perdi o acesso para
+  /// sempre". O endereço que o Firebase usa para identificar a conta nasce do
+  /// nome (`nome@levitas.app`) e esse domínio não é de ninguém: o link de
+  /// recuperação enviado para lá não chega a lugar nenhum. E trocar a senha de
+  /// outra pessoa exige chave de administrador, que este projeto não tem — nem
+  /// o console do Firebase faz isso.
+  ///
+  /// Então a conta sem e-mail de verdade não tem como ser recuperada. Daí o
+  /// campo existir: a tela Membros mostra ao líder quem ainda está nessa
+  /// situação, enquanto a pessoa ainda consegue entrar e resolver.
+  ///
+  /// O endereço em si NÃO vem para cá: ele fica no Firebase Authentication, e
+  /// aqui guardamos só o sim/não. Todo aprovado lê `users`, então gravar o
+  /// e-mail pessoal de cada um daria a lista de e-mails do ministério a
+  /// qualquer membro.
+  final bool recuperacaoPorEmail;
+
   /// A função principal: a que aparece onde só cabe uma (lista de membros,
   /// chat, selo da escala).
   UserInstrument get instrument => instruments.first;
@@ -178,6 +197,7 @@ class UserModel {
     this.removedBy,
     this.leitura,
     this.bot = false,
+    this.recuperacaoPorEmail = false,
   }) : instruments = _funcoes(instruments, instrument);
 
   bool get isAdmin => role == UserRole.admin;
@@ -233,6 +253,7 @@ class UserModel {
     bool limparRemocao = false,
     ModoLeitura? leitura,
     bool? bot,
+    bool? recuperacaoPorEmail,
   }) {
     return UserModel(
       id: id ?? this.id,
@@ -254,6 +275,7 @@ class UserModel {
       removedBy: limparRemocao ? null : (removedBy ?? this.removedBy),
       leitura: leitura ?? this.leitura,
       bot: bot ?? this.bot,
+      recuperacaoPorEmail: recuperacaoPorEmail ?? this.recuperacaoPorEmail,
     );
   }
 
@@ -302,6 +324,32 @@ class UserModel {
 
   String get derivedEmail => emailForName(name);
 
+  /// Este endereço é interno, dos que não recebem e-mail nenhum?
+  ///
+  /// É a conferência que impede a pior falha possível na recuperação de
+  /// senha: mandar o link para `ana@levitas.app`, a tela dizer "enviamos" e
+  /// nada chegar nunca. Domínio inexistente, mensagem perdida, pessoa
+  /// esperando.
+  static bool enderecoInterno(String email) =>
+      email.trim().toLowerCase().endsWith('@$emailDomain');
+
+  /// O endereço com que o Firebase vai receber a tentativa de entrada.
+  ///
+  /// A tela de login pede "nome ou e-mail", e os dois caminham pelo mesmo
+  /// lugar: quem tem arroba está dizendo um e-mail de verdade; quem não tem
+  /// está dizendo o nome, de onde sai o endereço interno — que é como todo
+  /// mundo entrou até hoje e continua entrando.
+  ///
+  /// Os dois juntos são necessários porque **uma conta tem um endereço só**
+  /// no Firebase: quem cadastra um e-mail de verdade para poder recuperar a
+  /// senha passa a ter esse endereço no lugar do interno, e entrar pelo nome
+  /// deixaria de funcionar para ela.
+  static String emailParaEntrar(String nomeOuEmail) {
+    final limpo = nomeOuEmail.trim();
+    if (limpo.contains('@')) return limpo.toLowerCase();
+    return emailForName(limpo);
+  }
+
   Map<String, dynamic> toFirestore() {
     return {
       'id': id,
@@ -322,6 +370,7 @@ class UserModel {
       // Só grava quando é robô: cadastro de gente não ganha campo novo, e a
       // regra do banco só precisa olhar o que mudou.
       if (bot) 'bot': true,
+      if (recuperacaoPorEmail) 'recuperacaoPorEmail': true,
     };
   }
 
@@ -345,6 +394,10 @@ class UserModel {
       // Qualquer coisa que não seja `true` é gente. Um valor estranho no
       // console não pode esconder uma pessoa de verdade das listas.
       bot: data['bot'] == true,
+      // Só `true` conta: campo ausente, nulo ou torto significa "não tem",
+      // que é o lado seguro — manda o líder perguntar de novo, em vez de
+      // deixar a pessoa achando que está protegida.
+      recuperacaoPorEmail: data['recuperacaoPorEmail'] == true,
     );
   }
 
@@ -366,6 +419,7 @@ class UserModel {
       'removedBy': removedBy,
       if (leitura != null) 'leitura': leitura!.name,
       if (bot) 'bot': true,
+      if (recuperacaoPorEmail) 'recuperacaoPorEmail': true,
     };
   }
 
@@ -387,6 +441,10 @@ class UserModel {
       removedBy: data['removedBy'] as String?,
       leitura: _leituraDe(data['leitura']),
       bot: data['bot'] == true,
+      // Só `true` conta: campo ausente, nulo ou torto significa "não tem",
+      // que é o lado seguro — manda o líder perguntar de novo, em vez de
+      // deixar a pessoa achando que está protegida.
+      recuperacaoPorEmail: data['recuperacaoPorEmail'] == true,
     );
   }
 }

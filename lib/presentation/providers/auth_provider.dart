@@ -128,7 +128,42 @@ class AuthProvider extends ChangeNotifier {
     _ouvirProprioCadastro(profile.id);
     notifyListeners();
 
+    await conferirRecuperacao();
     await _loadPrefs(profile.id);
+  }
+
+  /// O e-mail de recuperação desta conta, ou nulo quando ela ainda usa o
+  /// endereço interno (`nome@levitas.app`), que não recebe e-mail nenhum.
+  String? _emailDeRecuperacao;
+  String? get emailDeRecuperacao => _emailDeRecuperacao;
+
+  /// Confere no Firebase se a conta já tem e-mail de verdade.
+  ///
+  /// Roda na abertura do app porque o endereço muda FORA do app: a pessoa
+  /// cadastra aqui, recebe um link e clica nele quando quiser — às vezes dias
+  /// depois, no computador. Não existe momento melhor para descobrir.
+  Future<void> conferirRecuperacao() async {
+    final u = _user;
+    if (u == null) return;
+    final email = await AuthService.conferirEmailDeRecuperacao(u);
+    if (email == _emailDeRecuperacao) return;
+    _emailDeRecuperacao = email;
+    notifyListeners();
+  }
+
+  /// Cadastra ou troca o e-mail de recuperação. Nulo quando dá certo.
+  Future<String?> definirEmailDeRecuperacao({
+    required String email,
+    required String senhaAtual,
+  }) async {
+    final u = _user;
+    if (u == null) return 'Entre novamente para cadastrar o e-mail.';
+    final r = await AuthService.definirEmailDeRecuperacao(
+      user: u,
+      email: email,
+      senhaAtual: senhaAtual,
+    );
+    return r.error;
   }
 
   /// Register new user
@@ -137,6 +172,7 @@ class AuthProvider extends ChangeNotifier {
     required String password,
     UserInstrument instrument = UserInstrument.other,
     List<UserInstrument>? instruments,
+    String? emailDeRecuperacao,
   }) async {
     _status = AuthStatus.loading;
     _errorMessage = null;
@@ -153,6 +189,19 @@ class AuthProvider extends ChangeNotifier {
       _user = result.user;
       _status = AuthStatus.authenticated;
       _ouvirProprioCadastro(result.user!.id);
+
+      // O e-mail do cadastro é opcional e NÃO pode derrubar a criação da
+      // conta: se o envio falhar, a pessoa entrou e resolve isso depois em
+      // Perfil. Falhar aqui seria perder a conta por causa de um extra.
+      final email = emailDeRecuperacao?.trim() ?? '';
+      if (email.isNotEmpty) {
+        await AuthService.definirEmailDeRecuperacao(
+          user: result.user!,
+          email: email,
+          senhaAtual: password,
+        );
+      }
+
       notifyListeners();
       return true;
     } else {
@@ -176,6 +225,7 @@ class AuthProvider extends ChangeNotifier {
       _status = AuthStatus.authenticated;
       _ouvirProprioCadastro(result.user!.id);
       notifyListeners();
+      await conferirRecuperacao();
       await _loadPrefs(result.user!.id);
       return true;
     } else {

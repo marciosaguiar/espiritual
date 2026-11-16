@@ -95,12 +95,17 @@ class AuthService {
 
   // ─── Login ────────────────────────────────────────────────────────────────
 
-  /// Signs in with the name and password typed on the login screen.
+  /// Entra com o que foi digitado na tela de login: o nome, como sempre, ou
+  /// um e-mail, para quem cadastrou um de verdade.
+  ///
+  /// Os dois num campo só porque uma conta do Firebase tem UM endereço: quem
+  /// cadastra e-mail de recuperação passa a ter o e-mail no lugar do endereço
+  /// interno, e entrar pelo nome deixaria de funcionar para essa pessoa.
   static Future<({bool success, String? error, UserModel? user})> login({
     required String name,
     required String password,
   }) async {
-    final email = UserModel.emailForName(name);
+    final email = UserModel.emailParaEntrar(name);
 
     try {
       final credential = await _auth.signInWithEmailAndPassword(
@@ -116,7 +121,10 @@ class AuthService {
         // instead of leaving the person locked out of their own account.
         final rebuilt = UserModel(
           id: uid,
-          name: name.trim(),
+          // Entrou pelo e-mail e o perfil não existe: o nome não dá para
+          // adivinhar do endereço, então fica a parte antes da arroba e a
+          // pessoa corrige em Perfil. Melhor isso que travar a conta.
+          name: name.contains('@') ? name.split('@').first.trim() : name.trim(),
           email: email,
           // Mesmo degrau do cadastro: um perfil refeito aqui não pode
           // valer mais do que um perfil criado pela porta da frente. Com
@@ -170,10 +178,15 @@ class AuthService {
     }
 
     try {
-      // Firebase requires a recent sign-in before a password change.
+      // O Firebase exige entrada recente antes de trocar a senha.
+      //
+      // O endereço sai de `account.email`, NÃO do nome. Quem cadastrou um
+      // e-mail de recuperação tem esse e-mail como endereço da conta, e
+      // derivar do nome faria justamente essa pessoa não conseguir mais
+      // trocar a senha — o defeito apareceria só em quem se protegeu.
       await account.reauthenticateWithCredential(
         EmailAuthProvider.credential(
-          email: UserModel.emailForName(user.name),
+          email: account.email ?? UserModel.emailForName(user.name),
           password: currentPassword,
         ),
       );
@@ -187,19 +200,147 @@ class AuthService {
     }
   }
 
-  /// Why a leader can no longer set someone else's password.
+  /// Por que o líder não consegue trocar a senha de outra pessoa.
   ///
-  /// Firebase Authentication only lets an account change its own password; a
-  /// reset for someone else needs the Admin SDK, which must run on a server
-  /// (Cloud Functions) and cannot run inside the app. The addresses here are
-  /// internal (`@levitas.app`), so the e-mail reset link has nowhere to go
-  /// either. Until that server exists, this is the honest answer to show.
+  /// O Firebase só deixa cada conta trocar a própria senha. Trocar a de
+  /// outro exige o Admin SDK, com uma chave de administrador do projeto — e
+  /// nem o console do Firebase faz isso: lá dá para criar conta, apagar conta
+  /// e mandar e-mail de recuperação, não definir a senha de uma conta que já
+  /// existe.
+  ///
+  /// E a chave de administrador este projeto não tem de propósito: ela não
+  /// serve só para trocar senha. Quem a tem assina um token para QUALQUER
+  /// conta e entra como o líder do ministério. Não existe permissão menor
+  /// que isso no Firebase.
+  ///
+  /// Daí o único caminho que sobra ser o e-mail de recuperação — e ele só
+  /// pode ser cadastrado enquanto a pessoa ainda consegue entrar.
   static const String leaderResetUnavailable =
-      'A troca de senha de outra pessoa não é mais feita pelo app: agora quem '
-      'guarda as senhas é o Firebase, e ele só permite que cada pessoa mude a '
-      'sua. Peça para ela entrar e usar Perfil → Alterar minha senha. Se ela '
-      'não consegue entrar de jeito nenhum, é preciso habilitar a redefinição '
-      'no servidor.';
+      'Ninguém troca a senha de outra pessoa — nem o líder, nem o app. O '
+      'Firebase só deixa cada conta trocar a sua.\n\nSe ela ainda consegue '
+      'entrar: Perfil → Alterar minha senha.\n\nSe não consegue mais, só o '
+      'e-mail de recuperação resolve, e ele precisa ter sido cadastrado '
+      'antes. Por isso vale pedir a quem ainda não cadastrou que faça agora, '
+      'em Perfil → Recuperar a senha.';
+
+  /// Manda o link de "esqueci minha senha" para um e-mail.
+  ///
+  /// Recusa o endereço interno antes de tentar, e isso não é zelo: o
+  /// `@levitas.app` não é de ninguém. O Firebase aceitaria o pedido, a tela
+  /// diria "enviamos o link" e a mensagem morreria no caminho — a pessoa
+  /// esperando um e-mail que não existe é pior que um "não dá" na hora.
+  static Future<({bool success, String? error})> enviarLinkDeSenha(
+      String email) async {
+    final limpo = email.trim().toLowerCase();
+    if (limpo.isEmpty || !limpo.contains('@') || !limpo.contains('.')) {
+      return (success: false, error: 'Digite um e-mail válido.');
+    }
+    if (UserModel.enderecoInterno(limpo)) {
+      return (
+        success: false,
+        error: 'Esse endereço é interno do app e não recebe e-mail. Use o '
+            'e-mail que você cadastrou em Perfil → Recuperar a senha. Se você '
+            'nunca cadastrou um, fale com o líder do ministério.'
+      );
+    }
+
+    try {
+      // Sem isto o e-mail do Firebase chega em inglês.
+      await _auth.setLanguageCode('pt-BR');
+      await _auth.sendPasswordResetEmail(email: limpo);
+      return (success: true, error: null);
+    } on FirebaseAuthException catch (e) {
+      return (success: false, error: _messageFor(e));
+    }
+  }
+
+  /// Cadastra (ou troca) o e-mail de recuperação da própria conta.
+  ///
+  /// O endereço só passa a valer quando a pessoa clica no link que chega na
+  /// caixa dela — é o `verifyBeforeUpdateEmail` que faz isso. É de propósito:
+  /// um e-mail digitado errado viraria o endereço da conta, e aí a pessoa não
+  /// entraria mais nem receberia o link para consertar.
+  static Future<({bool success, String? error})> definirEmailDeRecuperacao({
+    required UserModel user,
+    required String email,
+    required String senhaAtual,
+  }) async {
+    final limpo = email.trim().toLowerCase();
+    if (limpo.isEmpty || !limpo.contains('@') || !limpo.contains('.')) {
+      return (success: false, error: 'Digite um e-mail válido.');
+    }
+    if (UserModel.enderecoInterno(limpo)) {
+      return (
+        success: false,
+        error: 'Esse domínio é do próprio app. Use um e-mail de verdade, '
+            'desses que você abre no celular.'
+      );
+    }
+
+    final account = _auth.currentUser;
+    if (account == null) {
+      return (success: false, error: 'Entre novamente para cadastrar o e-mail.');
+    }
+
+    try {
+      await _auth.setLanguageCode('pt-BR');
+      // Trocar o endereço da conta é operação sensível: o Firebase exige
+      // entrada recente, e pedir a senha é também o que impede que um
+      // celular esquecido desbloqueado troque o e-mail de recuperação de
+      // alguém — o que seria tomar a conta.
+      await account.reauthenticateWithCredential(
+        EmailAuthProvider.credential(
+          email: account.email ?? UserModel.emailForName(user.name),
+          password: senhaAtual,
+        ),
+      );
+      await account.verifyBeforeUpdateEmail(limpo);
+      return (success: true, error: null);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'wrong-password' || e.code == 'invalid-credential') {
+        return (success: false, error: 'A sua senha está incorreta.');
+      }
+      if (e.code == 'email-already-in-use') {
+        return (
+          success: false,
+          error: 'Esse e-mail já está em uso por outra conta do app.'
+        );
+      }
+      return (success: false, error: _messageFor(e));
+    }
+  }
+
+  /// Confere se a conta já tem e-mail de verdade e grava o sim/não.
+  ///
+  /// O endereço só muda quando a pessoa clica no link, e isso acontece fora
+  /// do app — às vezes dias depois, no computador. Então não há momento certo
+  /// para gravar: quem grava é esta conferência, na abertura do app.
+  ///
+  /// Devolve o e-mail de recuperação quando existe, para a tela poder
+  /// mostrá-lo, e nulo quando a conta ainda está no endereço interno.
+  static Future<String?> conferirEmailDeRecuperacao(UserModel user) async {
+    final account = _auth.currentUser;
+    final endereco = account?.email;
+    if (account == null || endereco == null || endereco.isEmpty) return null;
+
+    final temDeVerdade = !UserModel.enderecoInterno(endereco);
+    if (temDeVerdade == user.recuperacaoPorEmail) {
+      // Nada mudou: nenhuma escrita. Esta conferência roda em toda abertura
+      // do app, e uma escrita por abertura por pessoa seria cota jogada fora.
+      return temDeVerdade ? endereco : null;
+    }
+
+    try {
+      await _db.collection(_collection).doc(user.id).update({
+        'recuperacaoPorEmail': temDeVerdade,
+      });
+    } catch (_) {
+      // Leitura da tela não depende disto: o que importa é o endereço, que
+      // veio do Firebase. O campo no banco serve ao líder, e a próxima
+      // abertura tenta de novo.
+    }
+    return temDeVerdade ? endereco : null;
+  }
 
   // ─── Profile ──────────────────────────────────────────────────────────────
 

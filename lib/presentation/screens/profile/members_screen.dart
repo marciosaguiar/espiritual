@@ -94,6 +94,22 @@ class MembersScreen extends StatelessWidget {
                     '${equipe.length} ${equipe.length == 1 ? 'membro' : 'membros'}',
                 isDark: isDark,
               ),
+              // QUEM AINDA NÃO PODE RECUPERAR A SENHA.
+              //
+              // Isto fica aqui, e não escondido num menu, porque é a única
+              // coisa deste app que não tem conserto depois: conta sem e-mail
+              // cadastrado, com a senha perdida, é acesso perdido — trocar a
+              // senha de outra pessoa exige chave de administrador, que este
+              // projeto não tem, e o console do Firebase também não faz isso.
+              //
+              // Só vale enquanto a pessoa ainda entra, porque cadastrar o
+              // e-mail pede a senha atual. Por isso o líder precisa ver a
+              // lista ANTES de alguém esquecer.
+              if (auth.isAdmin)
+                _SemRecuperacao(
+                  quantos: equipe.where((m) => !m.recuperacaoPorEmail).length,
+                  isDark: isDark,
+                ),
               if (equipe.isEmpty)
                 _Message(
                   icon: Icons.people_outline_rounded,
@@ -127,6 +143,77 @@ class MembersScreen extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+/// "3 pessoas não conseguem recuperar a senha" — para o líder, na Equipe.
+class _SemRecuperacao extends StatelessWidget {
+  final int quantos;
+  final bool isDark;
+
+  const _SemRecuperacao({required this.quantos, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    if (quantos == 0) {
+      // Zero não vira tarja verde: um aviso que fica na tela quando não há
+      // nada a fazer ensina a não olhar para ele.
+      return const SizedBox.shrink();
+    }
+
+    final um = quantos == 1;
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.red.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.red.withValues(alpha: 0.30)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.shield_outlined, size: 18, color: AppColors.red),
+          const SizedBox(width: 11),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  um
+                      ? '1 pessoa não consegue recuperar a senha'
+                      : '$quantos pessoas não conseguem recuperar a senha',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  um
+                      ? 'Ela ainda não cadastrou e-mail. Se esquecer a senha, '
+                          'não há como devolver o acesso — nem por você. Peça '
+                          'que faça agora, em Perfil → Recuperar a senha.'
+                      : 'Elas ainda não cadastraram e-mail. Quem esquecer a '
+                          'senha perde o acesso, e nem você consegue devolver. '
+                          'Peça que façam agora, em Perfil → Recuperar a senha.',
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 12,
+                    height: 1.45,
+                    color: AppColors.textSecondaryLight,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

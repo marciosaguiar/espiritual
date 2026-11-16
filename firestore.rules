@@ -185,6 +185,14 @@ service cloud.firestore {
             || request.resource.data.leitura in ['canto', 'toco'])
         && (!('bot' in request.resource.data)
             || request.resource.data.bot is bool)
+        // "Esta conta tem e-mail de verdade para recuperar a senha."
+        //
+        // Só o sim/não vem para o banco: o endereço fica no Firebase
+        // Authentication. Todo aprovado lê `users`, então gravar o e-mail
+        // pessoal de cada um entregaria a lista de e-mails do ministério a
+        // qualquer membro.
+        && (!('recuperacaoPorEmail' in request.resource.data)
+            || request.resource.data.recuperacaoPorEmail is bool)
         // Várias funções por pessoa: a lista é fechada, como a das funções do
         // ministério. Lista vazia é recusada — sem função, a escala não sabe
         // o que oferecer e o modo de leitura não tem de onde sair.

@@ -20,6 +20,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _nameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
+  final _emailCtrl = TextEditingController();
   List<UserInstrument> _funcoes = [UserInstrument.vocalist];
 
   @override
@@ -27,6 +28,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     _nameCtrl.dispose();
     _passwordCtrl.dispose();
     _confirmCtrl.dispose();
+    _emailCtrl.dispose();
     super.dispose();
   }
 
@@ -36,6 +38,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final success = await auth.register(
       name: _nameCtrl.text.trim(),
       password: _passwordCtrl.text,
+      emailDeRecuperacao: _emailCtrl.text,
       instruments: _funcoes,
     );
     if (success && mounted) {
@@ -172,6 +175,28 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 validator: (v) {
                                   if (v != _passwordCtrl.text) {
                                     return AppStrings.errorPasswordsNotMatch;
+                                  }
+                                  return null;
+                                },
+                              ),
+                              const SizedBox(height: 16),
+                              // O E-MAIL É OPCIONAL, mas é o único caminho de
+                              // volta se a senha for esquecida: ninguém troca
+                              // a senha de outra pessoa neste app, nem o
+                              // líder. Por isso o rótulo diz para que serve,
+                              // em vez de só "E-mail (opcional)".
+                              AppTextField(
+                                label: 'E-mail para recuperar a senha',
+                                hint: 'opcional, mas é o único jeito de voltar',
+                                controller: _emailCtrl,
+                                keyboardType: TextInputType.emailAddress,
+                                prefixIcon:
+                                    const Icon(Icons.mail_outline, size: 20),
+                                validator: (v) {
+                                  final t = (v ?? '').trim();
+                                  if (t.isEmpty) return null;
+                                  if (!t.contains('@') || !t.contains('.')) {
+                                    return 'E-mail inválido. Ou deixe em branco.';
                                   }
                                   return null;
                                 },

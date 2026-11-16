@@ -7,6 +7,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import 'register_screen.dart';
 import '../../widgets/common/glass.dart';
+import '../../widgets/common/esqueci_a_senha.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -135,14 +136,15 @@ class _LoginScreenState extends State<LoginScreen> {
                               ),
                               const SizedBox(height: 24),
                               AppTextField(
-                                label: AppStrings.name,
+                                label: AppStrings.nomeOuEmail,
                                 hint: AppStrings.namePlaceholder,
                                 controller: _nameCtrl,
+                                keyboardType: TextInputType.emailAddress,
                                 prefixIcon: const Icon(Icons.person_outline, size: 20),
                                 textInputAction: TextInputAction.next,
                                 validator: (v) {
                                   if (v == null || v.trim().isEmpty) {
-                                    return AppStrings.errorNameRequired;
+                                    return 'Digite seu nome ou e-mail';
                                   }
                                   return null;
                                 },
@@ -169,6 +171,24 @@ class _LoginScreenState extends State<LoginScreen> {
                                   label: AppStrings.login,
                                   isLoading: auth.isLoading,
                                   onPressed: _login,
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              // Fica DENTRO do cartão, debaixo do botão: é
+                              // onde a pessoa já está olhando quando a senha
+                              // não entra.
+                              Align(
+                                alignment: Alignment.centerRight,
+                                child: TextButton(
+                                  onPressed: () =>
+                                      mostrarEsqueciASenha(context),
+                                  child: const Text(
+                                    AppStrings.esqueciASenha,
+                                    style: TextStyle(
+                                      fontFamily: 'Poppins',
+                                      fontSize: 13,
+                                    ),
+                                  ),
                                 ),
                               ),
                             ],
