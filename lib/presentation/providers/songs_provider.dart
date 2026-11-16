@@ -182,6 +182,73 @@ class SongsProvider extends ChangeNotifier {
 
   bool isOffline(String songId) => LocalStorageService.isSongOffline(songId);
 
+  // ─── Quais músicas já têm cifra pronta ────────────────────────────────────
+  //
+  // A cifra mora no ARRANJO (`songs/{id}/arrangements`), e é isso que impede
+  // o app de baixar o repertório inteiro de cifras só para abrir a lista de
+  // músicas. O preço é que, para saber quais músicas têm cifra, alguém tem de
+  // perguntar.
+  //
+  // A pergunta é feita UMA VEZ POR SESSÃO, e só quando o líder abre o diálogo
+  // de escolher as músicas do culto — não na abertura do app, não na lista de
+  // músicas, não para quem não é líder. São ~40 leituras no ministério de
+  // hoje, de 50 mil por dia, numa tela que se abre de propósito.
+  //
+  // A alternativa seria um campo `temCifra` na música, escrito ao salvar o
+  // arranjo. Foi descartada por causa dos dados que JÁ EXISTEM: música com
+  // cifra cadastrada antes do campo apareceria como "sem cifra", e o líder
+  // montaria o culto com uma informação errada — justamente o contrário do
+  // que o ícone promete.
+
+  Set<String> _comCifra = const {};
+  bool _cifrasConferidas = false;
+  Future<void>? _conferindo;
+
+  /// Já sabemos quais músicas têm cifra? Enquanto for falso, a tela não
+  /// desenha ícone nenhum: ausência de ícone não pode significar "sem cifra"
+  /// quando a resposta ainda não chegou.
+  bool get cifrasConferidas => _cifrasConferidas;
+
+  bool temCifra(String songId) => _comCifra.contains(songId);
+
+  /// Pergunta ao banco quais músicas do repertório têm arranjo com cifra.
+  ///
+  /// Chamar de novo na mesma sessão não custa nada: a resposta fica guardada,
+  /// e duas aberturas seguidas do diálogo compartilham a mesma consulta.
+  Future<void> conferirCifras() async {
+    if (_cifrasConferidas) return;
+    if (_conferindo != null) return _conferindo;
+
+    _conferindo = (() async {
+      final achadas = <String>{};
+      final musicas = repertorio;
+      // Em blocos, e não todas de uma vez: 300 consultas em paralelo num
+      // celular ruim é pedido de timeout.
+      const bloco = 10;
+      for (var i = 0; i < musicas.length; i += bloco) {
+        final parte = musicas.skip(i).take(bloco);
+        final respostas = await Future.wait(parte.map((m) async {
+          final arranjos = await FirestoreService.getArrangements(m.id);
+          final tem = arranjos.any((a) => a.chords.trim().isNotEmpty);
+          return tem ? m.id : '';
+        }));
+        achadas.addAll(respostas.where((id) => id.isNotEmpty));
+      }
+      _comCifra = achadas;
+      _cifrasConferidas = true;
+      notifyListeners();
+    })();
+
+    try {
+      await _conferindo;
+    } catch (_) {
+      // Leitura com valor padrão seguro: sem a resposta, a tela não mostra
+      // ícone nenhum, e o líder escolhe as músicas como escolhia antes.
+    } finally {
+      _conferindo = null;
+    }
+  }
+
   SongModel? getSongById(String id) {
     try {
       return _songs.firstWhere((s) => s.id == id);

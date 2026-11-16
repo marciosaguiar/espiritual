@@ -6,7 +6,6 @@ import '../../providers/scale_provider.dart';
 import '../../providers/songs_provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/scale_model.dart';
-import '../../../data/models/song_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/avisos_service.dart';
@@ -14,6 +13,7 @@ import '../../widgets/common/abrir_link.dart';
 import '../../widgets/common/glass.dart';
 import '../songs/song_detail_screen.dart';
 import 'modo_ao_vivo_screen.dart';
+import '../../widgets/songs/escolher_musicas.dart';
 
 class ScaleDetailScreen extends StatefulWidget {
   final ScaleModel scale;
@@ -169,95 +169,33 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
 
   Future<void> _showAddSongDialog() async {
     final songs = context.read<SongsProvider>();
-    final allSongs = songs.repertorio;
-
-    if (allSongs.isEmpty) {
+    if (songs.repertorio.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Nenhuma música cadastrada')),
+        const SnackBar(content: Text('Nenhuma música no repertório ainda.')),
       );
       return;
     }
 
-    final List<SongModel>? selected = await showDialog<List<SongModel>>(
-      context: context,
-      builder: (ctx) {
-        final selectedSongs = <String>{};
-        for (final s in _scale.songs) {
-          selectedSongs.add(s.songId);
-        }
-        return StatefulBuilder(builder: (ctx2, setDialog) {
-          return AlertDialog(
-            title: const Text('Adicionar Músicas',
-                style: TextStyle(fontFamily: 'Poppins', fontSize: 16)),
-            content: SizedBox(
-              width: double.maxFinite,
-              height: 400,
-              child: ListView.builder(
-                itemCount: allSongs.length,
-                itemBuilder: (_, i) {
-                  final s = allSongs[i];
-                  final checked = selectedSongs.contains(s.id);
-                  return CheckboxListTile(
-                    title: Text(s.name,
-                        style: const TextStyle(
-                            fontFamily: 'Poppins', fontSize: 13)),
-                    subtitle: Text('${s.artist} • ${s.originalKey}',
-                        style: const TextStyle(
-                            fontFamily: 'Poppins', fontSize: 11)),
-                    value: checked,
-                    activeColor: AppColors.blue,
-                    onChanged: (v) {
-                      setDialog(() {
-                        if (v == true) {
-                          selectedSongs.add(s.id);
-                        } else {
-                          selectedSongs.remove(s.id);
-                        }
-                      });
-                    },
-                  );
-                },
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx),
-                child: const Text('Cancelar'),
-              ),
-              ElevatedButton(
-                onPressed: () {
-                  final result = allSongs
-                      .where((s) => selectedSongs.contains(s.id))
-                      .toList();
-                  Navigator.pop(ctx, result);
-                },
-                style:
-                    ElevatedButton.styleFrom(backgroundColor: AppColors.blue),
-                child: const Text('Confirmar'),
-              ),
-            ],
-          );
-        });
-      },
+    final selected = await escolherMusicas(
+      context,
+      jaNoCulto: _scale.songs.map((s) => s.songId).toList(),
     );
+    if (selected == null || !mounted) return;
 
-    if (selected != null && mounted) {
-      // Only the reference is stored: the name, the artist and the key are
-      // looked up from the song itself when the screen draws, so correcting a
-      // song also corrects every service that uses it.
-      final scaleSongs = selected.map((s) => ScaleSong(songId: s.id)).toList();
-      final error = await context
-          .read<ScaleProvider>()
-          .setSongs(_scale.id, scaleSongs);
+    // Só a referência é guardada: nome, artista e tom são resolvidos pela
+    // música na hora de desenhar, então corrigir uma música corrige também
+    // todos os cultos que a usam.
+    final scaleSongs = selected.map((s) => ScaleSong(songId: s.id)).toList();
+    final error =
+        await context.read<ScaleProvider>().setSongs(_scale.id, scaleSongs);
 
-      if (!mounted) return;
-      if (error == null) {
-        setState(() => _scale = _scale.copyWith(songs: scaleSongs));
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error), backgroundColor: AppColors.red),
-        );
-      }
+    if (!mounted) return;
+    if (error == null) {
+      setState(() => _scale = _scale.copyWith(songs: scaleSongs));
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error), backgroundColor: AppColors.red),
+      );
     }
   }
 

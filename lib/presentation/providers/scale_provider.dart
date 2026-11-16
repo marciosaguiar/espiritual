@@ -153,6 +153,33 @@ class ScaleProvider extends ChangeNotifier {
     return saida;
   }
 
+  /// Quando cada música foi tocada pela última vez, pelas escalas passadas.
+  ///
+  /// Sem coleção nova: a resposta sai dos cultos que o app já tem em memória.
+  /// Isso tem um LIMITE que a tela precisa respeitar — a janela de leitura vai
+  /// só até 60 dias atrás (`FirestoreService.janelaPassado`), então a ausência
+  /// aqui significa "não tocada nesse período", e **nunca** "nunca tocada".
+  /// Dizer "nunca tocada" sobre uma música do ano passado seria mentira, e o
+  /// líder montaria o culto com base nela.
+  ///
+  /// Culto cancelado não conta: ninguém tocou nele. Culto futuro também não —
+  /// a pergunta é o que já foi tocado, não o que está marcado.
+  static Map<String, DateTime> ultimaVezTocada(
+      List<ScaleModel> cultos, DateTime agora) {
+    final saida = <String, DateTime>{};
+    for (final culto in cultos) {
+      if (culto.canceled) continue;
+      if (culto.date.isAfter(agora)) continue;
+      for (final ref in culto.songs) {
+        final atual = saida[ref.songId];
+        if (atual == null || culto.date.isAfter(atual)) {
+          saida[ref.songId] = culto.date;
+        }
+      }
+    }
+    return saida;
+  }
+
   /// Upcoming services, cancelled ones left out — they are kept in the
   /// database so the generator does not recreate them, but nobody needs to
   /// see a cancelled service as "the next one".
