@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:levitasync/data/models/scale_model.dart';
@@ -5,6 +8,8 @@ import 'package:levitasync/data/models/team_model.dart';
 import 'package:levitasync/data/services/firestore_service.dart';
 
 void main() {
+  contrato();
+
   group('id determinístico do culto', () {
     test('monta data e hora no formato combinado', () {
       expect(ScaleModel.idPara(DateTime(2026, 11, 15, 8, 0)),
@@ -343,6 +348,99 @@ void main() {
 
     test('duas semanas rendem metade', () {
       expect(faltando(semanas: 2).length, 10);
+    });
+  });
+}
+
+/// O CONTRATO COM O GERADOR DO WORKER.
+///
+/// A mesma conta roda em dois lugares: aqui, quando um líder abre o app, e no
+/// Worker (`worker/src/agenda.js`), uma vez por dia, sem depender de ninguém
+/// abrir nada. Se as duas calcularem o id de jeitos diferentes, nascem
+/// duplicatas — dois domingos das 8h, cada um com metade da equipe.
+///
+/// Os dois lados leem `test/dados/agenda_contrato.json`. Mexer num gerador
+/// sem mexer no outro faz o teste do outro falhar.
+void contrato() {
+  final arquivo = File('test/dados/agenda_contrato.json');
+  final dados = jsonDecode(arquivo.readAsStringSync()) as Map<String, dynamic>;
+
+  group('contrato com o gerador do Worker', () {
+    for (final bruto in dados['casos'] as List<dynamic>) {
+      final caso = bruto as Map<String, dynamic>;
+      test(caso['nome'] as String, () {
+        final slots = (caso['slots'] as List<dynamic>)
+            .map((s) => ScheduleSlot.fromMap(Map<String, dynamic>.from(s)))
+            .toList();
+        final existentes = (caso['existentes'] as List<dynamic>)
+            .map((id) => ScaleModel(
+                  id: id as String,
+                  date: DateTime(2000),
+                  createdAt: DateTime(2000),
+                ))
+            .toList();
+
+        final faltando = FirestoreService.servicosFaltando(
+          slots: slots,
+          equipes: const {},
+          existentes: existentes,
+          // Relógio de PAREDE, sem fuso: a conta é de calendário, e é por
+          // isso que o Dart (no aparelho) e o Worker (em Brasília) chegam ao
+          // mesmo id.
+          agora: DateTime.parse(caso['agora'] as String),
+          semanas: (caso['semanas'] as num).toInt(),
+        );
+
+        expect(faltando.map((s) => s.id).toList(),
+            (caso['esperado'] as List<dynamic>).cast<String>());
+      });
+    }
+
+    test('o documento criado tem os mesmos campos', () {
+      final bloco = dados['documentoEsperado'] as Map<String, dynamic>;
+      final caso = bloco['caso'] as Map<String, dynamic>;
+      final esperado = bloco['esperado'] as Map<String, dynamic>;
+
+      final slot = ScheduleSlot.fromMap(
+          Map<String, dynamic>.from(caso['slot'] as Map));
+      final equipeBruta = caso['equipe'] as Map<String, dynamic>;
+      final equipe = TeamModel(
+        id: equipeBruta['id'] as String,
+        name: 'Equipe',
+        members: (equipeBruta['members'] as List<dynamic>)
+            .map((m) => TeamMember(
+                  userId: (m as Map)['userId'] as String,
+                  instrument: m['instrument'] as String,
+                ))
+            .toList(),
+        updatedAt: DateTime(2026),
+      );
+
+      final criados = FirestoreService.servicosFaltando(
+        slots: [slot],
+        equipes: {equipe.id: equipe},
+        existentes: const [],
+        agora: DateTime.parse(caso['agora'] as String),
+        semanas: (caso['semanas'] as num).toInt(),
+      );
+      expect(criados, isNotEmpty);
+      final culto = criados.first;
+
+      expect(culto.id, esperado['id']);
+      expect(culto.serviceType, esperado['serviceType']);
+      expect(culto.fromSlot, esperado['fromSlot']);
+      expect(culto.teamId, esperado['teamId']);
+      expect(culto.manuallyEdited, esperado['manuallyEdited']);
+      expect(culto.canceled, esperado['canceled']);
+      expect(culto.observations, esperado['observations']);
+      expect(culto.songs, isEmpty);
+      expect(culto.faltando, isEmpty);
+      expect(
+        culto.levitas.map((l) => l.toMap()).toList(),
+        (esperado['levitas'] as List<dynamic>)
+            .map((l) => Map<String, dynamic>.from(l as Map))
+            .toList(),
+      );
     });
   });
 }

@@ -1,0 +1,224 @@
+{
+  "porque": [
+    "A conta de 'quais cultos faltam' existe em dois lugares: no app (Dart,",
+    "FirestoreService.servicosFaltando), que roda quando um líder abre o app,",
+    "e no Worker (JS, worker/src/agenda.js), que roda uma vez por dia sem",
+    "depender de ninguém.",
+    "",
+    "Se as duas calcularem o id do culto de jeitos diferentes, nascem",
+    "duplicatas: dois domingos das 8h na lista, cada um com metade da equipe",
+    "escalada, e ninguém sabendo qual vale. Este arquivo é o contrato: os",
+    "mesmos dados de entrada e os mesmos ids esperados, conferidos pelos dois",
+    "lados (test/agenda_fixa_test.dart e worker/teste/agenda.test.mjs).",
+    "",
+    "Mexer num gerador sem mexer no outro faz o teste do outro falhar.",
+    "",
+    "`agora` é RELÓGIO DE PAREDE, sem fuso: o app faz a conta no relógio do",
+    "aparelho e o Worker no de Brasília, e é por isso que os dois chegam ao",
+    "mesmo id — a conta é de calendário, não de instante."
+  ],
+  "casos": [
+    {
+      "nome": "segunda à noite: quarta de manhã e domingo à noite, 4 semanas",
+      "agora": "2026-11-16T20:00",
+      "semanas": 4,
+      "slots": [
+        {
+          "id": "qua-0800",
+          "weekday": 3,
+          "hour": 8,
+          "minute": 0,
+          "name": "Culto",
+          "teamId": "manha"
+        },
+        {
+          "id": "dom-1900",
+          "weekday": 7,
+          "hour": 19,
+          "minute": 0,
+          "name": "Culto",
+          "teamId": "noite"
+        }
+      ],
+      "existentes": [],
+      "esperado": [
+        "2026-11-18_0800",
+        "2026-11-22_1900",
+        "2026-11-25_0800",
+        "2026-11-29_1900",
+        "2026-12-02_0800",
+        "2026-12-06_1900",
+        "2026-12-09_0800",
+        "2026-12-13_1900"
+      ]
+    },
+    {
+      "nome": "o culto de hoje que JÁ passou não é criado",
+      "agora": "2026-11-18T09:00",
+      "semanas": 1,
+      "slots": [
+        {
+          "id": "qua-0800",
+          "weekday": 3,
+          "hour": 8,
+          "minute": 0,
+          "name": "Culto",
+          "teamId": ""
+        }
+      ],
+      "existentes": [],
+      "esperado": [
+        "2026-11-25_0800"
+      ]
+    },
+    {
+      "nome": "o culto de hoje que ainda vem É criado",
+      "agora": "2026-11-18T07:00",
+      "semanas": 1,
+      "slots": [
+        {
+          "id": "qua-0800",
+          "weekday": 3,
+          "hour": 8,
+          "minute": 0,
+          "name": "Culto",
+          "teamId": ""
+        }
+      ],
+      "existentes": [],
+      "esperado": [
+        "2026-11-18_0800"
+      ],
+      "nota": "a janela de 1 semana comeca as 07:00 e termina 11-25 as 07:00, antes do culto das 08:00"
+    },
+    {
+      "nome": "culto que já existe não é recriado (cancelado também existe)",
+      "agora": "2026-11-16T20:00",
+      "semanas": 2,
+      "slots": [
+        {
+          "id": "qua-0800",
+          "weekday": 3,
+          "hour": 8,
+          "minute": 0,
+          "name": "Culto",
+          "teamId": ""
+        }
+      ],
+      "existentes": [
+        "2026-11-18_0800"
+      ],
+      "esperado": [
+        "2026-11-25_0800"
+      ],
+      "nota": "2 semanas a partir de 16/11 20:00 terminam em 30/11 20:00: o culto de 02/12 fica fora"
+    },
+    {
+      "nome": "virada de ano e de mês, com dia 31",
+      "agora": "2026-12-28T10:00",
+      "semanas": 3,
+      "slots": [
+        {
+          "id": "qui-1930",
+          "weekday": 4,
+          "hour": 19,
+          "minute": 30,
+          "name": "Ensaio",
+          "teamId": ""
+        }
+      ],
+      "existentes": [],
+      "esperado": [
+        "2026-12-31_1930",
+        "2027-01-07_1930",
+        "2027-01-14_1930"
+      ]
+    },
+    {
+      "nome": "fevereiro de ano bissexto",
+      "agora": "2028-02-25T08:00",
+      "semanas": 2,
+      "slots": [
+        {
+          "id": "ter-2000",
+          "weekday": 2,
+          "hour": 20,
+          "minute": 0,
+          "name": "Oração",
+          "teamId": ""
+        }
+      ],
+      "existentes": [],
+      "esperado": [
+        "2028-02-29_2000",
+        "2028-03-07_2000"
+      ]
+    },
+    {
+      "nome": "agenda vazia não cria nada",
+      "agora": "2026-11-16T20:00",
+      "semanas": 4,
+      "slots": [],
+      "existentes": [],
+      "esperado": []
+    }
+  ],
+  "documentoEsperado": {
+    "porque": [
+      "O formato do documento também tem de bater: um campo com nome ou tipo",
+      "diferente faria o app ler o padrão. `userName` vazio é de propósito —",
+      "o nome é resolvido pelo cadastro, porque nome copiado dentro do culto",
+      "fica errado quando a pessoa corrige o próprio nome."
+    ],
+    "caso": {
+      "agora": "2026-11-16T20:00",
+      "semanas": 1,
+      "slot": {
+        "id": "qua-0800",
+        "weekday": 3,
+        "hour": 8,
+        "minute": 0,
+        "name": "Culto da manhã",
+        "teamId": "manha"
+      },
+      "equipe": {
+        "id": "manha",
+        "members": [
+          {
+            "userId": "u1",
+            "instrument": "vocalist"
+          },
+          {
+            "userId": "u2",
+            "instrument": "guitar"
+          }
+        ]
+      }
+    },
+    "esperado": {
+      "id": "2026-11-18_0800",
+      "serviceType": "Culto da manhã",
+      "fromSlot": "qua-0800",
+      "teamId": "manha",
+      "manuallyEdited": false,
+      "canceled": false,
+      "observations": "",
+      "songs": [],
+      "faltando": [],
+      "levitas": [
+        {
+          "userId": "u1",
+          "userName": "",
+          "instrument": "vocalist",
+          "confirmed": false
+        },
+        {
+          "userId": "u2",
+          "userName": "",
+          "instrument": "guitar",
+          "confirmed": false
+        }
+      ]
+    }
+  }
+}

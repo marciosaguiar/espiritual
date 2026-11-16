@@ -24,7 +24,11 @@
 
 import {
   conferirToken, lerDoc, lerColecao, apagarDoc, consultarPorData, gravarDoc,
+  criarDocSeNaoExiste,
 } from './firebase.js';
+import {
+  cultosFaltando, agoraEmBrasilia, instanteDe, somarDias,
+} from './agenda.js';
 import { importarChaveVapid, enviarAviso } from './push.js';
 import {
   textoDoAviso, textoDeEscalado, textoDaVespera, deveAvisar, dentroDoLimite,
@@ -462,6 +466,74 @@ export default {
     }
 
     // ── Testar nos próprios aparelhos ──────────────────────────────────────
+    // ── Gerar os cultos da agenda fixa ────────────────────────────────────
+    //
+    // A mesma conta roda no app quando um líder o abre. O problema é esse: se
+    // nenhum líder abrir o app por algumas semanas, os cultos param de ser
+    // criados e a escala seca sem ninguém perceber. Aqui ela roda uma vez por
+    // dia, sem depender de ninguém.
+    if (url.pathname === '/agenda') {
+      if (!dono.lider) {
+        return json({ erro: 'Só o líder gera a agenda.' }, 403, cabecalhos);
+      }
+      let corpo = {};
+      try { corpo = await pedido.json(); } catch (_) { /* corpo vazio */ }
+      const semanas = Math.min(Math.max(Number(corpo.semanas ?? 4) || 4, 1), 8);
+
+      const agenda = await lerDoc(env, 'config/agendaFixa');
+      const slots = Array.isArray(agenda?.slots) ? agenda.slots : [];
+      if (!slots.length) {
+        // Agenda fixa não configurada é o estado normal de um ministério que
+        // ainda não a usa: resposta tranquila, não erro.
+        return json({ semSlots: true, criados: 0 }, 200, cabecalhos);
+      }
+
+      // Os cultos que JÁ existem, por consulta de data — não a coleção
+      // inteira. Um ano são ~260 cultos, e listar todos custaria 260 leituras
+      // por dia para olhar as próximas 4 semanas. Cancelado conta como
+      // existente, de propósito: ele não volta a ser criado.
+      const agora = agoraEmBrasilia();
+      const de = instanteDe({ ...agora, hora: 0, minuto: 0 });
+      const ate = instanteDe({ ...somarDias(agora, 7 * semanas + 1),
+        hora: 0, minuto: 0 });
+      const existentes = await consultarPorData(env, 'scales', 'date', de, ate);
+
+      const equipes = {};
+      for (const e of await lerColecao(env, 'teams')) equipes[e._id] = e;
+
+      const aCriar = cultosFaltando({
+        slots,
+        equipes,
+        existentes: existentes.map((c) => c._id),
+        semanas,
+        criadoPor: dono.uid,
+      });
+
+      let criados = 0;
+      let jaExistiam = 0;
+      const falhas = [];
+      for (const culto of aCriar) {
+        try {
+          const novo = await criarDocSeNaoExiste(
+            env, `scales/${culto.id}`, culto.campos);
+          if (novo) criados++;
+          else jaExistiam++;
+        } catch (e) {
+          // Uma falha não para o resto: amanhã tenta de novo, e os cultos que
+          // deram certo já estão lá. Parar no primeiro erro deixaria a escala
+          // com um buraco no meio.
+          falhas.push(`${culto.id}: ${e.message}`);
+        }
+      }
+
+      return json({
+        criados,
+        jaExistiam,
+        pretendidos: aCriar.length,
+        falhas: falhas.slice(0, 5),
+      }, 200, cabecalhos);
+    }
+
     if (url.pathname === '/testar') {
       const todas = await lerColecao(env, 'pushSubs');
       // Aqui o filtro é o contrário: SÓ os aparelhos de quem pediu, e sem

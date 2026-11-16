@@ -299,6 +299,35 @@ await teste('líder cria culto', () =>
   assertSucceeds(setDoc(doc(lider(), 'scales', 'c2'),
     { id: 'c2', date: new Date(), serviceType: 'Ensaio', songs: [], levitas: [],
       observations: '', createdBy: LIDER, createdAt: new Date() })));
+// O DOCUMENTO QUE O WORKER GRAVA tem de passar pelas regras.
+//
+// Esta é a falha mais silenciosa que a geração automática pode ter: o Worker
+// recebe 403, escreve no log dele, e ninguém olha log de Worker. A escala
+// simplesmente para de ser criada — que é exatamente o problema que a geração
+// automática veio resolver.
+//
+// Os campos são os mesmos do contrato (test/dados/agenda_contrato.json), que
+// os dois geradores já seguem.
+await teste('o culto gerado pelo robô passa pelas regras', () =>
+  assertSucceeds(setDoc(doc(lider(), 'scales', '2026-11-18_0800'), {
+    id: '2026-11-18_0800',
+    date: new Date('2026-11-18T11:00:00.000Z'),
+    serviceType: 'Culto da manhã',
+    songs: [],
+    levitas: [
+      { userId: 'u1', userName: '', instrument: 'vocalist', confirmed: false },
+      { userId: 'u2', userName: '', instrument: 'guitar', confirmed: false },
+    ],
+    observations: '',
+    createdBy: LIDER,
+    createdAt: new Date(),
+    fromSlot: 'qua-0800',
+    teamId: 'manha',
+    manuallyEdited: false,
+    canceled: false,
+    faltando: [],
+  })));
+
 await teste('levita NÃO cria culto', () =>
   assertFails(setDoc(doc(levita(), 'scales', 'c3'),
     { id: 'c3', date: new Date(), serviceType: 'Culto', songs: [], levitas: [],

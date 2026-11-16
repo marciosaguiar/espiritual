@@ -1,7 +1,14 @@
-name: Lembrete da véspera
+name: Rotina diária (agenda + lembrete)
 
-# Avisa quem está escalado para o culto de amanhã, e pede a confirmação de
-# quem ainda não confirmou.
+# Duas coisas, uma vez por dia, nesta ordem:
+#
+# 1. CRIAR OS CULTOS da agenda fixa que ainda não existem. O app já faz isso
+#    quando um líder o abre, e a fragilidade era essa: sem ninguém abrir o
+#    app por algumas semanas, a escala secava. Vem primeiro de propósito —
+#    um culto criado agora para amanhã ainda recebe o lembrete no passo 2.
+#
+# 2. Avisar quem está escalado para o culto de amanhã, e pedir a confirmação
+#    de quem ainda não confirmou.
 #
 # Este job não manda notificação: ele é o despertador. Quem manda é o Worker
 # da Cloudflare, onde mora a chave privada do VAPID — ver os comentários em
@@ -39,6 +46,18 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+
+      - name: Criar os cultos da agenda fixa
+        working-directory: ferramentas
+        # `continue-on-error` porque o lembrete NÃO pode depender disto: uma
+        # falha na criação dos cultos silenciaria o aviso de quem já está
+        # escalado para amanhã, que é o passo que as pessoas esperam.
+        continue-on-error: true
+        env:
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FAXINA_EMAIL: ${{ secrets.FAXINA_EMAIL }}
+          FAXINA_SENHA: ${{ secrets.FAXINA_SENHA }}
+        run: node gerar-agenda.mjs
 
       - name: Avisar quem está escalado para amanhã
         working-directory: ferramentas

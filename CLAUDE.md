@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 342 testes
+flutter test                   # 350 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 244 testes
+cd test_regras && npm install && npm test    # 245 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -42,7 +42,7 @@ O mini-servidor dos avisos tem testes próprios, que não precisam de emulador
 nem de Flutter:
 
 ```bash
-node --test worker/teste/*.mjs               # 57 testes
+node --test worker/teste/*.mjs               # 77 testes
 node --test web/teste/*.mjs                  # 11 testes do service worker
 ```
 
@@ -141,10 +141,11 @@ como não confirmados.
 - **`manuallyEdited`** marca o culto que o líder ajustou à mão. "Aplicar aos
   próximos cultos?", ao salvar uma equipe, pula esses e preserva quem já
   confirmou. Confirmar presença NÃO marca — é ação do levita, não edição.
-- **A geração só roda para o líder**, porque as regras só deixam ele criar.
-  Fragilidade conhecida: se nenhum líder abrir o app por semanas, os cultos
-  param de ser criados. O conserto de verdade é uma Cloud Function agendada,
-  que depende do plano Blaze.
+- **A geração roda em DOIS lugares**, e as duas são seguras de repetir: no
+  app, quando um líder o abre, e no Worker, uma vez por dia (ver "O Worker
+  gera os cultos"). A fragilidade de antes — nenhum líder abre o app por
+  semanas e a escala seca sem ninguém perceber — deixou de existir, e sem
+  Cloud Function: o robô é um líder comum, e criar é permitido a líder.
 - **A decisão de quais cultos faltam é uma função pura**
   (`FirestoreService.servicosFaltando`), testada em `test/agenda_fixa_test.dart`.
   Toda lógica nova de geração entra ali, não dentro da transação.
@@ -396,8 +397,8 @@ vez:
    não tem escopo menor que "entrar como qualquer um".
 4. ~~**"Novo pedido de entrada"** avisa o líder~~ — **feito** (ver "Aviso de
    novo pedido de entrada").
-5. **O Worker gera os cultos da agenda fixa**, para não depender de um líder
-   abrir o app.
+5. ~~**O Worker gera os cultos da agenda fixa**~~ — **feito** (ver "O Worker
+   gera os cultos").
 6. **"3 de 7 confirmaram"**, com quem falta, no Início e na lista de cultos —
    e avisar o líder do culto quando alguém confirma ou desmarca.
 7. **"Minhas próximas músicas"** no Início, com o tom do culto, a função e o
@@ -1010,6 +1011,59 @@ carimbo por mensagem:
 **O que isto custou em leitura:** o chat passou a abrir duas escutas novas
 (~15 documentos cada): as leituras e a lista de pessoas — a segunda serve ao
 "visto por" e à lista de quem mencionar. São ~30 leituras por sessão, uma vez.
+
+### O Worker gera os cultos
+
+A geração da agenda fixa rodava **só quando um líder abria o app**. A
+fragilidade estava escrita aqui como "conhecida": férias, viagem, um mês
+corrido, e os cultos paravam de ser criados — a escala secava sem ninguém
+perceber. Agora roda também no Worker, todo dia, pelo mesmo job da véspera.
+
+- **A mesma conta existe em dois lugares**, em duas linguagens. Isso é um
+  risco de verdade: se uma calcular o id do culto de um jeito e a outra de
+  outro, nascem **duplicatas** — dois domingos das 8h na lista, cada um com
+  metade da equipe. Por isso existe **`test/dados/agenda_contrato.json`**: os
+  mesmos dados de entrada, os mesmos ids esperados, e o formato do documento,
+  conferidos pelos **dois lados** (`test/agenda_fixa_test.dart` e
+  `worker/teste/agenda.test.mjs`). Mexer num gerador sem mexer no outro faz o
+  teste do outro falhar.
+- **Gravar um culto que já existe seria o pior estrago possível**: apagaria a
+  escalação e as confirmações de presença de todo mundo, sem erro nenhum. Daí
+  `criarDocSeNaoExiste`, com a pré-condição `currentDocument.exists=false`.
+  **Medido no emulador:** a segunda tentativa volta **409 ALREADY_EXISTS** e o
+  documento fica intacto, com a confirmação preservada. 409 é tratado como "já
+  existe, siga adiante", não como erro — num ministério com a agenda em dia
+  quase todo culto já existe, e desistir no primeiro impediria a criação dos
+  que faltam.
+- **O fuso é de Brasília, fixo, e a conta é de CALENDÁRIO.** O app faz a conta
+  no relógio do aparelho; o Worker acorda em qualquer datacenter do mundo, e
+  em UTC "quarta às 19h30" cairia na quinta de madrugada, com outro id. Então
+  tudo em `worker/src/agenda.js` é relógio de parede de Brasília, e somar uma
+  semana é somar 7 dias no calendário — nunca 7×24 horas a um instante, que é
+  onde horário de verão quebraria (o Brasil não tem desde 2019, mas a conta
+  não depende disso). O `-03:00` fica num lugar só.
+- **`agoraEmBrasilia` normaliza a hora com `% 24`:** `hour12: false` devolve
+  "24" para a meia-noite em parte dos ambientes, e 24 no id daria
+  `2026-11-18_2400` — um culto que não existe.
+- **Não há trava de uma vez por dia**, ao contrário do lembrete da véspera, e
+  de propósito: criar é seguro de repetir (id + pré-condição), e mandar aviso
+  não é. Uma trava aqui só esconderia que uma tentativa falhou.
+- **Os cultos que já existem saem de uma CONSULTA por data**, não da coleção
+  inteira: um ano são ~260 cultos, e listar todos custaria 260 leituras por
+  dia para olhar as próximas 4 semanas. Culto cancelado conta como existente —
+  ele não volta a ser criado, que é o motivo de cancelar ser um campo.
+- **A geração vem ANTES do lembrete no job**, para um culto criado agora para
+  amanhã ainda receber o aviso no mesmo passo. E com `continue-on-error`: uma
+  falha na criação não pode silenciar o lembrete de quem já está escalado.
+- **`paraFirestore` ganhou lista e mapa.** Antes, qualquer coisa que não fosse
+  escalar virava `String(v)`: `levitas` seria gravado como o texto
+  "[object Object]", e o app leria uma lista vazia — culto sem ninguém
+  escalado, sem erro nenhum.
+- **Há um teste de regra com o documento exato que o Worker grava.** Sem ele,
+  a falha seria a mais silenciosa possível: o Worker recebe 403, escreve no
+  log dele, ninguém olha log de Worker, e a escala para de ser criada — que é
+  justamente o problema que isto veio resolver.
+- **Nada no app mudou** nesta entrega: `lib/` e `web/` ficaram intocados.
 
 ### Aviso de novo pedido de entrada
 

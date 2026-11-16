@@ -283,19 +283,69 @@ export async function gravarDoc(env, caminho, campos) {
 /// O contrário de `simplificar`: embrulha os valores no formato do REST.
 function paraFirestore(campos) {
   const saida = {};
-  for (const [k, v] of Object.entries(campos)) {
-    if (typeof v === 'string') saida[k] = { stringValue: v };
-    else if (typeof v === 'boolean') saida[k] = { booleanValue: v };
-    else if (typeof v === 'number') {
-      saida[k] = Number.isInteger(v)
-        ? { integerValue: String(v) }
-        : { doubleValue: v };
-    } else if (v instanceof Date) {
-      saida[k] = { timestampValue: v.toISOString() };
-    } else if (v == null) saida[k] = { nullValue: null };
-    else saida[k] = { stringValue: String(v) };
-  }
+  for (const [k, v] of Object.entries(campos)) saida[k] = umValor(v);
   return saida;
+}
+
+/// Um valor no formato do REST, inclusive lista e mapa.
+///
+/// Lista e mapa entraram com a geração dos cultos: o documento do culto tem
+/// `songs`, `levitas` e `faltando`. Antes, qualquer coisa que não fosse
+/// escalar virava `String(v)` — e `levitas` seria gravado como o texto
+/// "[object Object]", que o app leria como lista vazia. Ninguém escalado, sem
+/// erro nenhum.
+function umValor(v) {
+  if (typeof v === 'string') return { stringValue: v };
+  if (typeof v === 'boolean') return { booleanValue: v };
+  if (typeof v === 'number') {
+    return Number.isInteger(v)
+      ? { integerValue: String(v) }
+      : { doubleValue: v };
+  }
+  if (v instanceof Date) return { timestampValue: v.toISOString() };
+  if (v == null) return { nullValue: null };
+  if (Array.isArray(v)) {
+    // Lista vazia precisa de `values: []`, e não de `arrayValue: {}`: o
+    // segundo o Firestore aceita, mas devolve um campo sem `values`.
+    return { arrayValue: { values: v.map(umValor) } };
+  }
+  if (typeof v === 'object') return { mapValue: { fields: paraFirestore(v) } };
+  return { stringValue: String(v) };
+}
+
+/// Grava um documento SÓ SE ele ainda não existir.
+///
+/// É o que faz a geração dos cultos poder rodar quantas vezes quiser. Sem a
+/// pré-condição, gravar um culto que já existe apagaria a escalação e **as
+/// confirmações de presença de todo mundo** — o pior estrago possível neste
+/// app, e sem erro nenhum aparecendo.
+///
+/// Medido no emulador: a segunda tentativa volta **409 ALREADY_EXISTS** e o
+/// documento fica intacto, com a confirmação preservada. Daí 409 ser "já
+/// existe, siga adiante" e não erro: num ministério com a agenda em dia,
+/// quase todo culto já existe, e desistir no primeiro impediria a criação dos
+/// que faltam.
+export async function criarDocSeNaoExiste(env, caminho, campos) {
+  const token = await tokenDoRobo(env);
+  const mascara = Object.keys(campos)
+    .map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`)
+    .join('&');
+  const r = await fetch(
+    `${raiz(env)}/${caminho}?${mascara}&currentDocument.exists=false`,
+    {
+      method: 'PATCH',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ fields: paraFirestore(campos) }),
+    },
+  );
+  if (r.status === 409) return false;
+  if (!r.ok) {
+    throw new Error(`Firestore ${r.status} ao criar ${caminho}`);
+  }
+  return true;
 }
 
 /// Apaga um documento. Usado nas inscrições que o serviço de push recusou.
