@@ -25,6 +25,30 @@ robô da faxina do chat. Não com chave de conta de serviço: aquela chave ignor
 todas as regras do banco e, se vazar, dá acesso a tudo. A senha do robô se
 troca e acabou.
 
+## As rotas
+
+```
+GET  /            diz se está de pé e o que falta configurar
+POST /avisar      mensagem nova no chat (chamado pelo app)
+POST /escalado    "você foi escalado" (chamado pelo app, só líder)
+POST /vespera     lembrete da véspera (chamado pelo job do GitHub, só líder)
+POST /testar      avisa só os aparelhos de quem pediu
+```
+
+Nenhuma delas aceita nada sem o ID token do Firebase verificado. `/escalado`
+e `/vespera` exigem que a pessoa seja **líder** — e o robô da véspera é líder,
+como o da faxina.
+
+**O lembrete da véspera não precisa de segredo novo.** O job do GitHub entra
+com a conta do robô (`FAXINA_EMAIL` / `FAXINA_SENHA`, que já existem) e manda
+o ID token; o endereço do Worker sai de `lib/core/constants/avisos_config.dart`,
+que está no repositório. Um segredo compartilhado entre o GitHub e a
+Cloudflare seria uma coisa a mais para vazar, girar e esquecer.
+
+Para disparar o lembrete à mão: GitHub → Actions → "Lembrete da véspera" →
+Run workflow. Ele tem trava de uma vez por dia, então rodar duas vezes não
+manda dois lembretes — para forçar, o corpo aceita `{"forcar": true}`.
+
 ## Passo a passo, do zero
 
 Tudo isto é de graça e não pede cartão. Leva uns 20 minutos na primeira vez.

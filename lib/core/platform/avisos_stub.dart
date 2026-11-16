@@ -19,4 +19,4 @@ Future<({int status, String corpo})> chamarWorker(
         String url, String token, String corpo) async =>
     (status: 0, corpo: 'sem-suporte');
 
-bool pediuAbrirChat() => false;
+({String onde, String cultoId})? pediuAbrir() => null;

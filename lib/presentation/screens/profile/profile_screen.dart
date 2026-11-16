@@ -582,7 +582,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ],
                   const SizedBox(height: 8),
-                  const _AvisosDoChat(),
+                  const _AvisosDoApp(),
                   const SizedBox(height: 8),
                   _SettingRow(
                     icon: Icons.menu_book_rounded,
@@ -1310,16 +1310,17 @@ class _EscolhaLeitura extends StatelessWidget {
 /// com o app instalado na tela de início, e a permissão só se pede dentro de
 /// um toque. Fora da tela de início não há botão para mostrar — há um passo
 /// a passo de instalação.
-class _AvisosDoChat extends StatefulWidget {
-  const _AvisosDoChat();
+class _AvisosDoApp extends StatefulWidget {
+  const _AvisosDoApp();
 
   @override
-  State<_AvisosDoChat> createState() => _AvisosDoChatState();
+  State<_AvisosDoApp> createState() => _AvisosDoAppState();
 }
 
-class _AvisosDoChatState extends State<_AvisosDoChat> {
+class _AvisosDoAppState extends State<_AvisosDoApp> {
   EstadoDosAvisos? _estado;
   DateTime? _silenciadoAte;
+  Set<TipoDeAviso> _ligados = const {};
   bool _trabalhando = false;
 
   @override
@@ -1334,6 +1335,7 @@ class _AvisosDoChatState extends State<_AvisosDoChat> {
     setState(() {
       _estado = s.estado;
       _silenciadoAte = s.silenciadoAte;
+      _ligados = s.ligados;
     });
   }
 
@@ -1376,7 +1378,7 @@ class _AvisosDoChatState extends State<_AvisosDoChat> {
     if (estado == null) {
       return const _SettingRow(
         icon: Icons.notifications_none_rounded,
-        label: 'Avisos do chat',
+        label: 'Avisos',
         trailing: SizedBox(
           width: 18,
           height: 18,
@@ -1431,8 +1433,9 @@ class _AvisosDoChatState extends State<_AvisosDoChat> {
       case EstadoDosAvisos.podeAtivar:
         miolo
           ..add(explicacao(
-            'Receba um aviso quando alguém escrever no chat, mesmo com o app '
-            'fechado. Você pode desligar depois.',
+            'Receba aviso de mensagem nova, de quando você for escalado e '
+            'do lembrete na véspera do culto — mesmo com o app fechado. '
+            'Depois você escolhe quais quer.',
           ))
           ..add(const SizedBox(height: 10))
           ..add(SizedBox(
@@ -1457,6 +1460,46 @@ class _AvisosDoChatState extends State<_AvisosDoChat> {
             : 'Desligados neste aparelho.'));
         miolo.add(const SizedBox(height: 4));
         if (ligado) {
+          // Um liga-desliga por tipo. São incômodos diferentes: mensagem de
+          // chat chega a toda hora, "você foi escalado" chega raro e importa,
+          // e o lembrete da véspera é o que faz a pessoa não esquecer o
+          // culto. Quem desliga o chat quase nunca quer desligar os outros.
+          for (final tipo in TipoDeAviso.values) {
+            miolo.add(Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      tipo.rotulo,
+                      style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 12.5,
+                          color: isDark
+                              ? AppColors.textPrimaryDark
+                              : AppColors.textPrimaryLight),
+                    ),
+                  ),
+                  Transform.scale(
+                    scale: 0.82,
+                    child: Switch(
+                      value: _ligados.contains(tipo),
+                      activeColor: AppColors.blue,
+                      onChanged: _trabalhando
+                          ? null
+                          : (quer) => _comEspera(
+                                () => AvisosService.ligarTipo(tipo, quer),
+                                deuCerto: quer
+                                    ? '${tipo.rotulo}: ligado.'
+                                    : '${tipo.rotulo}: desligado.',
+                              ),
+                    ),
+                  ),
+                ],
+              ),
+            ));
+          }
+          miolo.add(const SizedBox(height: 6));
           miolo.add(Row(children: [
             Expanded(
               child: OutlinedButton(
@@ -1513,7 +1556,7 @@ class _AvisosDoChatState extends State<_AvisosDoChat> {
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Avisos do chat',
+                'Avisos',
                 style: TextStyle(
                   fontFamily: 'Poppins',
                   fontSize: 14,

@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 309 testes
+flutter test                   # 323 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 228 testes
+cd test_regras && npm install && npm test    # 236 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -35,14 +35,14 @@ de dentro do `firebase-tools` — os dois comandos acima se contradiziam.
 O `test_regras/.npmrc` também não é enfeite: `@firebase/rules-unit-testing@3`
 pede `firebase@^10` e aqui se usa o 13. As versões novas do npm recusam
 instalar por isso, então `npm install` falhava num computador limpo, embora os
-228 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
+236 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
 só com `npm install --legacy-peer-deps`.
 
 O mini-servidor dos avisos tem testes próprios, que não precisam de emulador
 nem de Flutter:
 
 ```bash
-node --test worker/teste/*.mjs               # 37 testes
+node --test worker/teste/*.mjs               # 48 testes
 ```
 
 ## Estado atual
@@ -293,11 +293,10 @@ Nesta ordem, e **nada disso antes de testar o app num iPhone real**:
 
 1. ~~Aprovação do líder~~ — **feito.**
 1. ~~Remover do ministério, devolver acesso e sair sozinho~~ — **feito.**
-2. ~~**Aviso de mensagem nova** no chat~~ — **feito**, por Worker da
-   Cloudflare em vez de Cloud Function (ver "Avisos do chat"). Os outros
-   gatilhos combinados ficam para depois, e agora são pequenos: escalado,
-   lembrete da véspera e "novo pedido de entrada" para o líder são a mesma
-   cifra e o mesmo leque de envio, com outro gatilho.
+2. ~~**Avisos**: mensagem nova, "você foi escalado" e lembrete da
+   véspera~~ — **feito**, por Worker da Cloudflare em vez de Cloud Function
+   (ver "Avisos do chat" e "Avisos da escala"). Falta só "novo pedido de
+   entrada" para o líder, que é o mesmo leque de envio com outro gatilho.
 3. ~~**Rolagem sincronizada no culto**~~ — **feito** (ver "Modo Culto ao
    vivo").
 4. ~~**Reações e "visto por"** no chat~~ — **feito**, com responder citando
@@ -827,6 +826,64 @@ carimbo por mensagem:
 (~15 documentos cada): as leituras e a lista de pessoas — a segunda serve ao
 "visto por" e à lista de quem mencionar. São ~30 leituras por sessão, uma vez.
 
+### Avisos da escala
+
+"Você foi escalado" quando o líder salva a escala, e o lembrete da véspera com
+as músicas — pedindo a confirmação de quem ainda não confirmou. Mesmo Worker,
+mesma cifra, gatilhos diferentes.
+
+- **Quem decide quem é "recém-escalado" é o APP**, que sabe quem estava na
+  lista antes de salvar (`quemEntrouNaEscala`, função pura e testada). O
+  Worker confere que esses ids estão de fato no culto — então uma lista
+  inventada não avisa ninguém que não foi escalado de verdade.
+- **Trocar a função de quem já estava NÃO avisa de novo.** Era o caso mais
+  provável de aviso repetido: o líder abre o diálogo, muda o instrumento de
+  alguém e salva. Avisar quem já estava é o pior tipo de notificação — a que
+  não traz novidade e ensina a pessoa a ignorar as próximas.
+- **`levitasEm` é o carimbo de "a escalação mudou agora"**, e o Worker exige
+  que seja de menos de 2 minutos — a mesma trava do chat. Sem ela, o id de um
+  culto antigo, que todo aprovado lê, reavisaria o ministério a qualquer
+  momento. **A regra do banco exige que o carimbo seja `request.time`**: com a
+  hora do aparelho, um líder com o relógio adiantado faria o carimbo valer por
+  horas.
+- **O lembrete da véspera é um job do GitHub Actions que só acorda o Worker.**
+  Ele não manda notificação: a chave privada do VAPID fica num lugar só. E
+  **não há segredo novo** — o job entra com a conta do robô da faxina e manda
+  o ID token, e o endereço do Worker sai de `avisos_config.dart`, que está no
+  repositório. Segredo compartilhado entre GitHub e Cloudflare seria uma coisa
+  a mais para vazar, girar e esquecer.
+- **Trava de uma vez por dia** (`avisosDaVespera/{yyyy-mm-dd}`): o job pode
+  rodar duas vezes — nova tentativa, disparo à mão — e ninguém merece dois
+  lembretes do mesmo culto.
+- **A hora do culto sai no fuso de Brasília, fixo**, nunca do relógio do
+  Worker: ele acorda em qualquer datacenter do mundo, e um culto de domingo
+  19h apareceria como sábado 22h para metade do ministério. Testado na virada
+  do dia (23h em Brasília é 02h do dia seguinte em UTC).
+- **O lembrete lê as músicas uma vez por música**, não por pessoa: com 5
+  músicas e 8 escalados, ler por pessoa seriam 40 leituras em vez de 5.
+- **Os cultos de amanhã saem de uma CONSULTA por data** (`runQuery` no REST),
+  não da coleção inteira: um ano são ~260 cultos, e listar todos custaria 260
+  leituras por dia para achar um ou dois.
+- **A notificação de culto não se junta com a do chat.** Etiqueta própria por
+  culto: "você foi escalado" não é "mais uma mensagem", e somá-los na mesma
+  contagem esconderia justamente o que importa. O lembrete substitui o "foi
+  escalado" do mesmo culto em vez de empilhar dois. **Medido no Chromium:**
+  duas notificações convivem na tela, e a contagem do chat continua certa.
+- **Tocar no aviso abre O CULTO**, não o Início: um aviso que pede ação e
+  larga a pessoa na tela errada é pior que nenhum aviso. Pelos mesmos dois
+  caminhos do chat (app aberto → recado para a página; fechado →
+  `?abrir=culto&culto=<id>`), porque o app não tem endereço por tela. Culto
+  fora da janela de leitura de 90 dias não está na memória: aí o app para na
+  aba da Escala, que é o lugar certo para procurar.
+- **Cada tipo liga e desliga à parte**, em Perfil: chat, escalado e véspera.
+  São incômodos diferentes — mensagem chega a toda hora, "você foi escalado"
+  chega raro e importa. **CHAVE AUSENTE É LIGADA**, nos dois lados (app e
+  Worker): todo aparelho inscrito antes desta mudança não tem o campo, e se a
+  falta valesse "desligado" o ministério pararia de receber aviso de uma hora
+  para outra sem ninguém ter mexido em nada.
+- O liga-desliga geral continua acima dos tipos, e **a menção continua
+  furando só o silêncio temporário** (ver "Reações, citação e visto por").
+
 ### Quando a tela diz "vazio"
 
 Lista vazia e lista que não carregou são coisas diferentes, e a pessoa lê as
@@ -844,5 +901,5 @@ reinstalar o app essa lista é vazia, então uma falha de leitura teria virado
 
 Busca de música na internet, anexo de imagem no chat, PDF da escala, foto de
 perfil, transformar uma mensagem do chat em decisão da agenda, e aviso de
-escalado / lembrete da véspera / "novo pedido de entrada" (o mecanismo já
-existe; falta o gatilho).
+"novo pedido de entrada" para o líder (o mecanismo já existe; falta o
+gatilho).

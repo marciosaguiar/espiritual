@@ -345,6 +345,13 @@ service cloud.firestore {
       // Cancelar um culto, mudar a equipe ou marcar como editado à mão são
       // campos do líder: o levita só alcança `levitas`, nada mais.
       allow update: if tamanhoRazoavel()
+        // `levitasEm` é o carimbo de "a escalação mudou agora", e é o que o
+        // servidor dos avisos confere antes de mandar "você foi escalado".
+        // Com a hora do aparelho, um líder com o relógio adiantado faria o
+        // carimbo valer por horas — e o id de um culto antigo reavisaria o
+        // ministério a qualquer momento.
+        && (!('levitasEm' in mudou())
+            || request.resource.data.levitasEm == request.time)
         && (
           (ehLider() && texto('serviceType', 60) && texto('observations', 5000))
           || (aprovado() && mudou().hasOnly(['levitas']))
@@ -544,6 +551,22 @@ service cloud.firestore {
         || (aprovado() && resource.data.userId == eu());
     }
 
+    // ── Trava do lembrete da véspera ────────────────────────────────────────
+    // Um documento por dia, escrito pelo robô que dispara o lembrete. Serve a
+    // uma coisa só: o job pode rodar duas vezes (nova tentativa, disparo à
+    // mão) e ninguém merece dois lembretes do mesmo culto.
+    //
+    // Só o líder, porque o robô entra como líder — este projeto não usa chave
+    // de administrador.
+    match /avisosDaVespera/{dia} {
+      // Leitura e escrita em linhas SEPARADAS: `tamanhoRazoavel()` lê
+      // `request.resource`, que não existe numa leitura — juntas, a regra
+      // dava erro e negava o `get` que o próprio robô faz para saber se já
+      // mandou o lembrete de hoje. Foi o teste que pegou.
+      allow read: if ehLider();
+      allow write: if ehLider() && tamanhoRazoavel();
+    }
+
     // ── Até onde cada um leu o chat ─────────────────────────────────────────
     // UM documento por pessoa, não um carimbo por mensagem: marcar cada
     // mensagem como lida por cada pessoa seriam 15 escritas por mensagem num
@@ -603,6 +626,15 @@ service cloud.firestore {
         // Nulo é o normal: só quem tocou em "Silenciar até amanhã" tem data.
         && (request.resource.data.silenciarAte == null
             || request.resource.data.silenciarAte is timestamp)
+        // Cada tipo de aviso se liga à parte. Lista fechada, e só booleano:
+        // uma chave inventada aqui seria um aviso que o app nunca mostra e
+        // ninguém consegue desligar.
+        && (!('tipos' in request.resource.data)
+            || (request.resource.data.tipos is map
+                && request.resource.data.tipos.keys()
+                    .hasOnly(['chat', 'escalado', 'vespera'])
+                && request.resource.data.tipos.values()
+                    .hasOnly([true, false])))
         && texto('userName', 60);
 
       // O dono apaga (sair do app, trocar de aparelho) e o líder também — é

@@ -90,6 +90,31 @@ class ScaleLevita {
   }
 }
 
+/// Quem ENTROU na escala, comparando a lista antiga com a nova.
+///
+/// É o que decide quem recebe "você foi escalado". Avisar quem já estava é o
+/// pior tipo de notificação: a que não traz novidade e ensina a pessoa a
+/// ignorar as próximas.
+///
+/// Função solta, e não método, porque ela compara DUAS listas — a de antes e
+/// a de depois — e nenhuma das duas é "o objeto".
+List<String> quemEntrouNaEscala(
+  List<ScaleLevita> antes,
+  List<ScaleLevita> depois,
+) {
+  final jaEstavam = antes.map((l) => l.userId).toSet();
+  final vistos = <String>{};
+  final novos = <String>[];
+  for (final l in depois) {
+    if (l.userId.isEmpty) continue;
+    if (jaEstavam.contains(l.userId)) continue;
+    // A mesma pessoa duas vezes na lista nova não vira dois avisos.
+    if (!vistos.add(l.userId)) continue;
+    novos.add(l.userId);
+  }
+  return novos;
+}
+
 class ScaleModel {
   final String id;
   final DateTime date;

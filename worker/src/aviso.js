@@ -52,14 +52,86 @@ export function textoDoAviso(mensagem, { mencionou = false } = {}) {
   return { titulo: nome, corpo: `${prefixo}${corpo}` };
 }
 
+/// A data e a hora de um culto, em português e no fuso de Brasília.
+///
+/// O Worker roda em qualquer lugar do mundo, então a hora NÃO pode sair do
+/// relógio dele: um culto de domingo 19h apareceria como sábado 22h para
+/// metade do ministério.
+export function quandoEhOCulto(iso, agoraMs) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const fuso = 'America/Sao_Paulo';
+  const hora = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: fuso, hour: '2-digit', minute: '2-digit',
+  }).format(d);
+
+  // "amanhã" e "hoje" são mais claros que a data, e é o que o lembrete da
+  // véspera precisa dizer.
+  const dia = (x) => new Intl.DateTimeFormat('en-CA', {
+    timeZone: fuso, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(x);
+  const agora = new Date(agoraMs ?? Date.now());
+  const amanha = new Date(agora.getTime() + 86400000);
+  if (dia(d) === dia(agora)) return `hoje às ${hora}`;
+  if (dia(d) === dia(amanha)) return `amanhã às ${hora}`;
+
+  const data = new Intl.DateTimeFormat('pt-BR', {
+    timeZone: fuso, weekday: 'long', day: '2-digit', month: '2-digit',
+  }).format(d);
+  return `${data} às ${hora}`;
+}
+
+/// "Você foi escalado": o aviso que o líder dispara ao salvar a escala.
+export function textoDeEscalado(culto, funcao, agoraMs) {
+  const tipo = (culto?.serviceType ?? '').trim() || 'Culto';
+  const quando = quandoEhOCulto(culto?.date, agoraMs);
+  const onde = funcao ? ` · ${funcao}` : '';
+  return {
+    titulo: 'Você foi escalado',
+    corpo: `${tipo} ${quando}${onde}`.trim(),
+  };
+}
+
+/// O lembrete da véspera, com as músicas — e pedindo a confirmação de quem
+/// ainda não confirmou.
+export function textoDaVespera({ culto, confirmado, musicas = [], agoraMs }) {
+  const tipo = (culto?.serviceType ?? '').trim() || 'Culto';
+  const quando = quandoEhOCulto(culto?.date, agoraMs);
+  const lista = musicas.filter(Boolean).slice(0, 3).join(', ');
+  const resto = musicas.length > 3 ? ` +${musicas.length - 3}` : '';
+
+  const partes = [`${tipo} ${quando}`.trim()];
+  if (lista) partes.push(`🎵 ${lista}${resto}`);
+  // O pedido de confirmação vem por ÚLTIMO de propósito: é a única parte que
+  // pede ação, e no aviso curto do celular o fim é o que fica mais perto do
+  // dedo que vai tocar.
+  if (!confirmado) partes.push('Toque para confirmar sua presença');
+
+  return {
+    titulo: confirmado ? 'Lembrete do culto' : 'Confirme sua presença',
+    corpo: partes.join(' · '),
+  };
+}
+
 /// Este aparelho deve receber o aviso desta mensagem?
 ///
 /// Um "não" aqui não é erro: é alguém que desligou os avisos, pediu silêncio
 /// ou é o próprio autor da mensagem.
-export function deveAvisar(inscricao, autorId, agoraMs, mencionados = []) {
+export function deveAvisar(inscricao, opcoes = {}) {
+  const { autorId, agoraMs, mencionados = [], tipo = 'chat' } = opcoes;
   if (!inscricao) return false;
-  if (inscricao.userId === autorId) return false;
+  if (autorId && inscricao.userId === autorId) return false;
   if (!inscricao.endpoint || !inscricao.p256dh || !inscricao.auth) return false;
+
+  // Cada tipo de aviso se liga à parte: mensagem de chat chega a toda hora,
+  // "você foi escalado" chega raro e importa. CHAVE AUSENTE É LIGADA —
+  // aparelho inscrito antes desta mudança não tem o campo, e se a falta
+  // valesse como "desligado" o ministério pararia de receber aviso de uma
+  // hora para outra, sem ninguém ter mexido em nada.
+  const tipos = inscricao.tipos;
+  if (tipos && typeof tipos === 'object' && tipos[tipo] === false) {
+    return false;
+  }
 
   // AVISOS DESLIGADOS É DESLIGADO, inclusive para menção. Quem desligou fez
   // uma escolha sobre o app todo; furá-la seria o app decidindo por cima da

@@ -110,10 +110,19 @@ self.addEventListener('push', (evento) => {
 
     const titulo = dados.titulo || 'LevitaSync';
     const corpo = dados.corpo || 'Mensagem nova no chat';
+    const abrir = dados.abrir === 'culto' ? 'culto' : 'chat';
+    const cultoId = typeof dados.cultoId === 'string' ? dados.cultoId : '';
 
-    // Quantas já estão na tela sem ninguém ter visto?
+    // Aviso de CULTO não se junta com o do chat: "você foi escalado" e o
+    // lembrete da véspera não são "mais uma mensagem", e somá-los na mesma
+    // contagem esconderia justamente o que importa. Etiqueta por culto, para
+    // o lembrete substituir o "foi escalado" do mesmo culto em vez de
+    // empilhar dois.
+    const etiqueta = abrir === 'culto' ? `levita-culto-${cultoId}` : ETIQUETA;
+
+    // Quantas já estão na tela sem ninguém ter visto? (Só no chat.)
     let quantas = 1;
-    if (!dados.teste) {
+    if (!dados.teste && abrir === 'chat') {
       try {
         const abertas = await self.registration.getNotifications({ tag: ETIQUETA });
         for (const n of abertas) quantas += (n.data && n.data.quantas) || 1;
@@ -126,13 +135,13 @@ self.addEventListener('push', (evento) => {
       quantas > 1 ? `${quantas} mensagens novas` : titulo,
       {
         body: quantas > 1 ? `${titulo}: ${corpo}` : corpo,
-        tag: ETIQUETA,
+        tag: etiqueta,
         // Sem isto, o aviso atualizado trocaria o texto em silêncio e a
         // pessoa não saberia que chegou mais uma.
         renotify: true,
         icon: 'icons/Icon-192.png',
         badge: 'icons/Icon-192.png',
-        data: { quantas, abrir: 'chat' },
+        data: { quantas, abrir, cultoId },
       },
     );
   })());
@@ -140,22 +149,29 @@ self.addEventListener('push', (evento) => {
 
 self.addEventListener('notificationclick', (evento) => {
   evento.notification.close();
+  const dados = evento.notification.data || {};
+  const onde = dados.abrir === 'culto' ? 'culto' : 'chat';
+  const cultoId = typeof dados.cultoId === 'string' ? dados.cultoId : '';
+
   evento.waitUntil((async () => {
     const abertos = await self.clients.matchAll({
       type: 'window', includeUncontrolled: true,
     });
-    // App aberto: foca e PEDE a troca de aba. Não dá para navegar até o
-    // Chat — o app não tem endereço por tela (ver `setUrlStrategy(null)`).
+    // App aberto: foca e PEDE a tela. Não dá para navegar até ela — o app
+    // não tem endereço por tela (ver `setUrlStrategy(null)`).
     for (const cliente of abertos) {
       if (cliente.url.startsWith(self.registration.scope)) {
         await cliente.focus();
-        cliente.postMessage({ tipo: 'ABRIR_CHAT' });
+        cliente.postMessage({ tipo: 'ABRIR', onde: onde, cultoId: cultoId });
         return;
       }
     }
     // App fechado: abre com a marca no endereço, que o `avisos.js` lê e
     // apaga assim que o Flutter sobe.
-    await self.clients.openWindow(`${self.registration.scope}?abrir=chat`);
+    const marca = onde === 'culto' && cultoId
+      ? `?abrir=culto&culto=${encodeURIComponent(cultoId)}`
+      : '?abrir=chat';
+    await self.clients.openWindow(`${self.registration.scope}${marca}`);
   })());
 });
 

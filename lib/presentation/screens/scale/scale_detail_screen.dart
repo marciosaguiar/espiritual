@@ -9,6 +9,7 @@ import '../../../data/models/scale_model.dart';
 import '../../../data/models/song_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/auth_service.dart';
+import '../../../data/services/avisos_service.dart';
 import '../../widgets/common/abrir_link.dart';
 import '../../widgets/common/glass.dart';
 import '../songs/song_detail_screen.dart';
@@ -486,8 +487,17 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
         );
       }).toList();
 
+      // Comparado ANTES de salvar, porque depois a lista nova já é a lista.
+      final recemEscalados = quemEntrouNaEscala(_scale.levitas, levitas);
+
       final provider = context.read<ScaleProvider>();
       final error = await provider.setLevitas(_scale.id, levitas);
+
+      if (error == null && recemEscalados.isNotEmpty) {
+        // Depois de salvo, e sem esperar: a escala já está no banco, e o
+        // aviso é para quem está com o app fechado.
+        AvisosService.avisarEscalados(_scale.id, recemEscalados);
+      }
 
       if (!mounted) return;
       if (error == null) {

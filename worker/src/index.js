@@ -22,10 +22,13 @@
 //
 // Nenhuma delas aceita nada sem o ID token do Firebase verificado.
 
-import { conferirToken, lerDoc, lerColecao, apagarDoc } from './firebase.js';
+import {
+  conferirToken, lerDoc, lerColecao, apagarDoc, consultarPorData, gravarDoc,
+} from './firebase.js';
 import { importarChaveVapid, enviarAviso } from './push.js';
 import {
-  textoDoAviso, deveAvisar, dentroDoLimite, JANELA_DO_AVISO_MS,
+  textoDoAviso, textoDeEscalado, textoDaVespera, deveAvisar, dentroDoLimite,
+  JANELA_DO_AVISO_MS,
 } from './aviso.js';
 
 const FUNCOES_APROVADAS = ['levita', 'admin'];
@@ -80,7 +83,11 @@ async function quemPediu(pedido, env) {
   if (!cadastro || !FUNCOES_APROVADAS.includes(cadastro.role)) {
     return { erro: 'Sua entrada ainda não foi aprovada por um líder.', status: 403 };
   }
-  return { uid: dono.uid, nome: cadastro.name ?? '' };
+  return {
+    uid: dono.uid,
+    nome: cadastro.name ?? '',
+    lider: cadastro.role === 'admin',
+  };
 }
 
 /// Manda o aviso para uma lista de inscrições e limpa as que morreram.
@@ -185,8 +192,11 @@ export default {
         : [];
 
       const todas = await lerColecao(env, 'pushSubs');
-      const alvos = todas.filter(
-        (i) => deveAvisar(i, dono.uid, undefined, mencionados));
+      const alvos = todas.filter((i) => deveAvisar(i, {
+        autorId: dono.uid,
+        mencionados,
+        tipo: 'chat',
+      }));
       if (!alvos.length) {
         return json({ enviados: 0, mortos: 0, falharam: 0, ninguem: true },
           200, cabecalhos);
@@ -214,6 +224,163 @@ export default {
         }),
         { enviados: 0, mortos: 0, falharam: 0 });
       return json({ ...resultado, mencionados: chamados.length },
+        200, cabecalhos);
+    }
+
+    // ── "Você foi escalado" ───────────────────────────────────────────────
+    //
+    // Quem decide quem é recém-escalado é o APP, que sabe quem estava na
+    // lista antes. Aqui se confere que esses ids estão DE FATO no culto e que
+    // a escalação mudou agora — então uma lista inventada não avisa ninguém
+    // que não foi escalado de verdade.
+    if (url.pathname === '/escalado') {
+      if (!dono.lider) {
+        return json({ erro: 'Só o líder escala.' }, 403, cabecalhos);
+      }
+      let corpo = {};
+      try { corpo = await pedido.json(); } catch (_) { /* corpo vazio */ }
+      const cultoId = String(corpo.cultoId ?? '');
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(cultoId)) {
+        return json({ erro: 'cultoId inválido' }, 400, cabecalhos);
+      }
+      const novos = Array.isArray(corpo.novos)
+        ? corpo.novos.filter((x) => typeof x === 'string').slice(0, 50)
+        : [];
+      if (!novos.length) return json({ enviados: 0 }, 200, cabecalhos);
+
+      const culto = await lerDoc(env, `scales/${cultoId}`);
+      if (!culto) return json({ erro: 'culto não existe' }, 404, cabecalhos);
+
+      const mexido = Date.parse(culto.levitasEm ?? '');
+      if (Number.isNaN(mexido) || Date.now() - mexido > JANELA_DO_AVISO_MS) {
+        // A mesma trava do chat: sem ela, o id de um culto antigo — que todo
+        // aprovado lê — reavisaria o ministério a qualquer momento.
+        return json({ erro: 'a escala não mudou agora' }, 409, cabecalhos);
+      }
+
+      // Só quem está na escala, e com a função que ficou lá.
+      const escalados = Array.isArray(culto.levitas) ? culto.levitas : [];
+      const funcaoDe = new Map();
+      for (const l of escalados) {
+        if (l && typeof l.userId === 'string') {
+          funcaoDe.set(l.userId, l.instrument ?? '');
+        }
+      }
+      const alvosId = novos.filter((id) => funcaoDe.has(id));
+      if (!alvosId.length) {
+        return json({ enviados: 0, foraDaEscala: true }, 200, cabecalhos);
+      }
+
+      const todas = await lerColecao(env, 'pushSubs');
+      const vapid = await chaveVapid(env);
+      let total = { enviados: 0, mortos: 0, falharam: 0 };
+
+      // Um envio por pessoa, porque o texto traz a FUNÇÃO dela naquele culto.
+      for (const id of alvosId) {
+        const seus = todas.filter((i) => i.userId === id &&
+          deveAvisar(i, { autorId: dono.uid, tipo: 'escalado' }));
+        if (!seus.length) continue;
+        const r = await espalhar(env, seus, {
+          ...textoDeEscalado(culto, funcaoDe.get(id)),
+          abrir: 'culto',
+          cultoId,
+        }, vapid);
+        total = {
+          enviados: total.enviados + r.enviados,
+          mortos: total.mortos + r.mortos,
+          falharam: total.falharam + r.falharam,
+        };
+      }
+      return json(total, 200, cabecalhos);
+    }
+
+    // ── Lembrete da véspera ───────────────────────────────────────────────
+    //
+    // Chamado uma vez por dia pelo job do GitHub Actions, que entra como o
+    // robô líder — a mesma conta da faxina do chat. Não há segredo novo: o
+    // robô prova quem é com o ID token do Firebase, como qualquer pessoa.
+    if (url.pathname === '/vespera') {
+      if (!dono.lider) {
+        return json({ erro: 'Só o líder dispara o lembrete.' }, 403, cabecalhos);
+      }
+      let corpo = {};
+      try { corpo = await pedido.json(); } catch (_) { /* corpo vazio */ }
+
+      // De 00:00 a 00:00 do dia seguinte, em Brasília (UTC-3). O fuso é fixo
+      // de propósito: a igreja é uma só, e "amanhã" é o amanhã dela — não o
+      // do datacenter onde o Worker acordou.
+      const agora = new Date();
+      const amanhaBr = new Date(agora.getTime() + 86400000);
+      const dia = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'America/Sao_Paulo',
+        year: 'numeric', month: '2-digit', day: '2-digit',
+      }).format(amanhaBr);
+      const de = new Date(`${dia}T00:00:00-03:00`);
+      const ate = new Date(de.getTime() + 86400000);
+
+      // Trava de uma vez por dia: o job pode rodar duas vezes (nova
+      // tentativa, disparo à mão) e ninguém merece dois lembretes.
+      const trava = `avisosDaVespera/${dia}`;
+      if (corpo.forcar !== true) {
+        const jaFoi = await lerDoc(env, trava);
+        if (jaFoi) {
+          return json({ jaEnviado: true, dia }, 200, cabecalhos);
+        }
+      }
+
+      const cultos = await consultarPorData(env, 'scales', 'date', de, ate);
+      const doDia = cultos.filter((c) => c.canceled !== true);
+      if (!doDia.length) {
+        await gravarDoc(env, trava, { dia, cultos: 0, em: new Date() });
+        return json({ dia, cultos: 0, enviados: 0 }, 200, cabecalhos);
+      }
+
+      const todas = await lerColecao(env, 'pushSubs');
+      const vapid = await chaveVapid(env);
+      // Nome das músicas, lido uma vez por música em todos os cultos do dia.
+      const nomes = new Map();
+      for (const culto of doDia) {
+        for (const ref of (Array.isArray(culto.songs) ? culto.songs : [])) {
+          const id = ref && ref.songId;
+          if (typeof id === 'string' && id && !nomes.has(id)) {
+            const musica = await lerDoc(env, `songs/${id}`);
+            nomes.set(id, musica?.name ?? '');
+          }
+        }
+      }
+
+      let total = { enviados: 0, mortos: 0, falharam: 0 };
+      let pessoas = 0;
+      for (const culto of doDia) {
+        const musicas = (Array.isArray(culto.songs) ? culto.songs : [])
+          .map((ref) => nomes.get(ref && ref.songId) || '')
+          .filter(Boolean);
+        for (const l of (Array.isArray(culto.levitas) ? culto.levitas : [])) {
+          if (!l || typeof l.userId !== 'string') continue;
+          const seus = todas.filter((i) => i.userId === l.userId &&
+            deveAvisar(i, { tipo: 'vespera' }));
+          if (!seus.length) continue;
+          pessoas++;
+          const r = await espalhar(env, seus, {
+            ...textoDaVespera({
+              culto,
+              confirmado: l.confirmed === true,
+              musicas,
+            }),
+            abrir: 'culto',
+            cultoId: culto._id,
+          }, vapid);
+          total = {
+            enviados: total.enviados + r.enviados,
+            mortos: total.mortos + r.mortos,
+            falharam: total.falharam + r.falharam,
+          };
+        }
+      }
+
+      await gravarDoc(env, trava,
+        { dia, cultos: doDia.length, pessoas, em: new Date() });
+      return json({ dia, cultos: doDia.length, pessoas, ...total },
         200, cabecalhos);
     }
 

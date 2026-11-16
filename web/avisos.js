@@ -155,32 +155,42 @@
   //   aberto  → o service worker manda uma mensagem para a página;
   //   fechado → o worker abre o app com ?abrir=chat, e isto lê o endereço.
 
-  var pedidoDeChat = false;
+  var pedido = null;
 
   try {
-    if (new URL(window.location.href).searchParams.get('abrir') === 'chat') {
-      pedidoDeChat = true;
+    var params = new URL(window.location.href).searchParams;
+    var onde = params.get('abrir');
+    if (onde === 'chat' || onde === 'culto') {
+      pedido = { onde: onde, cultoId: params.get('culto') || '' };
       // Limpa o endereço para o pedido não se repetir se a pessoa
       // recarregar, e para o app instalado não guardar isto como sua página.
       if (window.history && window.history.replaceState) {
         window.history.replaceState(null, '', window.location.pathname);
       }
     }
-  } catch (e) { /* endereço estranho: segue sem abrir o chat */ }
+  } catch (e) { /* endereço estranho: segue sem abrir nada */ }
 
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.addEventListener('message', function (evento) {
-      if (evento.data && evento.data.tipo === 'ABRIR_CHAT') pedidoDeChat = true;
+      var d = evento.data || {};
+      if (d.tipo === 'ABRIR') {
+        pedido = { onde: d.onde || 'chat', cultoId: d.cultoId || '' };
+      }
+      // O nome antigo, de antes do aviso de culto: um app aberto numa versão
+      // velha do service worker ainda manda este.
+      if (d.tipo === 'ABRIR_CHAT') pedido = { onde: 'chat', cultoId: '' };
     });
   }
 
   /// Alguém tocou numa notificação? Responde uma vez só.
   ///
-  /// O Flutter pergunta de vez em quando. Consumir na leitura é o que impede
-  /// o app de pular para o Chat toda vez que a pessoa troca de aba depois.
-  window.levitaPediuAbrirChat = function () {
-    var r = pedidoDeChat;
-    pedidoDeChat = false;
+  /// Devolve `{"onde":"chat"}` ou `{"onde":"culto","cultoId":"..."}`, ou
+  /// vazio. O Flutter pergunta de vez em quando; consumir na leitura é o que
+  /// impede o app de pular para a mesma tela toda vez que a pessoa sai dela.
+  window.levitaPediuAbrir = function () {
+    if (!pedido) return '';
+    var r = JSON.stringify(pedido);
+    pedido = null;
     return r;
   };
 })();

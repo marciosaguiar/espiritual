@@ -18,6 +18,7 @@ import '../widgets/common/glass.dart';
 import 'home/home_screen.dart';
 import 'songs/songs_screen.dart';
 import 'scale/scale_screen.dart';
+import 'scale/scale_detail_screen.dart';
 import 'chat/chat_screen.dart';
 import 'profile/profile_screen.dart';
 
@@ -38,8 +39,9 @@ class _MainScreenState extends State<MainScreen> {
   /// Vigia se alguém tocou numa notificação do chat.
   Timer? _olhoNoAviso;
 
-  /// Índice da aba Chat, para a notificação saber onde abrir.
+  /// Índices das abas que a notificação precisa alcançar.
   static const int _abaChat = 3;
+  static const int _abaEscala = 2;
 
   /// Índice da aba Perfil, usado por quem precisa levar a pessoa até lá.
   static const int _abaPerfil = 4;
@@ -74,8 +76,33 @@ class _MainScreenState extends State<MainScreen> {
   void _vigiarAvisos() {
     _olhoNoAviso = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
-      if (pediuAbrirChat() && _currentIndex != _abaChat) _goToTab(_abaChat);
+      final pedido = pediuAbrir();
+      if (pedido == null) return;
+      if (pedido.onde == 'chat') {
+        if (_currentIndex != _abaChat) _goToTab(_abaChat);
+        return;
+      }
+      _abrirCulto(pedido.cultoId);
     });
+  }
+
+  /// Leva ao culto que o aviso mandou abrir.
+  ///
+  /// É o que faz "Confirme sua presença" terminar na tela onde se confirma —
+  /// um aviso que pede ação e larga a pessoa na tela de Início seria pior que
+  /// nenhum aviso.
+  void _abrirCulto(String cultoId) {
+    _goToTab(_abaEscala);
+    if (cultoId.isEmpty) return;
+    final cultos = context.read<ScaleProvider>().scales;
+    final culto = cultos.where((c) => c.id == cultoId).firstOrNull;
+    // Culto fora da janela de leitura (60 dias atrás / 90 à frente) não está
+    // na memória: a aba da Escala já é o lugar certo para procurar.
+    if (culto == null) return;
+    Navigator.push(
+      context,
+      GlassPageRoute(builder: (_) => ScaleDetailScreen(scale: culto)),
+    );
   }
 
   void _goToTab(int index) {

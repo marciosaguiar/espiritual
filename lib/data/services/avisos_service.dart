@@ -8,6 +8,26 @@ import '../../core/platform/avisos.dart';
 import 'auth_service.dart';
 import 'local_storage_service.dart';
 
+/// Os tipos de aviso que o app manda.
+///
+/// Cada um se liga e desliga à parte, porque são incômodos diferentes:
+/// mensagem de chat chega a toda hora, "você foi escalado" chega raro e
+/// importa, e o lembrete da véspera chega uma vez e é o que faz a pessoa não
+/// esquecer o culto. Quem desliga o chat raramente quer desligar os outros
+/// dois.
+enum TipoDeAviso {
+  chat('chat', 'Mensagem nova no chat'),
+  escalado('escalado', 'Quando eu for escalado'),
+  vespera('vespera', 'Lembrete na véspera do culto');
+
+  const TipoDeAviso(this.chave, this.rotulo);
+
+  /// Como é gravado no banco. Nome fixo, independente do nome do enum: o
+  /// banco não pode quebrar porque alguém renomeou uma constante no Dart.
+  final String chave;
+  final String rotulo;
+}
+
 /// O estado dos avisos NESTE aparelho, como a tela precisa ver.
 enum EstadoDosAvisos {
   /// O endereço do Worker e a chave ainda são os de exemplo.
@@ -64,12 +84,25 @@ class AvisosService {
   ///
   /// `instalado` vem de `install.dart` e separa os dois casos do iPhone: sem
   /// o app na tela de início não há o que ativar, só o que instalar.
-  static Future<({EstadoDosAvisos estado, DateTime? silenciadoAte})> situacao({
+  static Future<
+      ({
+        EstadoDosAvisos estado,
+        DateTime? silenciadoAte,
+        Set<TipoDeAviso> ligados,
+      })> situacao({
     required bool instalado,
   }) async {
-    ({EstadoDosAvisos estado, DateTime? silenciadoAte}) so(
-            EstadoDosAvisos e) =>
-        (estado: e, silenciadoAte: null);
+    ({
+      EstadoDosAvisos estado,
+      DateTime? silenciadoAte,
+      Set<TipoDeAviso> ligados,
+    }) so(EstadoDosAvisos e) => (
+          estado: e,
+          silenciadoAte: null,
+          // Sem registro, todos ligados: é o padrão de quem acabou de
+          // ativar, e é o que o Worker assume na falta do campo.
+          ligados: TipoDeAviso.values.toSet(),
+        );
 
     if (!AvisosConfig.configurado) return so(EstadoDosAvisos.naoConfigurado);
     if (!avisosSuportados) {
@@ -97,6 +130,7 @@ class AvisosService {
       // pessoa achar que o botão travou.
       silenciadoAte:
           (ate != null && ate.isAfter(DateTime.now())) ? ate : null,
+      ligados: tiposLigados(registro['tipos']),
     );
   }
 
@@ -167,6 +201,36 @@ class AvisosService {
       inscricao: r.inscricao!,
       ligados: true,
     );
+  }
+
+  /// Quais tipos estão ligados, a partir do mapa gravado.
+  ///
+  /// CHAVE AUSENTE É LIGADA. Isto importa de verdade: todo aparelho inscrito
+  /// antes desta mudança não tem o campo, e se a falta significasse
+  /// "desligado" o ministério inteiro pararia de receber aviso de uma hora
+  /// para outra, sem ninguém ter mexido em nada.
+  static Set<TipoDeAviso> tiposLigados(Object? bruto) {
+    final mapa = bruto is Map ? bruto : const {};
+    return TipoDeAviso.values
+        .where((t) => mapa[t.chave] != false)
+        .toSet();
+  }
+
+  /// Liga ou desliga UM tipo de aviso neste aparelho.
+  static Future<String?> ligarTipo(TipoDeAviso tipo, bool ligado) async {
+    try {
+      await _db.collection(_colecao).doc(LocalStorageService.idDoAparelho)
+          .update({
+        // Caminho de ponto: grava só a própria chave, e não o mapa inteiro —
+        // senão um aparelho antigo, sem o campo, apagaria o que outro
+        // aparelho da mesma pessoa tivesse configurado.
+        'tipos.${tipo.chave}': ligado,
+        'atualizadoEm': Timestamp.now(),
+      });
+      return null;
+    } on FirebaseException catch (e) {
+      return 'Não consegui salvar: ${e.message ?? e.code}';
+    }
   }
 
   /// Liga ou desliga sem desinscrever.
@@ -288,6 +352,32 @@ class AvisosService {
       }
     } catch (e) {
       debugPrint('[avisos] não avisei: $e');
+    }
+  }
+
+  /// Pede ao Worker que avise quem ACABOU de ser escalado num culto.
+  ///
+  /// Como o aviso do chat: não devolve erro. A escala já está salva, e um
+  /// balão vermelho dizendo "não avisei" depois de o líder ter salvo com
+  /// sucesso assustaria sem nada a fazer a respeito.
+  ///
+  /// Quem decide quem é "recém-escalado" é o APP, que sabe quem estava na
+  /// lista antes; o Worker confere que esses ids estão de fato no culto e que
+  /// a escalação mudou agora — então uma lista inventada não avisa ninguém
+  /// que não foi escalado de verdade.
+  static Future<void> avisarEscalados(
+      String cultoId, List<String> novos) async {
+    if (!AvisosConfig.configurado || novos.isEmpty) return;
+    try {
+      final r = await _chamar('/escalado', {
+        'cultoId': cultoId,
+        'novos': novos,
+      });
+      if (r.status < 200 || r.status >= 300) {
+        debugPrint('[avisos] escalado: ${r.status} ${r.corpo}');
+      }
+    } catch (e) {
+      debugPrint('[avisos] não avisei os escalados: $e');
     }
   }
 

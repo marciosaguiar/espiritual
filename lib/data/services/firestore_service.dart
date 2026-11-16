@@ -485,6 +485,10 @@ class FirestoreService {
       return {
         'levitas': merged,
         if (scale.faltando.isNotEmpty) 'faltando': <String>[],
+        // Quando a escalação mudou. É o que o Worker confere antes de avisar
+        // "você foi escalado": sem isto, alguém com o id de um culto antigo
+        // poderia fazer o servidor reavisar o ministério a qualquer momento.
+        'levitasEm': FieldValue.serverTimestamp(),
         ..._marcaEdicaoManual(scale),
       };
     });

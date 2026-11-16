@@ -21,8 +21,8 @@ external JSFunction? get _inscrever;
 @JS('levitaDesinscrever')
 external JSFunction? get _desinscrever;
 
-@JS('levitaPediuAbrirChat')
-external JSFunction? get _pediuChat;
+@JS('levitaPediuAbrir')
+external JSFunction? get _pediuAbrir;
 
 @JS('levitaChamarWorker')
 external JSFunction? get _chamarWorker;
@@ -127,10 +127,18 @@ Future<({int status, String corpo})> chamarWorker(
 }
 
 /// Alguém tocou numa notificação? Responde uma vez só.
-bool pediuAbrirChat() {
+///
+/// `onde` é 'chat' ou 'culto'; com 'culto' vem o id. Nulo quando ninguém
+/// tocou em nada.
+({String onde, String cultoId})? pediuAbrir() {
   try {
-    return _pediuChat?.callAsFunction(null).dartify() == true;
+    final bruto = _pediuAbrir?.callAsFunction(null).dartify();
+    if (bruto is! String || bruto.isEmpty) return null;
+    final m = jsonDecode(bruto) as Map<String, dynamic>;
+    final onde = (m['onde'] as String?) ?? '';
+    if (onde != 'chat' && onde != 'culto') return null;
+    return (onde: onde, cultoId: (m['cultoId'] as String?) ?? '');
   } catch (_) {
-    return false;
+    return null;
   }
 }

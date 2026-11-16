@@ -207,6 +207,97 @@ export async function lerColecao(env, colecao, maximo = 2000) {
   return saida;
 }
 
+/// Os documentos de uma coleção num intervalo de DATA.
+///
+/// Consulta de verdade (`runQuery`), não a coleção inteira: os cultos de um
+/// ano são ~260 documentos, e listar todos para achar os de amanhã custaria
+/// 260 leituras por dia. Com o filtro, custa o número de cultos de amanhã —
+/// um ou dois.
+export async function consultarPorData(env, colecao, campo, de, ate) {
+  const token = await tokenDoRobo(env);
+  const r = await fetch(`${raiz(env)}:runQuery`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: colecao }],
+        where: {
+          compositeFilter: {
+            op: 'AND',
+            filters: [
+              {
+                fieldFilter: {
+                  field: { fieldPath: campo },
+                  op: 'GREATER_THAN_OR_EQUAL',
+                  value: { timestampValue: de.toISOString() },
+                },
+              },
+              {
+                fieldFilter: {
+                  field: { fieldPath: campo },
+                  op: 'LESS_THAN',
+                  value: { timestampValue: ate.toISOString() },
+                },
+              },
+            ],
+          },
+        },
+        orderBy: [{ field: { fieldPath: campo }, direction: 'ASCENDING' }],
+      },
+    }),
+  });
+  if (!r.ok) {
+    throw new Error(`Firestore ${r.status} ao consultar ${colecao}`);
+  }
+  const linhas = await r.json();
+  // A resposta vem como uma lista de resultados, e as linhas sem `document`
+  // são só o aviso de "nada aqui" — jogar fora é o normal.
+  return (Array.isArray(linhas) ? linhas : [])
+    .filter((l) => l && l.document)
+    .map((l) => simplificar(l.document));
+}
+
+/// Grava um documento (merge). Usado na trava do lembrete da véspera.
+export async function gravarDoc(env, caminho, campos) {
+  const token = await tokenDoRobo(env);
+  const mascara = Object.keys(campos)
+    .map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`)
+    .join('&');
+  const r = await fetch(`${raiz(env)}/${caminho}?${mascara}`, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ fields: paraFirestore(campos) }),
+  });
+  if (!r.ok) {
+    throw new Error(`Firestore ${r.status} ao gravar ${caminho}`);
+  }
+  return true;
+}
+
+/// O contrário de `simplificar`: embrulha os valores no formato do REST.
+function paraFirestore(campos) {
+  const saida = {};
+  for (const [k, v] of Object.entries(campos)) {
+    if (typeof v === 'string') saida[k] = { stringValue: v };
+    else if (typeof v === 'boolean') saida[k] = { booleanValue: v };
+    else if (typeof v === 'number') {
+      saida[k] = Number.isInteger(v)
+        ? { integerValue: String(v) }
+        : { doubleValue: v };
+    } else if (v instanceof Date) {
+      saida[k] = { timestampValue: v.toISOString() };
+    } else if (v == null) saida[k] = { nullValue: null };
+    else saida[k] = { stringValue: String(v) };
+  }
+  return saida;
+}
+
 /// Apaga um documento. Usado nas inscrições que o serviço de push recusou.
 export async function apagarDoc(env, caminho) {
   const token = await tokenDoRobo(env);

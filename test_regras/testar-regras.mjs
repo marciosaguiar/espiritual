@@ -1201,6 +1201,69 @@ await teste('não dá para apagar inscrição alheia', async () => {
   await assertFails(deleteDoc(doc(levita(), 'pushSubs', 'aparelho-do-lider')));
 });
 
+console.log('\n── avisos por tipo, e o lembrete da véspera ──');
+
+await teste('cada tipo de aviso se liga à parte', async () => {
+  await assertSucceeds(setDoc(doc(levita(), 'pushSubs', 'aparelho-ana'),
+    inscricao(LEVITA, { tipos: { chat: false, escalado: true } })));
+  await assertSucceeds(updateDoc(doc(levita(), 'pushSubs', 'aparelho-ana'),
+    { 'tipos.vespera': false }));
+});
+
+await teste('tipo inventado é recusado', () =>
+  // Seria um aviso que o app nunca mostra e ninguém consegue desligar.
+  assertFails(setDoc(doc(levita(), 'pushSubs', 'aparelho-ana'),
+    inscricao(LEVITA, { tipos: { chat: true, sino: true } }))));
+
+await teste('valor que não é booleano é recusado', () =>
+  assertFails(setDoc(doc(levita(), 'pushSubs', 'aparelho-ana'),
+    inscricao(LEVITA, { tipos: { chat: 'sim' } }))));
+
+await teste('inscrição SEM o campo tipos continua valendo', () =>
+  // Todo aparelho inscrito antes desta mudança não tem o campo.
+  assertSucceeds(setDoc(doc(levita(), 'pushSubs', 'aparelho-ana'),
+    inscricao(LEVITA))));
+
+await teste('o carimbo da escalação tem de ser a hora do servidor', async () => {
+  // Com a hora do aparelho, um líder com o relógio adiantado faria o carimbo
+  // valer por horas — e o id de um culto antigo reavisaria o ministério.
+  await assertFails(updateDoc(doc(lider(), 'scales', 'c1'), {
+    levitas: [], levitasEm: new Date(2030, 0, 1),
+  }));
+  await assertSucceeds(updateDoc(doc(lider(), 'scales', 'c1'), {
+    levitas: [], levitasEm: serverTimestamp(),
+  }));
+});
+
+await teste('confirmar presença não precisa do carimbo', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await updateDoc(doc(ctx.firestore(), 'scales', 'c1'), {
+      levitas: [{ userId: LEVITA, userName: 'Ana', instrument: 'vocalist',
+                  confirmed: false }],
+    });
+  });
+  await assertSucceeds(updateDoc(doc(levita(), 'scales', 'c1'), {
+    levitas: [{ userId: LEVITA, userName: 'Ana', instrument: 'vocalist',
+                confirmed: true }],
+  }));
+});
+
+await teste('levita não carimba a escalação de carona', () =>
+  assertFails(updateDoc(doc(levita(), 'scales', 'c1'), {
+    levitas: [], levitasEm: serverTimestamp(),
+  })));
+
+await teste('só o líder (e o robô) mexem na trava da véspera', async () => {
+  await assertSucceeds(setDoc(doc(lider(), 'avisosDaVespera', '2026-11-22'), {
+    dia: '2026-11-22', cultos: 2, pessoas: 7, em: new Date(),
+  }));
+  await assertSucceeds(getDoc(doc(lider(), 'avisosDaVespera', '2026-11-22')));
+  await assertFails(setDoc(doc(levita(), 'avisosDaVespera', '2026-11-23'), {
+    dia: '2026-11-23', cultos: 0, pessoas: 0, em: new Date(),
+  }));
+  await assertFails(getDoc(doc(novato(), 'avisosDaVespera', '2026-11-22')));
+});
+
 console.log('\n── coleção desconhecida ──');
 await teste('coleção sem regra fica bloqueada', () =>
   assertFails(setDoc(doc(lider(), 'qualquerCoisa', 'x'), { a: 1 })));

@@ -1,0 +1,53 @@
+name: Lembrete da véspera
+
+# Avisa quem está escalado para o culto de amanhã, e pede a confirmação de
+# quem ainda não confirmou.
+#
+# Este job não manda notificação: ele é o despertador. Quem manda é o Worker
+# da Cloudflare, onde mora a chave privada do VAPID — ver os comentários em
+# ferramentas/lembrete-vespera.mjs.
+#
+# Não há segredo novo: o robô é o mesmo líder da faxina do chat, e o endereço
+# do Worker sai do próprio repositório.
+#
+# Enquanto os segredos não existirem, a rotina roda, diz que não está
+# configurada e termina em verde.
+
+on:
+  schedule:
+    # 20:37 UTC = 17:37 em Brasília. Fim da tarde, como combinado: dá tempo de
+    # a pessoa ver antes da noite, e ainda de avisar o líder se não puder ir.
+    #
+    # O minuto não é 00 de propósito: quase todo cron do mundo cai no topo da
+    # hora, e o GitHub atrasa esses.
+    - cron: '37 20 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lembrete-vespera
+  cancel-in-progress: false
+
+jobs:
+  lembrar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Avisar quem está escalado para amanhã
+        working-directory: ferramentas
+        env:
+          # Público: já está no app, que é servido num site público.
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          # A conta do robô: um líder comum, não chave de administrador. É a
+          # MESMA da faxina do chat.
+          FAXINA_EMAIL: ${{ secrets.FAXINA_EMAIL }}
+          FAXINA_SENHA: ${{ secrets.FAXINA_SENHA }}
+        # Sem dependências: só `fetch`, que o Node 20 já tem.
+        run: node lembrete-vespera.mjs

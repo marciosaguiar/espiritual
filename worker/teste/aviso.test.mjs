@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  textoDoAviso, deveAvisar, dentroDoLimite, esquecerLimites,
+  textoDoAviso, textoDeEscalado, textoDaVespera, quandoEhOCulto,
+  deveAvisar, dentroDoLimite, esquecerLimites,
 } from '../src/aviso.js';
 import { conferirToken, limparCaches, simplificar } from '../src/firebase.js';
 
@@ -55,31 +56,35 @@ const inscricao = (extra = {}) => ({
 });
 
 test('o autor não recebe aviso da própria mensagem', () => {
-  assert.equal(deveAvisar(inscricao({ userId: 'u1' }), 'u1'), false);
-  assert.equal(deveAvisar(inscricao({ userId: 'u2' }), 'u1'), true);
+  assert.equal(
+    deveAvisar(inscricao({ userId: 'u1' }), { autorId: 'u1' }), false);
+  assert.equal(
+    deveAvisar(inscricao({ userId: 'u2' }), { autorId: 'u1' }), true);
 });
 
 test('avisos desligados: não recebe', () => {
-  assert.equal(deveAvisar(inscricao({ avisosLigados: false }), 'u1'), false);
-  assert.equal(deveAvisar(inscricao({ avisosLigados: true }), 'u1'), true);
+  assert.equal(
+    deveAvisar(inscricao({ avisosLigados: false }), { autorId: 'u1' }), false);
+  assert.equal(
+    deveAvisar(inscricao({ avisosLigados: true }), { autorId: 'u1' }), true);
   // Campo faltando é inscrição antiga, de antes do liga-desliga: recebe.
-  assert.equal(deveAvisar(inscricao(), 'u1'), true);
+  assert.equal(deveAvisar(inscricao(), { autorId: 'u1' }), true);
 });
 
 test('silêncio vale até a hora marcada, e não depois', () => {
   const agora = Date.UTC(2026, 10, 16, 22, 0, 0);
   const amanha = new Date(Date.UTC(2026, 10, 17, 10, 0, 0)).toISOString();
   const ontem = new Date(Date.UTC(2026, 10, 15, 10, 0, 0)).toISOString();
-  assert.equal(deveAvisar(inscricao({ silenciarAte: amanha }), 'u1', agora), false);
-  assert.equal(deveAvisar(inscricao({ silenciarAte: ontem }), 'u1', agora), true);
+  assert.equal(deveAvisar(inscricao({ silenciarAte: amanha }), { autorId: 'u1', agoraMs: agora }), false);
+  assert.equal(deveAvisar(inscricao({ silenciarAte: ontem }), { autorId: 'u1', agoraMs: agora }), true);
   // Data estragada não pode virar silêncio para sempre.
-  assert.equal(deveAvisar(inscricao({ silenciarAte: 'qualquer coisa' }), 'u1', agora), true);
+  assert.equal(deveAvisar(inscricao({ silenciarAte: 'qualquer coisa' }), { autorId: 'u1', agoraMs: agora }), true);
 });
 
 test('inscrição sem as chaves é descartada antes de tentar cifrar', () => {
-  assert.equal(deveAvisar(inscricao({ p256dh: '' }), 'u1'), false);
-  assert.equal(deveAvisar(inscricao({ endpoint: undefined }), 'u1'), false);
-  assert.equal(deveAvisar(null, 'u1'), false);
+  assert.equal(deveAvisar(inscricao, { autorId: 'u1' }), false);
+  assert.equal(deveAvisar(inscricao, { autorId: 'u1' }), false);
+  assert.equal(deveAvisar(null, { autorId: 'u1' }), false);
 });
 
 // ── Menção: fura o silêncio, mas não o desligado ────────────────────────────
@@ -90,8 +95,8 @@ test('mencionado recebe mesmo com o chat silenciado até amanhã', () => {
   const agora = Date.UTC(2026, 10, 16, 22, 0, 0);
   const amanha = new Date(Date.UTC(2026, 10, 17, 10, 0, 0)).toISOString();
   const i = inscricao({ silenciarAte: amanha });
-  assert.equal(deveAvisar(i, 'u1', agora), false);
-  assert.equal(deveAvisar(i, 'u1', agora, ['u2']), true);
+  assert.equal(deveAvisar(i, { autorId: 'u1', agoraMs: agora }), false);
+  assert.equal(deveAvisar(i, { autorId: 'u1', agoraMs: agora, mencionados: ['u2'] }), true);
 });
 
 test('avisos DESLIGADOS continuam desligados, mesmo mencionada', () => {
@@ -99,25 +104,25 @@ test('avisos DESLIGADOS continuam desligados, mesmo mencionada', () => {
   // decidindo por cima da pessoa, e ela não teria como se proteger a não ser
   // desinstalando.
   const i = inscricao({ avisosLigados: false });
-  assert.equal(deveAvisar(i, 'u1', undefined, ['u2']), false);
+  assert.equal(deveAvisar(i, { autorId: 'u1', mencionados: ['u2'] }), false);
 });
 
 test('menção de outra pessoa não libera o meu silêncio', () => {
   const agora = Date.UTC(2026, 10, 16, 22, 0, 0);
   const amanha = new Date(Date.UTC(2026, 10, 17, 10, 0, 0)).toISOString();
   const i = inscricao({ silenciarAte: amanha });
-  assert.equal(deveAvisar(i, 'u1', agora, ['u9']), false);
+  assert.equal(deveAvisar(i, { autorId: 'u1', agoraMs: agora, mencionados: ['u9'] }), false);
 });
 
 test('o autor não recebe nem se mencionar a si mesmo', () => {
   const i = inscricao({ userId: 'u1' });
-  assert.equal(deveAvisar(i, 'u1', undefined, ['u1']), false);
+  assert.equal(deveAvisar(i, { autorId: 'u1', mencionados: ['u1'] }), false);
 });
 
 test('lista de menções estragada não derruba o envio', () => {
   const i = inscricao();
   for (const ruim of [null, 'u2', 42, {}]) {
-    assert.equal(deveAvisar(i, 'u1', undefined, ruim), true);
+    assert.equal(deveAvisar(i, { autorId: 'u1', mencionados: ruim }), true);
   }
 });
 
@@ -309,4 +314,121 @@ test('documento vazio não explode', () => {
   // conferiu se o documento existe, e um throw aqui derrubaria o leque todo.
   assert.deepEqual(simplificar(null), { _id: '' });
   assert.deepEqual(simplificar({ name: 'a/b/c' }), { _id: 'c' });
+});
+
+// ── Tipos de aviso, "você foi escalado" e o lembrete da véspera ─────────────
+
+test('cada tipo se liga à parte', () => {
+  const so = (tipos) => inscricao({ tipos });
+  assert.equal(deveAvisar(so({ chat: false }), { tipo: 'chat' }), false);
+  assert.equal(deveAvisar(so({ chat: false }), { tipo: 'escalado' }), true);
+  assert.equal(deveAvisar(so({ escalado: false }), { tipo: 'escalado' }), false);
+  assert.equal(deveAvisar(so({ vespera: false }), { tipo: 'vespera' }), false);
+  assert.equal(deveAvisar(so({ vespera: false }), { tipo: 'chat' }), true);
+});
+
+test('CHAVE AUSENTE É LIGADA — aparelho inscrito antes da mudança', () => {
+  // Se a falta valesse como "desligado", o ministério inteiro pararia de
+  // receber aviso de uma hora para outra, sem ninguém ter mexido em nada.
+  assert.equal(deveAvisar(inscricao(), { tipo: 'escalado' }), true);
+  assert.equal(deveAvisar(inscricao({ tipos: {} }), { tipo: 'vespera' }), true);
+  for (const lixo of [null, 'chat', 42, []]) {
+    assert.equal(deveAvisar(inscricao({ tipos: lixo }), { tipo: 'chat' }), true,
+      `tipos: ${JSON.stringify(lixo)}`);
+  }
+});
+
+test('o liga-desliga geral continua acima dos tipos', () => {
+  assert.equal(
+    deveAvisar(inscricao({ avisosLigados: false, tipos: { escalado: true } }),
+      { tipo: 'escalado' }),
+    false);
+});
+
+test('a hora do culto sai no fuso de Brasília, não do servidor', () => {
+  // O Worker roda em qualquer lugar do mundo. Um culto de domingo 19h em
+  // Brasília apareceria como sábado 22h para metade do ministério se a hora
+  // saísse do relógio dele.
+  const domingo19h = '2026-11-22T22:00:00.000Z'; // 19h em Brasília (UTC-3)
+  // Quarta-feira: longe o bastante para não cair em "amanhã".
+  const quarta = Date.parse('2026-11-18T15:00:00.000Z');
+  assert.equal(quandoEhOCulto(domingo19h, quarta), 'domingo, 22/11 às 19:00');
+
+  // E a virada do dia pelo fuso: 23h em Brasília é 02h do dia seguinte em
+  // UTC. Sem o fuso fixo, este culto apareceria no dia errado.
+  const sabado23h = '2026-11-22T02:00:00.000Z';
+  assert.equal(quandoEhOCulto(sabado23h, quarta), 'sábado, 21/11 às 23:00');
+});
+
+test('"amanhã" e "hoje" em vez da data', () => {
+  const domingo8h = '2026-11-22T11:00:00.000Z'; // 8h em Brasília
+  const sabadoTarde = Date.parse('2026-11-21T20:00:00.000Z');
+  assert.equal(quandoEhOCulto(domingo8h, sabadoTarde), 'amanhã às 08:00');
+  const domingoCedo = Date.parse('2026-11-22T09:00:00.000Z');
+  assert.equal(quandoEhOCulto(domingo8h, domingoCedo), 'hoje às 08:00');
+});
+
+test('data estragada não derruba o aviso', () => {
+  assert.equal(quandoEhOCulto('nunca'), '');
+  assert.equal(quandoEhOCulto(undefined), '');
+});
+
+test('"você foi escalado" diz o culto, quando, e a função', () => {
+  const culto = { serviceType: 'Culto', date: '2026-11-22T22:00:00.000Z' };
+  const agora = Date.parse('2026-11-21T15:00:00.000Z');
+  assert.deepEqual(textoDeEscalado(culto, 'teclado', agora), {
+    titulo: 'Você foi escalado',
+    corpo: 'Culto amanhã às 19:00 · teclado',
+  });
+  // Sem função, não sobra um " · " solto no fim.
+  assert.equal(textoDeEscalado(culto, '', agora).corpo, 'Culto amanhã às 19:00');
+});
+
+test('o lembrete da véspera pede confirmação de quem não confirmou', () => {
+  const culto = { serviceType: 'Culto', date: '2026-11-22T22:00:00.000Z' };
+  const agora = Date.parse('2026-11-21T20:00:00.000Z');
+  const naoConfirmou = textoDaVespera({
+    culto, confirmado: false, musicas: ['Bondade de Deus'], agoraMs: agora,
+  });
+  assert.equal(naoConfirmou.titulo, 'Confirme sua presença');
+  assert.match(naoConfirmou.corpo, /Toque para confirmar/);
+  // E o pedido vem no FIM: é a parte que pede ação.
+  assert.ok(naoConfirmou.corpo.endsWith('Toque para confirmar sua presença'));
+
+  const confirmou = textoDaVespera({
+    culto, confirmado: true, musicas: ['Bondade de Deus'], agoraMs: agora,
+  });
+  assert.equal(confirmou.titulo, 'Lembrete do culto');
+  assert.doesNotMatch(confirmou.corpo, /confirmar/);
+});
+
+test('o lembrete traz as músicas, e corta a lista longa', () => {
+  const culto = { serviceType: 'Culto', date: '2026-11-22T22:00:00.000Z' };
+  const agora = Date.parse('2026-11-21T20:00:00.000Z');
+  const r = textoDaVespera({
+    culto,
+    confirmado: true,
+    musicas: ['Uma', 'Duas', 'Três', 'Quatro', 'Cinco'],
+    agoraMs: agora,
+  });
+  assert.match(r.corpo, /🎵 Uma, Duas, Três \+2/);
+});
+
+test('culto sem música não deixa um "🎵" vazio', () => {
+  const r = textoDaVespera({
+    culto: { serviceType: 'Ensaio', date: '2026-11-22T22:00:00.000Z' },
+    confirmado: true,
+    musicas: [],
+    agoraMs: Date.parse('2026-11-21T20:00:00.000Z'),
+  });
+  assert.doesNotMatch(r.corpo, /🎵/);
+  assert.match(r.corpo, /^Ensaio amanhã/);
+});
+
+test('culto sem tipo escrito vira "Culto"', () => {
+  const agora = Date.parse('2026-11-21T20:00:00.000Z');
+  assert.match(
+    textoDaVespera({ culto: { date: '2026-11-22T22:00:00.000Z' },
+      confirmado: true, agoraMs: agora }).corpo,
+    /^Culto /);
 });
