@@ -281,6 +281,24 @@ await teste('levita confirma presença (só o campo levitas)', () =>
   assertSucceeds(updateDoc(doc(levita(), 'scales', 'c1'), {
     levitas: [{ userId: LEVITA, userName: 'Ana', instrument: 'vocalist', confirmed: true }],
   })));
+// ── observações do culto ──
+// O "levar para o culto" do chat acrescenta uma linha aqui. O teto de 5000
+// existe na regra, e o app o espelha (`ScaleModel.limiteDasObservacoes`) para
+// poder avisar ANTES de tentar — estourar aqui devolveria erro de permissão,
+// que não explica nada a ninguém.
+await teste('líder acrescenta observação ao culto', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'scales', 'c1'), {
+    observations: '— Marcio, 16/11: entra sem bateria',
+  })));
+await teste('observação acima do teto é recusada', () =>
+  assertFails(updateDoc(doc(lider(), 'scales', 'c1'), {
+    observations: 'x'.repeat(5001),
+  })));
+await teste('levita NÃO escreve observação do culto', () =>
+  assertFails(updateDoc(doc(levita(), 'scales', 'c1'), {
+    observations: 'eu mandei',
+  })));
+
 await teste('levita NÃO muda o repertório do culto', () =>
   assertFails(updateDoc(doc(levita(), 'scales', 'c1'), { songs: [{ songId: 's1' }] })));
 await teste('levita NÃO remarca o culto', () =>

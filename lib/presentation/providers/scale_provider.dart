@@ -241,6 +241,20 @@ class ScaleProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Leva um recado do chat para as observações do culto. Nulo se deu certo.
+  Future<String?> acrescentarObservacao(
+      String scaleId, String texto, String autor) async {
+    final r = await FirestoreService.acrescentarObservacao(scaleId, texto,
+        autor: autor);
+    if (!r.success) return r.error;
+    _applyLocally(scaleId, (scale) {
+      final novo = ScaleModel.comObservacaoNova(scale.observations, texto,
+          autor: autor, quando: DateTime.now());
+      return novo == null ? scale : scale.copyWith(observations: novo);
+    });
+    return null;
+  }
+
   /// Replaces the service's repertoire. Null on success, else the message.
   Future<String?> setSongs(String scaleId, List<ScaleSong> songs) async {
     final result = await FirestoreService.setScaleSongs(scaleId, songs);

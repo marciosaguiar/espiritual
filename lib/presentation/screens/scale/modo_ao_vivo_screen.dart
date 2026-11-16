@@ -427,10 +427,63 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
                       children: [
                         _barraDeCima(),
                         if (_avisoDaTela.isNotEmpty) _faixaDeAviso(),
+                        if (widget.culto.observations.trim().isNotEmpty)
+                          _observacoes(),
                         Expanded(child: _leitura()),
                         _barraDeBaixo(),
                       ],
                     ),
+        ),
+      ),
+    );
+  }
+
+  /// O combinado do culto, aqui também — RECOLHIDO por padrão.
+  ///
+  /// É a tela que fica aberta durante o culto, com a cifra: as observações
+  /// precisam estar ao alcance ("entra sem bateria"), mas não podem roubar
+  /// linhas da música. Então é uma faixa de uma linha que se abre no toque.
+  ///
+  /// Começa recolhida porque quem abre o Modo ao vivo já leu o combinado na
+  /// tela do culto; aqui é consulta, não leitura.
+  bool _obsAberta = false;
+
+  Widget _observacoes() {
+    final texto = widget.culto.observations.trim();
+    return GestureDetector(
+      onTap: () => setState(() => _obsAberta = !_obsAberta),
+      child: Container(
+        width: double.infinity,
+        color: const Color(0xFF12161C),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Icon(Icons.event_note_outlined,
+                size: 17, color: Colors.white54),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                texto,
+                // Uma linha quando recolhida: a música é o que importa aqui.
+                maxLines: _obsAberta ? 12 : 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 14,
+                  height: 1.45,
+                  color: Colors.white70,
+                ),
+              ),
+            ),
+            Icon(
+              _obsAberta
+                  ? Icons.keyboard_arrow_up_rounded
+                  : Icons.keyboard_arrow_down_rounded,
+              size: 20,
+              color: Colors.white38,
+            ),
+          ],
         ),
       ),
     );

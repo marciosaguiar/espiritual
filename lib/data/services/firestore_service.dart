@@ -511,6 +511,37 @@ class FirestoreService {
     });
   }
 
+  /// Acrescenta uma linha às observações do culto.
+  ///
+  /// Vai por transação como todo o resto, e por um motivo a mais: aqui o
+  /// valor novo DEPENDE do que já está gravado. Ler na tela, juntar e gravar
+  /// apagaria a observação que outro líder escreveu nesse meio tempo — e é
+  /// justamente o caso de dois líderes montando o mesmo culto.
+  static Future<({bool success, String? error})> acrescentarObservacao(
+    String scaleId,
+    String texto, {
+    required String autor,
+  }) async {
+    return _updateScaleField(scaleId, 'levar o recado para o culto', (scale) {
+      final novo = ScaleModel.comObservacaoNova(
+        scale.observations,
+        texto,
+        autor: autor,
+        quando: DateTime.now(),
+      );
+      if (novo == null) {
+        // Estourou o teto, ou o texto era só espaço. A regra do banco
+        // recusaria com erro de permissão, que não explica nada a ninguém.
+        throw FirebaseException(
+          plugin: 'levitasync',
+          code: 'nao-cabe',
+          message: 'as observações deste culto já estão cheias',
+        );
+      }
+      return {'observations': novo, ..._marcaEdicaoManual(scale)};
+    });
+  }
+
   /// Shared shape of every change above: read the service inside the
   /// transaction, work out the fields to write from what is actually stored,
   /// and write only those.

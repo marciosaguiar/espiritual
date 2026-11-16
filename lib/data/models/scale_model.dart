@@ -241,6 +241,43 @@ class ScaleModel {
     return '$ok de $total confirmaram';
   }
 
+  /// O teto das observações, igual ao da regra do banco
+  /// (`texto('observations', 5000)`).
+  ///
+  /// Está aqui, e não só na regra, porque quem acrescenta uma linha precisa
+  /// saber ANTES de tentar: estourar o limite no banco devolveria um erro de
+  /// permissão, que não explica nada a ninguém.
+  static const int limiteDasObservacoes = 5000;
+
+  /// As observações com uma linha nova no fim, assinada e datada.
+  ///
+  /// Nulo quando não cabe — a tela diz isso em vez de deixar a gravação
+  /// falhar com erro de permissão.
+  ///
+  /// A assinatura e a data vão no TEXTO, não em campos: observação é
+  /// combinação lida por gente ("entra sem bateria", "a Ana leva o cabo"), e
+  /// um histórico estruturado aqui seria uma coleção nova para resolver algo
+  /// que uma linha resolve.
+  static String? comObservacaoNova(
+    String atual,
+    String texto, {
+    required String autor,
+    required DateTime quando,
+  }) {
+    final limpo = texto.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (limpo.isEmpty) return null;
+
+    final dia = '${quando.day.toString().padLeft(2, '0')}'
+        '/${quando.month.toString().padLeft(2, '0')}';
+    final quem = autor.trim().isEmpty ? 'Alguém' : autor.trim();
+    final linha = '— $quem, $dia: $limpo';
+
+    final base = atual.trimRight();
+    final novo = base.isEmpty ? linha : '$base\n$linha';
+    if (novo.length > limiteDasObservacoes) return null;
+    return novo;
+  }
+
   /// Já está tudo confirmado? Serve para a tela escolher a cor.
   bool get todosConfirmaram =>
       levitas.isNotEmpty && confirmedCount == levitas.length;

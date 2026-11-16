@@ -600,6 +600,15 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                 ),
               ),
 
+            // AS OBSERVAÇÕES FICAM NO TOPO, e para todo mundo.
+            //
+            // Elas estavam no fim da tela, embaixo da lista de escalados,
+            // onde quem abria o culto no domingo não chegava. É o combinado
+            // do culto — "entra sem bateria", "a Ana leva o cabo" —, e um
+            // combinado que ninguém lê é um combinado que não existe.
+            if (_scale.observations.trim().isNotEmpty)
+              _ObservacoesDoCulto(texto: _scale.observations, isDark: isDark),
+
             const SizedBox(height: 20),
 
             // O botão do Modo Culto ao vivo. Fica acima das músicas, porque é
@@ -807,9 +816,15 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
 
             const SizedBox(height: 20),
 
-            // Observations
+            // O EDITOR é só do líder: para os outros o campo aparecia como
+            // uma caixa de texto que não aceitava texto, o que parece defeito.
+            // Quem não é líder lê as observações no topo da tela.
+            if (auth.isAdmin) ...[
+            // "Observações do culto", e não "Observações": a música tem as
+            // dela ("Anotações da música"), e as duas apareciam com o mesmo
+            // nome em telas diferentes.
             Text(
-              'Observações',
+              'Observações do culto',
               style: TextStyle(
                 fontFamily: 'Poppins',
                 fontSize: 15,
@@ -851,7 +866,6 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                 ),
               ),
             ),
-            if (auth.isAdmin) ...[
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
@@ -864,7 +878,7 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                           child: CircularProgressIndicator(
                               strokeWidth: 2, color: Colors.white))
                       : const Icon(Icons.save_rounded, size: 18),
-                  label: const Text('Salvar Observações'),
+                  label: const Text('Salvar observações do culto'),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.blue,
                     padding: const EdgeInsets.symmetric(vertical: 14),
@@ -874,6 +888,64 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// O combinado do culto, para quem só precisa LER.
+///
+/// Fica no topo da tela e sem campo de texto: o editor é do líder, e um campo
+/// que não aceita o que a pessoa digita parece defeito.
+class _ObservacoesDoCulto extends StatelessWidget {
+  final String texto;
+  final bool isDark;
+
+  const _ObservacoesDoCulto({required this.texto, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.blue.withValues(alpha: isDark ? 0.14 : 0.07),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.blue.withValues(alpha: 0.25)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(Icons.event_note_outlined, size: 16,
+                  color: AppColors.blue),
+              SizedBox(width: 8),
+              Text(
+                'Observações do culto',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.blue,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text(
+            texto.trim(),
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 13,
+              height: 1.5,
+              color: isDark
+                  ? AppColors.textPrimaryDark
+                  : AppColors.textPrimaryLight,
+            ),
+          ),
+        ],
       ),
     );
   }

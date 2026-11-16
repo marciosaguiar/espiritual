@@ -735,6 +735,19 @@ class _ChatScreenState extends State<ChatScreen> {
                   _mostrarQuemViu(msg);
                 },
               ),
+            // Levar para o culto é do LÍDER: a observação do culto é o
+            // combinado oficial, e todo mundo escalado lê. Chat é conversa;
+            // observação é decisão.
+            if (auth.isAdmin && msg.text.trim().isNotEmpty)
+              ListTile(
+                leading: const Icon(Icons.event_note_outlined),
+                title: const Text('Levar para o culto',
+                    style: TextStyle(fontFamily: 'Poppins', fontSize: 14)),
+                onTap: () {
+                  Navigator.pop(folha);
+                  _levarParaOCulto(msg);
+                },
+              ),
             if (auth.isAdmin)
               ListTile(
                 leading: Icon(msg.fixada
@@ -751,6 +764,108 @@ class _ChatScreenState extends State<ChatScreen> {
             const SizedBox(height: 6),
           ],
         ),
+      ),
+    );
+  }
+
+  /// "Levar para o culto": o recado vira uma linha nas observações.
+  ///
+  /// POR QUE ISTO EXISTE
+  ///
+  /// O combinado nascia no chat — "domingo entra sem bateria", "a Ana leva o
+  /// cabo" — e morria lá: em 30 dias a mensagem some, e quem abrir o culto no
+  /// domingo não vê nada. Copiar à mão era o que o líder fazia, quando
+  /// lembrava.
+  ///
+  /// O culto PADRÃO é o próximo, porque é dele que a conversa quase sempre
+  /// fala. Mas a escolha existe: combinação de ensaio e de culto grande vêm
+  /// na mesma conversa.
+  Future<void> _levarParaOCulto(MessageModel msg) async {
+    final cultos = context.read<ScaleProvider>().getUpcomingScales(limit: 8);
+    if (cultos.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não há culto marcado para levar o '
+            'recado.')),
+      );
+      return;
+    }
+
+    final escolhido = await showModalBottomSheet<ScaleModel>(
+      context: context,
+      builder: (folha) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(16, 16, 16, 4),
+              child: Text(
+                'Levar para qual culto?',
+                style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Text(
+                'O recado entra nas observações do culto, com o seu nome e a '
+                'data. Todo mundo escalado vê.',
+                style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 12,
+                    height: 1.4,
+                    color: AppColors.textSecondaryLight),
+              ),
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: cultos.length,
+                itemBuilder: (_, i) {
+                  final c = cultos[i];
+                  return ListTile(
+                    leading: Icon(
+                      i == 0 ? Icons.star_rounded : Icons.event_outlined,
+                      color: i == 0 ? AppColors.blue : null,
+                      size: 20,
+                    ),
+                    title: Text(
+                      '${c.serviceType} · '
+                      '${DateFormat("EEEE, d/MM 'às' HH:mm", 'pt_BR')
+                          .format(c.date)}',
+                      style: const TextStyle(
+                          fontFamily: 'Poppins', fontSize: 13),
+                    ),
+                    subtitle: i == 0
+                        ? const Text('o próximo',
+                            style: TextStyle(
+                                fontFamily: 'Poppins', fontSize: 11))
+                        : null,
+                    onTap: () => Navigator.pop(folha, c),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
+    if (escolhido == null || !mounted) return;
+
+    final eu = context.read<AuthProvider>().user;
+    final erro = await context.read<ScaleProvider>().acrescentarObservacao(
+          escolhido.id,
+          msg.text,
+          eu?.name ?? '',
+        );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(erro ?? 'Recado levado para as observações do culto.'),
+        backgroundColor: erro == null ? AppColors.success : AppColors.red,
       ),
     );
   }
