@@ -273,6 +273,12 @@ await teste('levita NÃO remarca o culto', () =>
   assertFails(updateDoc(doc(levita(), 'scales', 'c1'), { date: new Date() })));
 await teste('levita NÃO apaga o culto', () =>
   assertFails(deleteDoc(doc(levita(), 'scales', 'c1'))));
+// Apagar culto não existe mais nem para o líder: cancelar é um campo. Sem
+// esta linha, a regra poderia voltar a `allow delete: if ehLider()` e nada
+// acusaria — o app já não tem botão, mas a API aceita quem falar direto com
+// ela.
+await teste('NEM O LÍDER apaga o culto', () =>
+  assertFails(deleteDoc(doc(lider(), 'scales', 'c1'))));
 await teste('líder muda o repertório', () =>
   assertSucceeds(updateDoc(doc(lider(), 'scales', 'c1'), { songs: [{ songId: 's1' }] })));
 await teste('líder cria culto', () =>

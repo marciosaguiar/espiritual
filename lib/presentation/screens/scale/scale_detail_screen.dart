@@ -146,37 +146,6 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
     );
   }
 
-  Future<void> _excluir() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Excluir Culto'),
-        content: const Text('Deseja excluir este culto?'),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancelar')),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Excluir',
-                style: TextStyle(color: AppColors.red)),
-          ),
-        ],
-      ),
-    );
-    if (confirm != true || !mounted) return;
-
-    final error = await context.read<ScaleProvider>().deleteScale(_scale.id);
-    if (!mounted) return;
-    if (error == null) {
-      Navigator.pop(context);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error), backgroundColor: AppColors.red),
-      );
-    }
-  }
-
   Future<void> _saveObservations() async {
     setState(() => _isSaving = true);
     final texto = _observationsCtrl.text;
@@ -532,8 +501,6 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
               onSelected: (v) async {
                 if (v == 'cancel') {
                   await _cancelarOuReativar(!_scale.canceled);
-                } else if (v == 'delete') {
-                  await _excluir();
                 }
               },
               itemBuilder: (_) => [
@@ -562,22 +529,18 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                     ],
                   ),
                 ),
-                // Um culto da agenda fixa não oferece excluir: o id vem da
-                // data e hora, então ele voltaria sozinho na próxima abertura.
-                // Para esses, cancelar é a única saída que funciona.
-                if (!_scale.daAgendaFixa)
-                  const PopupMenuItem(
-                    value: 'delete',
-                    child: Row(
-                      children: [
-                        Icon(Icons.delete_outline,
-                            color: AppColors.red, size: 18),
-                        SizedBox(width: 8),
-                        Text('Excluir culto',
-                            style: TextStyle(color: AppColors.red)),
-                      ],
-                    ),
-                  ),
+                // EXCLUIR CULTO NÃO EXISTE MAIS, nem para o culto avulso.
+                //
+                // Vale a mesma regra das músicas: cancelar é um campo, nunca
+                // exclusão. Um culto apagado levava junto quem já tinha
+                // confirmado presença, o repertório montado e o registro de
+                // quem tocou ali — e no culto da agenda fixa nem funcionava,
+                // porque o gerador o recriava na abertura seguinte. O menu
+                // tinha duas opções vermelhas quase idênticas, e a que não
+                // tinha volta era a de baixo.
+                //
+                // Apagar de verdade, se um dia for mesmo preciso, só pelo
+                // console do Firebase.
               ],
             ),
         ],

@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 323 testes
+flutter test                   # 329 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 236 testes
+cd test_regras && npm install && npm test    # 237 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -52,8 +52,15 @@ configuração, não código:
 
 1. Criar o projeto no Firebase (Firestore em produção + Authentication por
    e-mail/senha + plano Blaze com orçamento).
-2. `flutterfire configure` — preenche `lib/firebase_options.dart` e os
-   arquivos nativos, que hoje têm valores de exemplo.
+2. `flutterfire configure` — já rodado: `lib/firebase_options.dart` tem as
+   chaves de verdade para **web e Android**, que são as duas plataformas em
+   que o app roda (no iPhone é o PWA instalado, não aplicativo nativo). iOS e
+   macOS **não estão configurados de propósito**: tinham blocos de exemplo
+   apontando para um projeto `levitasync` que nunca existiu, e compilar
+   nativo com eles não dava erro nenhum — o app abria e toda chamada ao banco
+   falhava. Agora os dois lançam um erro que diz o que fazer. O
+   `ios/Runner/GoogleService-Info.plist` continua sendo o de exemplo, e o
+   erro avisa disso também.
 3. `firebase deploy --only firestore:rules`.
 4. Depois de criar a primeira conta pelo app, **promover-se a líder no
    console**: Firestore → `users` → seu documento → `role`: `pendente` →
@@ -112,9 +119,15 @@ como não confirmados.
   duplicata: dois líderes abrindo o app ao mesmo tempo calculam o mesmo id e
   escrevem o mesmo documento, cada um dentro de uma transação que confere se
   ele já existe.
-- **Cancelar é um campo, nunca exclusão.** Apagar um culto gerado não
-  adianta: o gerador o recriaria na próxima abertura. Por isso o menu do
-  culto oferece "Cancelar" e só mostra "Excluir" para culto avulso.
+- **Cancelar é um campo, nunca exclusão — e agora não há exclusão nenhuma.**
+  Apagar um culto gerado não adiantava: o gerador o recriaria na próxima
+  abertura. O menu ainda oferecia "Excluir" para o culto avulso, e era a
+  segunda opção vermelha a dois dedos de "Cancelar": a de baixo levava junto
+  quem já tinha confirmado presença, o repertório montado e o registro de
+  quem tocou ali. "Excluir culto" deixou de existir, como deixou de existir
+  para as músicas, e **`allow delete: if false` em `scales`** vale para
+  todos, líder incluído — esconder o botão não bastaria, porque a API aceita
+  quem falar direto com ela. Apagar de verdade, só pelo console do Firebase.
 - **`manuallyEdited`** marca o culto que o líder ajustou à mão. "Aplicar aos
   próximos cultos?", ao salvar uma equipe, pula esses e preserva quem já
   confirmou. Confirmar presença NÃO marca — é ação do levita, não edição.
@@ -192,10 +205,50 @@ preservado, volta possível. O nome antigo `recusado` ainda é lido (vira
 são ~260 por ano, e antes o app lia a coleção inteira a cada abertura. O
 efeito colateral: meses muito antigos aparecem vazios no calendário.
 
+### O aparelho guarda o que já leu
+
+`main()` liga o cache persistente do Firestore (`Settings(persistenceEnabled:
+true)`), que na web é o IndexedDB. Antes, cada abertura do app relia do
+servidor tudo o que as quatro escutas de `main_screen` alcançam — e **leitura
+é a cota que aperta** no plano grátis: 50 mil por dia.
+
+- **Medido no emulador**, com o banco do tamanho do ministério (40 músicas,
+  109 cultos dentro da janela, 50 mensagens, 3 equipes): a segunda abertura
+  baixava **202 documentos** do servidor e passou a baixar **zero**. Os 202
+  vêm do disco, e as quatro consultas recebem do servidor uma resposta vazia,
+  só confirmando que nada mudou. Para enxergar essa resposta foi preciso
+  `includeMetadataChanges: true` — sem isso o SDK engole o aviso de que o
+  servidor respondeu, e a medição não distingue "entregou zero" de "não
+  respondeu".
+- **O IndexedDB é indexado pelo nome do app.** A primeira versão da medição
+  dava um nome sorteado a cada carga e concluía que o cache não servia para
+  nada: cada abertura abria um banco novo e vazio.
+- **O limite é a SEGUNDA ABA**: o cache é de aba única. Medido: a segunda aba
+  não consegue a trava, avisa no console (`failed-precondition`) e **cai
+  sozinha para o cache em memória** — que é o que o app fazia antes. Ninguém
+  fica com tela vazia. No iPhone o app instalado é uma janela só, então o
+  caso é o do computador com duas abas.
+- O app também passou a **abrir com o repertório e a escala na tela sem
+  internet nenhuma**, e sem esperar a rede para desenhar.
+- **O prazo é 30 minutos, e está na conta do Firebase.** Sem cache, *toda*
+  reconexão de escuta é cobrada como consulta nova, sem prazo nenhum — era
+  por isso que abrir o app duas vezes seguidas custava duas vezes. Com cache,
+  só volta a custar a escuta que ficou desligada **mais de 30 minutos**.
+  Então a primeira abertura do dia continua custando os 202; o que ficou de
+  graça é o vaivém — sair do app e voltar, conferir a escala entre uma
+  mensagem e outra —, que é o que mais acontece num domingo.
+
 ## Regras do jogo neste projeto
 
-- **Texto na tela em português; comentários no código em inglês.** Comentário
-  explica *por que*, não *o quê* — de preferência o defeito que ele evita.
+- **Tudo em português: a tela e os comentários do código.** Era "comentário
+  em inglês", e a regra perdeu: quem lê este código é o dono do app, que não
+  lê inglês, e um comentário que ele não entende não explica nada a ninguém.
+  Os comentários antigos, em inglês, **ficam como estão** — traduzir centenas
+  de linhas encheria o histórico de mudanças sem conserto nenhum junto, e é
+  justamente nesse barulho que um erro de verdade passa despercebido. Vale
+  para o que se escreve de agora em diante.
+  Comentário explica *por que*, não *o quê* — de preferência o defeito que
+  ele evita.
 - **Toda escrita devolve o motivo do erro**, não um `bool`. Os providers
   devolvem `null` quando dá certo e a mensagem quando falha; a tela mostra.
   `catch (_)` só é aceitável em leitura com valor padrão seguro.
@@ -308,6 +361,33 @@ Nesta ordem, e **nada disso antes de testar o app num iPhone real**:
 Quando as Functions existirem, mover a função do usuário para um *custom
 claim* no token: as regras passam a ler `request.auth.token.role` e somem as
 leituras extras que hoje cada `get()` dentro da regra cobra.
+
+## Próximos passos combinados (fase 3)
+
+Saíram da auditoria de 16/11/2026, nesta ordem, uma entrega pequena de cada
+vez:
+
+1. ~~Cache persistente do Firestore~~ — **feito** (ver "O aparelho guarda o
+   que já leu"). Medido: 202 documentos na segunda abertura → zero.
+2. ~~"Excluir culto" deixa de existir~~ — **feito**, com `allow delete: if
+   false` em `scales`.
+3. **Recuperar senha**, por dois caminhos: e-mail opcional no cadastro e no
+   Perfil, com o "esqueci minha senha" do próprio Firebase; e, para quem não
+   tem e-mail — que é a maioria —, um pedido que chega ao líder, que define
+   uma senha provisória, trocada na primeira entrada.
+4. **"Novo pedido de entrada"** avisa o líder (o mecanismo já existe; falta o
+   gatilho).
+5. **O Worker gera os cultos da agenda fixa**, para não depender de um líder
+   abrir o app.
+6. **"3 de 7 confirmaram"**, com quem falta, no Início e na lista de cultos —
+   e avisar o líder do culto quando alguém confirma ou desmarca.
+7. **"Minhas próximas músicas"** no Início, com o tom do culto, a função e o
+   botão do YouTube.
+8. **Tom, se tem cifra e "tocada pela última vez em"** na hora de escolher as
+   músicas do culto.
+9. **Mensagem do chat vira observação do culto**, num toque (líder).
+10. **Um cartão de culto só no Início**; "Arquivadas" com nome que um leigo
+    entenda; deixar claro no menu o que tem volta e o que não tem.
 
 ### Tirar música do repertório (nunca apagar)
 

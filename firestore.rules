@@ -357,7 +357,17 @@ service cloud.firestore {
           || (aprovado() && mudou().hasOnly(['levitas']))
         );
 
-      allow delete: if ehLider();
+      // NINGUÉM apaga culto pelo app, nem o líder.
+      //
+      // Vale a mesma regra das músicas: cancelar é um campo (`canceled`),
+      // nunca exclusão. O culto apagado levava junto quem já tinha confirmado
+      // presença, o repertório montado e o registro de quem tocou ali — e no
+      // culto da agenda fixa nem resolvia, porque o id vem da data e hora e o
+      // gerador o recriava na abertura seguinte.
+      //
+      // Apagar de verdade, se um dia for mesmo preciso, só pelo console do
+      // Firebase — onde não se chega por engano no meio de um culto.
+      allow delete: if false;
     }
 
     // ── Modo Culto ao vivo ──────────────────────────────────────────────────

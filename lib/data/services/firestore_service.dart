@@ -353,17 +353,8 @@ class FirestoreService {
     }
   }
 
-  static Future<({bool success, String? error})> deleteScale(
-      String scaleId) async {
-    try {
-      await _db.collection(_scales).doc(scaleId).delete();
-      return (success: true, error: null);
-    } on FirebaseException catch (e) {
-      return (success: false, error: _describe(e, 'apagar o culto'));
-    } catch (e) {
-      return (success: false, error: 'Não foi possível apagar o culto: $e');
-    }
-  }
+  // Apagar culto não existe, de propósito — nem aqui, nem na regra do banco.
+  // Ver `ScaleProvider`, onde o motivo está escrito por extenso.
 
   /// Confirms or cancels one person's presence, inside a transaction.
   ///

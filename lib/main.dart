@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:flutter_web_plugins/url_strategy.dart';
@@ -20,21 +21,26 @@ import 'presentation/screens/auth/pending_screen.dart';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/widgets/common/glass.dart';
 
-/// Whether [DefaultFirebaseOptions] carries a real project or the placeholder
-/// values that ship with the template.
+/// Se as chaves do Firebase valem — e, quando a plataforma nem tem projeto
+/// (iOS, macOS, Windows, Linux), o recado que explica isso.
 ///
-/// This check exists because the placeholders used to fail silently: the app
-/// started, every request to the database failed, and the screens simply
-/// stayed empty with no explanation anywhere.
-bool get _firebaseConfigured {
+/// Esta conferência existe porque a falta de configuração falhava em
+/// silêncio: o app abria, toda chamada ao banco dava erro e as telas
+/// simplesmente ficavam vazias, sem explicação em lugar nenhum.
+({bool configurado, String? semProjeto}) _conferirFirebase() {
   try {
     final o = DefaultFirebaseOptions.currentPlatform;
-    return !o.apiKey.startsWith('YOUR_') &&
+    final valem = !o.apiKey.startsWith('YOUR_') &&
         o.apiKey.length > 20 &&
         !o.appId.contains('000000000000');
-  } catch (_) {
-    // Platform not configured at all (throws UnsupportedError).
-    return false;
+    return (configurado: valem, semProjeto: null);
+  } on UnsupportedError catch (e) {
+    // O recado vem do próprio `firebase_options.dart`, que sabe o nome do
+    // projeto e o que precisa ser rodado. Mostrar a tela genérica de "chaves
+    // de exemplo" aqui mandaria procurar chave onde não há nenhuma.
+    return (configurado: false, semProjeto: e.message);
+  } catch (e) {
+    return (configurado: false, semProjeto: '$e');
   }
 }
 
@@ -66,12 +72,42 @@ void main() async {
   // Initialize local storage
   await LocalStorageService.init();
 
+  final firebase = _conferirFirebase();
   String? startupError;
-  if (_firebaseConfigured) {
+  if (firebase.configurado) {
     try {
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
+
+      // CACHE NO APARELHO. Sem isto, cada abertura do app relia do servidor
+      // tudo o que as quatro escutas de `main_screen` alcançam — e leitura é
+      // a cota que aperta no plano grátis (50 mil por dia). Sem cache, TODA
+      // reconexão de escuta é cobrada como consulta nova; com cache, só a
+      // que ficou desligada mais de 30 minutos.
+      //
+      // Medido no emulador, com o banco do tamanho do ministério (40
+      // músicas, 109 cultos na janela, 50 mensagens, 3 equipes): a segunda
+      // abertura baixava 202 documentos do servidor e passou a baixar ZERO —
+      // os 202 vêm do disco, e as quatro consultas recebem do servidor uma
+      // resposta vazia, só confirmando que nada mudou.
+      //
+      // Duas coisas que esta linha também resolve: o app abre com o
+      // repertório e a escala na tela mesmo sem internet, e a abertura não
+      // espera a rede para desenhar.
+      //
+      // O limite conhecido é a SEGUNDA ABA. O cache é de aba única, e a
+      // segunda aba não consegue a trava do IndexedDB. Medido: ela avisa no
+      // console (`failed-precondition`) e cai sozinha para o cache em
+      // memória, que é exatamente o que o app fazia antes — ninguém fica com
+      // tela vazia. Como no iPhone o app instalado é uma janela só, esse
+      // caso é o do computador com duas abas abertas.
+      //
+      // Sem `cacheSizeBytes`: o padrão do Firestore (40 MB) é cem vezes o
+      // que este ministério ocupa, e um teto apertado só traria o risco de o
+      // SDK ficar jogando fora o que acabou de guardar.
+      FirebaseFirestore.instance.settings =
+          const Settings(persistenceEnabled: true);
     } catch (e) {
       startupError = '$e';
     }
@@ -83,8 +119,9 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  if (!_firebaseConfigured || startupError != null) {
-    runApp(_SetupNeededApp(error: startupError));
+  if (!firebase.configurado || startupError != null) {
+    runApp(
+        _SetupNeededApp(error: startupError, semProjeto: firebase.semProjeto));
     return;
   }
 
@@ -97,7 +134,12 @@ void main() async {
 /// screen mysteriously empty.
 class _SetupNeededApp extends StatelessWidget {
   final String? error;
-  const _SetupNeededApp({this.error});
+
+  /// O recado de quando a plataforma não tem projeto nenhum no Firebase —
+  /// compilar nativo para iOS ou macOS, por exemplo. Nulo no caso comum.
+  final String? semProjeto;
+
+  const _SetupNeededApp({this.error, this.semProjeto});
 
   @override
   Widget build(BuildContext context) {
@@ -119,9 +161,13 @@ class _SetupNeededApp extends StatelessWidget {
                   const Icon(Icons.cloud_off_rounded,
                       size: 48, color: Color(0xFFDDA64A)),
                   const SizedBox(height: 20),
-                  const Text(
-                    'Falta conectar o ${AppStrings.appName}\nao banco de dados',
-                    style: TextStyle(
+                  Text(
+                    semProjeto == null
+                        ? 'Falta conectar o ${AppStrings.appName}\n'
+                            'ao banco de dados'
+                        : 'O ${AppStrings.appName} não roda\n'
+                            'nesta plataforma',
+                    style: const TextStyle(
                       fontFamily: 'Poppins',
                       fontSize: 22,
                       fontWeight: FontWeight.w700,
@@ -131,11 +177,12 @@ class _SetupNeededApp extends StatelessWidget {
                   ),
                   const SizedBox(height: 14),
                   Text(
-                    error == null
-                        ? 'As chaves do Firebase ainda são as de exemplo, então '
-                            'o app não tem onde guardar os dados. Nada do que '
-                            'você fizer aqui seria salvo.'
-                        : 'O Firebase está configurado, mas não respondeu:',
+                    semProjeto ??
+                        (error == null
+                            ? 'As chaves do Firebase ainda são as de exemplo, '
+                                'então o app não tem onde guardar os dados. '
+                                'Nada do que você fizer aqui seria salvo.'
+                            : 'O Firebase está configurado, mas não respondeu:'),
                     style: const TextStyle(
                       fontFamily: 'Poppins',
                       fontSize: 14,
@@ -163,44 +210,49 @@ class _SetupNeededApp extends StatelessWidget {
                     ),
                   ],
                   const SizedBox(height: 20),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(16),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withValues(alpha: 0.06),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(
-                          color: Colors.white.withValues(alpha: 0.12)),
-                    ),
-                    child: const Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Como resolver',
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
-                            color: Colors.white,
+                  // O recado da plataforma sem projeto já traz o passo a
+                  // passo dentro dele, com o nome do projeto certo. Repetir
+                  // a receita genérica aqui embaixo daria duas instruções
+                  // diferentes na mesma tela.
+                  if (semProjeto == null)
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.12)),
+                      ),
+                      child: const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Como resolver',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
                           ),
-                        ),
-                        SizedBox(height: 10),
-                        Text(
-                          'No computador, dentro da pasta do projeto:\n\n'
-                          'dart pub global activate flutterfire_cli\n'
-                          'flutterfire configure\n\n'
-                          'Marque android, ios e web. O comando preenche as '
-                          'chaves sozinho.',
-                          style: TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 12,
-                            color: Colors.white70,
-                            height: 1.55,
+                          SizedBox(height: 10),
+                          Text(
+                            'No computador, dentro da pasta do projeto:\n\n'
+                            'dart pub global activate flutterfire_cli\n'
+                            'flutterfire configure\n\n'
+                            'Marque android, ios e web. O comando preenche as '
+                            'chaves sozinho.',
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                              color: Colors.white70,
+                              height: 1.55,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
                 ],
               ),
             ),

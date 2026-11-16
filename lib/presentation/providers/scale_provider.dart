@@ -136,16 +136,11 @@ class ScaleProvider extends ChangeNotifier {
     return null;
   }
 
-  /// Deletes a service. Returns null on success, or the message to show.
-  Future<String?> deleteScale(String scaleId) async {
-    final result = await FirestoreService.deleteScale(scaleId);
-    if (!result.success) return result.error;
-
-    _scales.removeWhere((s) => s.id == scaleId);
-    if (_selectedScale?.id == scaleId) _selectedScale = null;
-    notifyListeners();
-    return null;
-  }
+  // Não existe apagar culto. Cancelar é um campo (`setCanceled`), como
+  // arquivar é para a música: o culto fica, com quem confirmou, o repertório
+  // e o registro de quem tocou. A regra do banco também recusa (`allow
+  // delete: if false` em `scales`), então nem um caminho novo no app
+  // conseguiria apagar por engano.
 
   /// Confirms presence. Returns null on success, or the message to show.
   Future<String?> confirmPresence(

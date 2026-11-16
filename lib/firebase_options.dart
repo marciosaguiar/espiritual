@@ -1,15 +1,32 @@
-// IMPORTANT: Replace the values below with your actual Firebase project configuration.
-// To set up Firebase:
-// 1. Go to https://console.firebase.google.com/
-// 2. Create a project called "LevitaSync"
-// 3. Add an Android and iOS app
-// 4. Download google-services.json and GoogleService-Info.plist
-// 5. Run: dart pub global activate flutterfire_cli && flutterfire configure
-// 6. Or manually replace the placeholder values below
+// As chaves do projeto do Firebase, por plataforma.
+//
+// Geradas por `flutterfire configure`. Só existem web e Android, que são as
+// duas plataformas em que este app roda: o iPhone usa o PWA instalado na tela
+// de início, não um aplicativo nativo.
+//
+// iOS e macOS tinham blocos aqui, com chaves de exemplo apontando para um
+// projeto chamado `levitasync` que nunca existiu. Compilar nativo com eles
+// não dava erro de compilação: o app abria e toda chamada ao banco falhava,
+// que é a pior forma de uma configuração faltar. Agora a falta é dita na
+// hora, com o nome do projeto certo.
 
 import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
+
+/// O recado de quem tentou compilar para uma plataforma sem projeto.
+///
+/// Diz o que fazer, e cita o id do projeto de verdade — sem isso, quem leu o
+/// erro iria procurar as chaves do `levitasync`, que não existe.
+String _semProjeto(String plataforma) =>
+    'O $plataforma não está configurado no Firebase.\n\n'
+    'Este app roda como web/PWA (é assim que ele é usado no iPhone, instalado '
+    'na tela de início) e como aplicativo Android. Para compilar nativo para '
+    '$plataforma seria preciso, antes, registrar essa plataforma no projeto '
+    'espiritual-d2403 e rodar `flutterfire configure` na pasta do projeto, '
+    'que reescreve este arquivo.\n\n'
+    'Atenção: `ios/Runner/GoogleService-Info.plist` também é de exemplo, do '
+    'projeto antigo `levitasync`, e precisa ser trocado no mesmo passo.';
 
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
@@ -20,27 +37,17 @@ class DefaultFirebaseOptions {
       case TargetPlatform.android:
         return android;
       case TargetPlatform.iOS:
-        return ios;
+        throw UnsupportedError(_semProjeto('iOS'));
       case TargetPlatform.macOS:
-        return macos;
+        throw UnsupportedError(_semProjeto('macOS'));
       case TargetPlatform.windows:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for windows - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        throw UnsupportedError(_semProjeto('Windows'));
       case TargetPlatform.linux:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions have not been configured for linux - '
-          'you can reconfigure this by running the FlutterFire CLI again.',
-        );
+        throw UnsupportedError(_semProjeto('Linux'));
       default:
-        throw UnsupportedError(
-          'DefaultFirebaseOptions are not supported for this platform.',
-        );
+        throw UnsupportedError(_semProjeto('esta plataforma'));
     }
   }
-
-  // ⚠️ REPLACE WITH YOUR FIREBASE CONFIG ⚠️
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: 'AIzaSyCj8Sh0C3fuJx5XrA6Orny4_4YwavQknas',
@@ -49,24 +56,6 @@ class DefaultFirebaseOptions {
     projectId: 'espiritual-d2403',
     storageBucket: 'espiritual-d2403.firebasestorage.app',
   );
-  static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'YOUR_IOS_API_KEY',
-    appId: '1:000000000000:ios:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'levitasync',
-    storageBucket: 'levitasync.appspot.com',
-    iosBundleId: 'com.levitasync.app',
-  );
-
-  static const FirebaseOptions macos = FirebaseOptions(
-    apiKey: 'YOUR_MACOS_API_KEY',
-    appId: '1:000000000000:ios:0000000000000000000000',
-    messagingSenderId: '000000000000',
-    projectId: 'levitasync',
-    storageBucket: 'levitasync.appspot.com',
-    iosBundleId: 'com.levitasync.app',
-  );
-
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: 'AIzaSyCmC08W1DPC2xEKVGB0fF_EHeDrFxNwCwE',
     appId: '1:241914653758:web:2152e261d85fb083adf56f',
