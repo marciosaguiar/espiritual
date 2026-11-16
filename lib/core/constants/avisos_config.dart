@@ -16,13 +16,13 @@ class AvisosConfig {
   ///
   /// Sai do `wrangler deploy`, no formato
   /// `https://levitasync-avisos.SEU-USUARIO.workers.dev`.
-  static const String worker = 'https://COLE-AQUI.workers.dev';
+  static const String worker = 'https://levitasync-avisos.marcioaguiar04.workers.dev';
 
   /// A chave pública do VAPID, em base64url.
   ///
   /// Sai do `npx web-push generate-vapid-keys` — é a linha "Public Key",
   /// com 87 caracteres.
-  static const String chavePublica = 'COLE-AQUI-A-CHAVE-PUBLICA';
+  static const String chavePublica = 'BK8kod6yy9DIw1N0tJPdeg7-WRYVmQwUVUG9YOhcAPt9JANI6b8Z2iTzrfEUWx5iKSXWodTzIlu-LOh8PF6szBk';
 
   /// Já foi configurado de verdade?
   ///
