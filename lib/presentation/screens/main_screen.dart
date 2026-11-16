@@ -11,6 +11,7 @@ import '../../data/models/user_model.dart';
 import '../../data/services/auth_service.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
+import '../../../core/platform/tela_atual.dart';
 import '../widgets/common/glass.dart';
 import 'home/home_screen.dart';
 import 'songs/songs_screen.dart';
@@ -51,11 +52,15 @@ class _MainScreenState extends State<MainScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _initData();
     });
+    informarTelaInicial(_currentIndex == 0);
   }
 
   void _goToTab(int index) {
     if (index < 0 || index >= _screens.length) return;
     setState(() => _currentIndex = index);
+    // A faixa "Nova versão disponível" só se aplica sozinha com a pessoa no
+    // Início e parada; fora dali ela pergunta. Ver tela_atual.dart.
+    informarTelaInicial(index == 0);
   }
 
   void _initData() {

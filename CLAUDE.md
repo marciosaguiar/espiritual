@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 166 testes
+flutter test                   # 177 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -226,6 +226,29 @@ efeito colateral: meses muito antigos aparecem vazios no calendário.
   diferença entre a trava funcionar ou não. Foi pego por um teste escrito
   justamente para perguntar "e se o campo não existir?" — vale repetir essa
   pergunta em todo `?? valor` que decide acesso.
+- **"Próximo culto" comparava só a DATA.** Domingo às 20h53, o culto das 8h
+  daquele mesmo domingo ainda aparecia como o próximo, porque a conta jogava
+  a hora fora. Agora vale `ScaleProvider.aindaVale(culto, agora)`: o culto
+  que ainda não começou, e o que começou há menos de
+  `duracaoDoCulto` (2 h), que é quem abre o app no meio do culto. A função é
+  pura e recebe `agora` como parâmetro, para o teste poder ficar na virada do
+  dia — onde este tipo de conta quebra. Dos 11 testes, 4 falham contra a
+  conta antiga.
+- **Versão nova ficava "esperando" no iPhone.** O service worker novo era
+  baixado e esperava o antigo soltar o controle; num app instalado, que o
+  iOS quase nunca encerra, isso levava dias — "saí e entrei três vezes e
+  continua a versão velha". O `install` do `web/sw.js` **não** chama mais
+  `skipWaiting()` sozinho: trocar o código debaixo de quem está tocando no
+  culto é pior que esperar. Em vez disso, a página mostra a faixa "Nova
+  versão disponível · Atualizar", e o toque manda `{tipo:'ATUALIZAR'}` para
+  o worker, que aí assume. **A faixa é HTML da página, fora do Flutter**,
+  porque precisa aparecer mesmo com o app ocupado.
+  A única atualização sem perguntar acontece com a pessoa **no Início, parada
+  há mais de 5 s e com a tela à vista** — `main_screen` conta à página em que
+  aba está, por `lib/core/platform/tela_atual.dart`. Testado de ponta a
+  ponta: publicar A, abrir, publicar B, e a faixa aparece; tocando em
+  Atualizar, o cache vira B e recarrega **uma** vez. Nos outros dois casos
+  (acabou de tocar; está em outra tela) a faixa pergunta e nada recarrega.
 - **O Flutter tirou o cache do app e ninguém percebeu.** O
   `flutter_service_worker.js` das versões novas é um arquivo de 784 bytes que
   só se desregistra. O app continuou funcionando — e passou a baixar 3,26 MB

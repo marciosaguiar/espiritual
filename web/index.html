@@ -157,32 +157,140 @@
     };
   </script>
 
+  <style>
+    /* A faixa de atualização. Fica fora do Flutter de propósito: ela precisa
+       aparecer mesmo se o app estiver ocupado, e é assunto da PÁGINA, não da
+       tela. Discreta, acima da barra de abas, fora do caminho do polegar. */
+    #levita-atualizar {
+      position: fixed;
+      left: 12px;
+      right: 12px;
+      bottom: calc(96px + env(safe-area-inset-bottom, 0px));
+      z-index: 9999;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(20, 24, 31, 0.94);
+      color: #fff;
+      font-family: Poppins, system-ui, sans-serif;
+      font-size: 13.5px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.3);
+      -webkit-backdrop-filter: blur(12px);
+      backdrop-filter: blur(12px);
+    }
+    #levita-atualizar.aparecendo { display: flex; }
+    #levita-atualizar span { flex: 1; }
+    #levita-atualizar button {
+      flex: none;
+      font: inherit;
+      font-weight: 600;
+      color: #0E1116;
+      background: #fff;
+      border: 0;
+      border-radius: 9px;
+      padding: 7px 14px;
+      cursor: pointer;
+    }
+    #levita-atualizar .depois {
+      background: transparent;
+      color: rgba(255, 255, 255, 0.65);
+      padding: 7px 4px;
+    }
+  </style>
+
+  <div id="levita-atualizar" role="status">
+    <span>Nova versão disponível</span>
+    <button type="button" class="depois" id="levita-depois">Depois</button>
+    <button type="button" id="levita-agora">Atualizar</button>
+  </div>
+
   <script>
-    // Guarda o app no aparelho e recarrega só quando houver versão nova.
+    // Guarda o app no aparelho e avisa quando houver versão nova.
     //
-    // O Flutter tinha um service worker que fazia o cache; as versões novas
-    // geram um que só se desregistra, e com isso o app passou a baixar 3,26
-    // MB a cada abertura — os ~5 segundos de tela de abertura no iPhone.
-    // O `sw.js` deste projeto devolve esse cache e não depende do Flutter.
+    // O que estava errado: a versão nova era baixada e ficava ESPERANDO a
+    // antiga soltar o controle. Num app instalado no iPhone, que o sistema
+    // quase nunca encerra de verdade, ela podia esperar dias — "saí e entrei
+    // três vezes e continua a versão velha". Agora a página percebe que há
+    // uma esperando e mostra uma faixa.
     //
-    // O recarregar só acontece quando um service worker NOVO assume o lugar
-    // de um que já estava valendo. Voltar para o app não recarrega nada.
+    // E nunca recarrega sozinha no meio do uso: alguém pode estar com a
+    // cifra aberta tocando no culto. A exceção é estreita e está em
+    // `podeAtualizarSozinho()`.
     (function () {
       if (!('serviceWorker' in navigator)) return;
 
-      // Na primeira visita a página também passa de "sem worker" para "com
-      // worker". Recarregar aí só faria o app abrir duas vezes.
-      var tinhaBuildAnterior = !!navigator.serviceWorker.controller;
+      var faixa = document.getElementById('levita-atualizar');
+      var botaoAgora = document.getElementById('levita-agora');
+      var botaoDepois = document.getElementById('levita-depois');
       var jaRecarregou = false;
+      var esperando = null;
+
+      // A pessoa está no Início? O Dart avisa a cada troca de aba (ver
+      // lib/core/platform/tela_atual.dart). Enquanto não avisar, assumimos
+      // que não — errar para o lado de perguntar.
+      window.levitaNoInicio = false;
+      var ultimoToque = Date.now();
+      ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(function (e) {
+        window.addEventListener(e, function () { ultimoToque = Date.now(); },
+          { passive: true, capture: true });
+      });
+
+      // Atualizar sem perguntar só quando não há nada a atrapalhar: a pessoa
+      // está no Início, não tocou em nada há 5 segundos e a tela está à
+      // vista. Em qualquer outro caso, quem decide é ela.
+      function podeAtualizarSozinho() {
+        return window.levitaNoInicio === true
+          && document.visibilityState === 'visible'
+          && (Date.now() - ultimoToque) > 5000;
+      }
+
+      function assumir() {
+        if (!esperando) return;
+        esperando.postMessage({ tipo: 'ATUALIZAR' });
+        faixa.classList.remove('aparecendo');
+      }
+
+      function anunciar(trabalhador) {
+        esperando = trabalhador;
+        if (podeAtualizarSozinho()) { assumir(); return; }
+        faixa.classList.add('aparecendo');
+      }
+
+      botaoAgora.addEventListener('click', assumir);
+      botaoDepois.addEventListener('click', function () {
+        faixa.classList.remove('aparecendo');
+      });
 
       navigator.serviceWorker.addEventListener('controllerchange', function () {
-        if (!tinhaBuildAnterior || jaRecarregou) return;
+        if (jaRecarregou) return;
         jaRecarregou = true;
         window.location.reload();
       });
 
       window.addEventListener('load', function () {
-        navigator.serviceWorker.register('sw.js').catch(function (e) {
+        navigator.serviceWorker.register('sw.js').then(function (reg) {
+          // Pode já haver uma versão esperando desde a sessão anterior —
+          // justamente o caso que obrigava a fechar o app duas vezes.
+          if (reg.waiting && navigator.serviceWorker.controller) {
+            anunciar(reg.waiting);
+          }
+
+          reg.addEventListener('updatefound', function () {
+            var novo = reg.installing;
+            if (!novo) return;
+            novo.addEventListener('statechange', function () {
+              // `installed` com um controlador já no lugar significa: há uma
+              // versão nova pronta, esperando a vez. Sem controlador, é a
+              // primeira instalação — não há o que anunciar.
+              if (novo.state === 'installed' &&
+                  navigator.serviceWorker.controller) {
+                anunciar(novo);
+              }
+            });
+          });
+        }).catch(function (e) {
           // Sem cache o app continua funcionando, só mais devagar.
           console.warn('[levita] service worker não registrou:', e);
         });

@@ -43,7 +43,9 @@ const ESQUELETO = self.LISTA_DO_BUILD ||
     ['./', 'index.html', 'flutter_bootstrap.js', 'main.dart.js'];
 
 self.addEventListener('install', (evento) => {
-  self.skipWaiting();
+  // Nada de `skipWaiting()` aqui. Assumir na instalação trocaria o código
+  // debaixo de quem está usando o app — alguém no meio do culto, com a
+  // cifra aberta. A versão nova espera, e a pessoa decide quando entrar.
   evento.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE);
@@ -59,6 +61,16 @@ self.addEventListener('install', (evento) => {
       }
     })(),
   );
+});
+
+// A página pede para esta versão assumir AGORA.
+//
+// Sem isto, uma versão nova fica esperando a antiga soltar o controle — e no
+// iPhone, onde o app instalado raramente é encerrado de verdade, ela podia
+// esperar dias. Era o "saí e entrei três vezes e continua a versão velha".
+// Quem decide o momento é a pessoa, pela faixa "Nova versão disponível".
+self.addEventListener('message', (evento) => {
+  if (evento.data && evento.data.tipo === 'ATUALIZAR') self.skipWaiting();
 });
 
 self.addEventListener('activate', (evento) => {
