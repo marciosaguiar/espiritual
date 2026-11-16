@@ -62,15 +62,48 @@ void main() {
   });
 
   group('configuração dos avisos', () {
-    test('com os valores de exemplo, o app sabe que não está configurado', () {
-      // Esta é a trava que faz a tela EXPLICAR em vez de dar erro de rede.
-      expect(AvisosConfig.configurado, isFalse);
+    const chaveDeVerdade =
+        'BK8kod6yy9DIw1N0tJPdeg7-WRYVmQwUVUG9YOhcAPt9JANI6b8Z2iTzrfEUWx5i'
+        'KSXWodTzIlu-LOh8PF6szBk';
+    const workerDeVerdade = 'https://levitasync-avisos.exemplo.workers.dev';
+
+    test('valores de exemplo contam como NÃO configurado', () {
+      // É a trava que faz a tela EXPLICAR o que falta em vez de dar erro de
+      // rede quando ninguém publicou o Worker ainda.
+      expect(
+          AvisosConfig.pareceConfigurado(
+              'https://COLE-AQUI.workers.dev', 'COLE-AQUI-A-CHAVE-PUBLICA'),
+          isFalse);
     });
 
-    test('a chave pública de exemplo não tem tamanho de chave de verdade', () {
-      // Colar metade da chave é o erro mais provável: ela tem 87 caracteres
-      // e não tem onde quebrar. O app recusa qualquer coisa menor que 80.
-      expect(AvisosConfig.chavePublica.length, lessThan(80));
+    test('endereço e chave de verdade contam como configurado', () {
+      expect(AvisosConfig.pareceConfigurado(workerDeVerdade, chaveDeVerdade),
+          isTrue);
+    });
+
+    test('chave colada pela metade é recusada', () {
+      // O erro mais provável: ela tem 87 caracteres e não tem onde quebrar.
+      expect(
+          AvisosConfig.pareceConfigurado(
+              workerDeVerdade, chaveDeVerdade.substring(0, 60)),
+          isFalse);
+    });
+
+    test('endereço sem https é recusado', () {
+      expect(
+          AvisosConfig.pareceConfigurado(
+              'levitasync-avisos.exemplo.workers.dev', chaveDeVerdade),
+          isFalse);
+    });
+
+    test('os dois valores do app andam juntos', () {
+      // O que realmente importa checar nas constantes de hoje: ou as duas
+      // estão preenchidas, ou as duas são de exemplo. Meio preenchido é o
+      // estado em que o app tenta falar com um Worker que não existe.
+      final temWorker = !AvisosConfig.worker.contains('COLE-AQUI');
+      final temChave = !AvisosConfig.chavePublica.contains('COLE-AQUI');
+      expect(temWorker, temChave,
+          reason: 'preencha os dois em avisos_config.dart, ou nenhum');
     });
   });
 }

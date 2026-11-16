@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:levitasync/core/utils/chord_transposer.dart';
 
 void main() {
+  _semitonesEntreTons();
   group('transposeText — preserva a letra', () {
     test('não altera palavras da letra em uma cifra colada da internet', () {
       const chart = 'G              D\n'
@@ -131,6 +132,45 @@ void main() {
       expect(ChordTransposer.getTransposeDisplay(0), 'Original');
       expect(ChordTransposer.getTransposeDisplay(3), '+3');
       expect(ChordTransposer.getTransposeDisplay(-3), '-3');
+    });
+  });
+}
+
+/// O tom do culto pode ser outro que o da cifra. Sem esta conta, a tela do
+/// Modo Culto ao vivo mostraria a cifra no tom errado — e ninguém notaria até
+/// alguém tocar.
+void _semitonesEntreTons() {
+  group('semitons entre dois tons', () {
+    test('mesmo tom é zero', () {
+      expect(ChordTransposer.semitonesEntre('G', 'G'), 0);
+    });
+
+    test('para cima e para baixo', () {
+      expect(ChordTransposer.semitonesEntre('C', 'D'), 2);
+      expect(ChordTransposer.semitonesEntre('D', 'C'), -2);
+      expect(ChordTransposer.semitonesEntre('G', 'A'), 2);
+    });
+
+    test('sustenido e bemol dão o mesmo resultado', () {
+      expect(ChordTransposer.semitonesEntre('C', 'A#'),
+          ChordTransposer.semitonesEntre('C', 'Bb'));
+    });
+
+    test('tom menor conta pela nota', () {
+      expect(ChordTransposer.semitonesEntre('Am', 'Bm'), 2);
+      expect(ChordTransposer.semitonesEntre('A', 'Bm'), 2);
+    });
+
+    test('tom que não existe devolve zero, e não lança', () {
+      // A cifra aparece como está, que é melhor que a tela cair.
+      expect(ChordTransposer.semitonesEntre('', 'G'), 0);
+      expect(ChordTransposer.semitonesEntre('?', 'G'), 0);
+      expect(ChordTransposer.semitonesEntre('G', 'Hb7'), 0);
+    });
+
+    test('transpor com a conta devolve a cifra no tom do culto', () {
+      final n = ChordTransposer.semitonesEntre('G', 'A');
+      expect(ChordTransposer.transposeText('G  C  D', n), 'A  D  E');
     });
   });
 }

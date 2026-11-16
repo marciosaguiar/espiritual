@@ -12,6 +12,7 @@ import '../../../data/services/auth_service.dart';
 import '../../widgets/common/abrir_link.dart';
 import '../../widgets/common/glass.dart';
 import '../songs/song_detail_screen.dart';
+import 'modo_ao_vivo_screen.dart';
 
 class ScaleDetailScreen extends StatefulWidget {
   final ScaleModel scale;
@@ -689,6 +690,38 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
               ),
 
             const SizedBox(height: 20),
+
+            // O botão do Modo Culto ao vivo. Fica acima das músicas, porque é
+            // o que se procura com o instrumento na mão, em cima do horário.
+            if (_scale.songs.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 52,
+                  child: FilledButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      GlassPageRoute(
+                        builder: (_) => ModoAoVivoScreen(
+                          culto: _scale,
+                          funcaoNoCulto: _minhaFuncaoNesteCulto(context),
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.queue_music_rounded, size: 22),
+                    label: const Text(
+                      'Modo Culto ao vivo',
+                      style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700),
+                    ),
+                    style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.blue),
+                  ),
+                ),
+              ),
 
             // Songs section
             Row(

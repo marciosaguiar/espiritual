@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 243 testes
+flutter test                   # 288 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 191 testes
+cd test_regras && npm install && npm test    # 205 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -35,7 +35,7 @@ de dentro do `firebase-tools` — os dois comandos acima se contradiziam.
 O `test_regras/.npmrc` também não é enfeite: `@firebase/rules-unit-testing@3`
 pede `firebase@^10` e aqui se usa o 13. As versões novas do npm recusam
 instalar por isso, então `npm install` falhava num computador limpo, embora os
-191 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
+205 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
 só com `npm install --legacy-peer-deps`.
 
 O mini-servidor dos avisos tem testes próprios, que não precisam de emulador
@@ -298,7 +298,8 @@ Nesta ordem, e **nada disso antes de testar o app num iPhone real**:
    gatilhos combinados ficam para depois, e agora são pequenos: escalado,
    lembrete da véspera e "novo pedido de entrada" para o líder são a mesma
    cifra e o mesmo leque de envio, com outro gatilho.
-3. **Rolagem sincronizada no culto** (Modo Culto ao vivo).
+3. ~~**Rolagem sincronizada no culto**~~ — **feito** (ver "Modo Culto ao
+   vivo").
 4. **Reações e "visto por"** no chat.
 5. **Líder redefine senha de um membro.** Só com o Admin SDK, em Cloud
    Function — o Firebase não deixa um app trocar a senha de outra pessoa.
@@ -681,6 +682,73 @@ mostrava. Dois casos reais: `Sou Grato Por Seu AmorGet de: Joshua Coleman` e
   pessoa está digitando, e sobrescrever é pior que não ajudar.
 - Os dois casos reais estão nos testes, com o texto do jeito que chegou.
 
+### Modo Culto ao vivo
+
+Durante o culto, todos na mesma parte da música ao mesmo tempo — cada um no
+seu modo. Botão na tela do culto, acima da lista de músicas.
+
+- **O que viaja é POSIÇÃO LÓGICA, nunca pixels:** `{música, âncora}`, e
+  âncora é o índice da **linha de letra** (`MapaDaMusica`). É isso que
+  permite o tecladista ler a cifra num celular pequeno e a cantora ler só a
+  letra em fonte grande, parados no mesmo verso. Sincronizar pixels ou
+  "linha 12" poria o tecladista no refrão e a cantora três versos atrás.
+- **Os dois modos saem do MESMO texto.** Quando existe cifra, ela é a fonte
+  dos dois: quem lê só a letra vê a letra extraída da cifra, não o campo
+  `lyrics` da música. Se cada modo lesse um texto diferente, as âncoras não
+  corresponderiam e o culto desalinharia **sem nenhum erro aparecer na
+  tela**. Por isso `MapaDaMusica.mapear` constrói as duas versões na mesma
+  varredura, e o teste confere que toda âncora aponta para a mesma letra nos
+  dois — e que os índices nos dois textos são diferentes, senão o teste
+  passaria por acidente.
+- **O texto da linha viaja junto do índice.** Se um aparelho tiver uma versão
+  diferente da música, o índice apontaria para outro verso; a tela avisa em
+  vez de desalinhar calada.
+- **A cota que aperta é a de LEITURAS, não a de escritas** — e eu errei essa
+  conta na primeira versão. Cada mudança de posição é uma leitura cobrada
+  para CADA aparelho que escuta. No teto de 2 escritas por segundo, uma hora
+  de culto dá 7.200 mudanças: cabe nas 20.000 escritas/dia do Spark, mas com
+  12 aparelhos são 86.400 **leituras**, e a cota é 50.000/dia — um culto só
+  estouraria tudo. Daí duas travas: posição igual não vira escrita, e **a
+  rolagem do condutor só publica quando PARA** (600 ms de espera). As linhas
+  do meio do arrasto não interessam a quem segue, só onde o condutor parou.
+  O que sobra são algumas centenas de mudanças por culto.
+- **O comando não fica preso em quem sumiu.** Celular travado, bateria no
+  fim, app fechado no meio do culto: depois de 45 s sem escrita, qualquer
+  aprovado assume. A conta está nos dois lados —
+  `EstadoAoVivo.silencioMaximo` e a regra do banco, com
+  `request.time - duration.value(45,'s')` — porque esconder o botão não
+  bastaria e deixar só a regra decidir daria um toque que falha sem
+  explicação.
+- **A hora é do SERVIDOR, e a regra exige.** Com o relógio do aparelho, um
+  celular adiantado deixaria o estado "vivo" para sempre e ninguém mais
+  assumiria. `serverTimestamp` chega nulo na primeira notificação local, e o
+  modelo trata isso como "agora" — tratar como velho faria dois aparelhos
+  assumirem ao mesmo tempo no primeiro instante.
+- **Passar o comando NÃO escreve o id da outra pessoa:** solta o comando e
+  avisa. Apontar um condutor que talvez não esteja com o app aberto
+  travaria o culto por 45 s.
+- **Seguir é o padrão; rolar à mão solta.** `UserScrollNotification` com
+  direção diferente de `idle` é gesto de pessoa, não a animação do próprio
+  app — sem essa distinção, a rolagem automática se soltaria sozinha.
+- **Tela acesa:** Screen Wake Lock, que no iPhone funciona em PWA instalado
+  **a partir do iOS 18.4** (antes disso o pedido é recusado; era defeito do
+  WebKit). O navegador **solta a trava quando a página sai de vista**, então
+  `web/tela_acesa.js` pede de novo no `visibilitychange` — sem isso a tela
+  apagaria para quem atendeu uma mensagem e voltou. **Medido no Chromium:**
+  1 pedido na entrada, 2 depois de voltar à vista, e nenhum depois de soltar
+  de propósito. Quando o aparelho recusa, a tela diz para pôr o Bloqueio
+  Automático em Nunca, em vez de apagar calada no meio da música.
+- **O atraso entre aparelhos, medido:** dois clientes contra o emulador,
+  25 amostras — mediana **20 ms**, p90 35 ms, pior caso 97 ms. O emulador
+  roda na mesma máquina, então esse é o PISO: no Firestore de verdade soma-se
+  a ida e volta até o datacenter.
+- **Rolagem automática local** (play/pause e velocidade) funciona sem
+  internet, e a velocidade inicial vem do BPM do arranjo: uma linha de letra
+  dura mais ou menos quatro tempos. Com condutor ativo, a sincronização tem
+  prioridade — assumir o comando desliga a rolagem automática.
+- O tema do app NÃO vale aqui: preto de verdade, texto claro e fonte grande,
+  porque é tela lida de longe, muitas vezes com refletor em cima.
+
 ### Quando a tela diz "vazio"
 
 Lista vazia e lista que não carregou são coisas diferentes, e a pessoa lê as
@@ -698,6 +766,5 @@ reinstalar o app essa lista é vazia, então uma falha de leitura teria virado
 
 Busca de música na internet, anexo de imagem no chat, PDF da escala, foto de
 perfil, transformar uma mensagem do chat em decisão da agenda, reações e
-"visto por" no chat, rolagem sincronizada no culto, e aviso de escalado /
-lembrete da véspera / "novo pedido de entrada" (o mecanismo já existe; falta
-o gatilho).
+"visto por" no chat, e aviso de escalado / lembrete da véspera / "novo pedido
+de entrada" (o mecanismo já existe; falta o gatilho).

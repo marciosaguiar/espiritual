@@ -353,6 +353,69 @@ service cloud.firestore {
       allow delete: if ehLider();
     }
 
+    // ── Modo Culto ao vivo ──────────────────────────────────────────────────
+    // Onde o culto está AGORA: que música, que parte, que linha. Um documento
+    // por culto, reescrito por cima, sem histórico — é posição, não registro.
+    //
+    // POR QUE A LEITURA É DE TODO APROVADO, e não só de quem está escalado:
+    // a regra teria de procurar o uid dentro de `levitas`, que é uma lista de
+    // mapas, e regra do Firestore não busca dentro de lista de mapas sem
+    // consulta. E não protegeria nada: o culto inteiro — inclusive quem está
+    // escalado e as músicas — já é legível por todo aprovado. A posição da
+    // linha é o dado menos sensível do app.
+    match /scales/{scaleId}/aoVivo/{doc} {
+      allow read: if aprovado();
+
+      allow create: if aprovado()
+        && estadoAoVivoValido()
+        && request.resource.data.condutorId == eu();
+
+      allow update: if estadoAoVivoValido()
+        && (
+          // Quem está conduzindo continua conduzindo.
+          (resource.data.condutorId == eu()
+              && request.resource.data.condutorId == eu())
+          // Soltar o comando: fica livre para quem tocar em "assumir".
+          || (resource.data.condutorId == eu()
+              && request.resource.data.condutorId == '')
+          // Ninguém conduzindo: quem está no culto assume.
+          || (aprovado() && resource.data.condutorId == ''
+              && request.resource.data.condutorId == eu())
+          // O CONDUTOR QUE SUMIU. Celular travado, bateria no fim, app
+          // fechado no meio do culto: sem isto o culto ficaria preso
+          // esperando alguém que já não está ali, e ninguém assumiria.
+          // A conta é a mesma do app (EstadoAoVivo.silencioMaximo).
+          || (aprovado()
+              && request.resource.data.condutorId == eu()
+              && resource.data.atualizadoEm
+                  < request.time - duration.value(45, 's'))
+          // O líder do ministério tira o comando de quem estiver com ele.
+          || ehLider()
+        );
+
+      // Estado efêmero: quando o culto acaba, o líder limpa.
+      allow delete: if ehLider();
+    }
+
+    function estadoAoVivoValido() {
+      return tamanhoRazoavel()
+        && request.resource.data.condutorId is string
+        && request.resource.data.condutorId.size() <= 128
+        && texto('condutorNome', 60)
+        && request.resource.data.musica is int
+        && request.resource.data.musica >= 0
+        && request.resource.data.musica <= 200
+        && request.resource.data.ancora is int
+        && request.resource.data.ancora >= 0
+        && request.resource.data.ancora <= 5000
+        && texto('secao', 60)
+        && texto('texto', 300)
+        // A HORA É DO SERVIDOR, sempre. Com a hora do aparelho, um celular
+        // adiantado deixaria o estado "vivo" para sempre e ninguém mais
+        // assumiria o comando — a trava de 45 s acima depende disto.
+        && request.resource.data.atualizadoEm == request.time;
+    }
+
     // ── Chat ────────────────────────────────────────────────────────────────
     match /messages/{messageId} {
       allow read: if aprovado();

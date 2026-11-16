@@ -61,6 +61,31 @@ class ChordTransposer {
   static final RegExp _bracketed = RegExp(r'\[([^\]\n]*)\]');
 
   /// Transpose a chord chart by [semitones], preserving the lyrics.
+  /// Quantos semitons de um tom para outro. Zero se não reconhecer um deles.
+  ///
+  /// Serve ao Modo Culto ao vivo: a cifra está no tom do arranjo e o culto
+  /// pode ter outro. Sem isto, a tela mostraria a cifra no tom errado e
+  /// ninguém notaria até alguém tocar.
+  static int semitonesEntre(String de, String para) {
+    final i = _indiceDoTom(de);
+    final j = _indiceDoTom(para);
+    if (i < 0 || j < 0) return 0;
+    return j - i;
+  }
+
+  static int _indiceDoTom(String tom) {
+    final limpo = tom.trim();
+    if (limpo.isEmpty) return -1;
+    // "Bm" e "B" transpõem igual: o que interessa é a nota.
+    final raiz = limpo.endsWith('m')
+        ? limpo.substring(0, limpo.length - 1)
+        : limpo;
+    final normal = enharmonics[raiz] ?? raiz;
+    final i = sharpNotes.indexOf(normal);
+    if (i >= 0) return i;
+    return flatNotes.indexOf(normal);
+  }
+
   static String transposeText(String text, int semitones) {
     if (semitones == 0 || text.isEmpty) return text;
 

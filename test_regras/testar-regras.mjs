@@ -753,6 +753,98 @@ await teste('mensagem sem texto E sem áudio é recusada', () =>
     fixada: false, fixadaPor: null, expiraEm: new Date(Date.now() + 864e5),
   })));
 
+console.log('\n── modo culto ao vivo ──');
+
+const AO_VIVO = ['scales', 'c1', 'aoVivo', 'atual'];
+const posicao = (condutor, extra = {}) => ({
+  condutorId: condutor,
+  condutorNome: condutor === LIDER ? 'Marcio' : 'Ana',
+  musica: 0, ancora: 3, secao: 'Refrão', texto: 'Grato, grato sou',
+  atualizadoEm: serverTimestamp(),
+  ...extra,
+});
+
+/// Põe o estado no banco sem passar pelas regras, com a hora que o teste
+/// quiser — é como se finge um condutor que calou há muito tempo.
+async function semearAoVivo(dados) {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), ...AO_VIVO), dados);
+  });
+}
+
+await teste('aprovado abre o modo ao vivo como condutor', () =>
+  assertSucceeds(setDoc(doc(levita(), ...AO_VIVO), posicao(LEVITA))));
+
+await teste('o condutor da vez atualiza a posição', () =>
+  assertSucceeds(setDoc(doc(levita(), ...AO_VIVO),
+    posicao(LEVITA, { ancora: 7 }))));
+
+await teste('outra pessoa NÃO mexe na posição de quem está conduzindo', () =>
+  // É o que impede dois aparelhos brigando pela rolagem no meio do culto.
+  assertFails(setDoc(doc(novato(), ...AO_VIVO), posicao(OUTRO))));
+
+await teste('o líder tira o comando de quem estiver com ele', () =>
+  assertSucceeds(setDoc(doc(lider(), ...AO_VIVO), posicao(LIDER))));
+
+await teste('o condutor solta o comando', () =>
+  assertSucceeds(setDoc(doc(lider(), ...AO_VIVO),
+    posicao(LIDER, { condutorId: '', condutorNome: '' }))));
+
+await teste('sem condutor, quem está no culto assume', () =>
+  assertSucceeds(setDoc(doc(levita(), ...AO_VIVO), posicao(LEVITA))));
+
+await teste('pendente não assume nem lê', async () => {
+  await assertFails(getDoc(doc(novato(), ...AO_VIVO)));
+  await assertFails(setDoc(doc(novato(), ...AO_VIVO), posicao(OUTRO)));
+});
+
+await teste('aprovado lê a posição', () =>
+  assertSucceeds(getDoc(doc(levita(), ...AO_VIVO))));
+
+await teste('a hora TEM de ser a do servidor', async () => {
+  // Com a hora do aparelho, um celular adiantado deixaria o estado "vivo"
+  // para sempre e ninguém mais assumiria o comando.
+  await assertFails(setDoc(doc(levita(), ...AO_VIVO),
+    posicao(LEVITA, { atualizadoEm: new Date(2030, 0, 1) })));
+  await assertFails(setDoc(doc(levita(), ...AO_VIVO),
+    posicao(LEVITA, { atualizadoEm: 'agora' })));
+});
+
+await teste('condutor que sumiu há mais de 45 s: outro assume', async () => {
+  // Celular travado, bateria no fim, app fechado no meio do culto.
+  await semearAoVivo({
+    ...posicao(LIDER),
+    atualizadoEm: new Date(Date.now() - 120000),
+  });
+  await assertSucceeds(setDoc(doc(levita(), ...AO_VIVO), posicao(LEVITA)));
+});
+
+await teste('condutor ativo há 5 s: ninguém tira dele', async () => {
+  await semearAoVivo({
+    ...posicao(LIDER),
+    atualizadoEm: new Date(Date.now() - 5000),
+  });
+  await assertFails(setDoc(doc(levita(), ...AO_VIVO), posicao(LEVITA)));
+});
+
+await teste('posição fora dos limites é recusada', async () => {
+  await semearAoVivo(posicao(LEVITA));
+  for (const ruim of [{ musica: -1 }, { ancora: -1 }, { musica: 9999 },
+                      { ancora: 99999 }, { musica: 1.5 }]) {
+    await assertFails(setDoc(doc(levita(), ...AO_VIVO),
+      posicao(LEVITA, ruim)));
+  }
+});
+
+await teste('texto gigante na linha é recusado', () =>
+  assertFails(setDoc(doc(levita(), ...AO_VIVO),
+    posicao(LEVITA, { texto: 'x'.repeat(301) }))));
+
+await teste('só o líder limpa o estado ao vivo', async () => {
+  await assertFails(deleteDoc(doc(levita(), ...AO_VIVO)));
+  await assertSucceeds(deleteDoc(doc(lider(), ...AO_VIVO)));
+});
+
 console.log('\n── várias funções por pessoa ──');
 
 await teste('a pessoa escolhe várias funções no próprio perfil', () =>

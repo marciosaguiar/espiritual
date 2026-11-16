@@ -25,10 +25,20 @@ class AvisosConfig {
   static const String chavePublica = 'BK8kod6yy9DIw1N0tJPdeg7-WRYVmQwUVUG9YOhcAPt9JANI6b8Z2iTzrfEUWx5iKSXWodTzIlu-LOh8PF6szBk';
 
   /// Já foi configurado de verdade?
+  static bool get configurado => pareceConfigurado(worker, chavePublica);
+
+  /// A mesma conta, com os valores dados — é esta que o teste exercita.
   ///
-  /// Conferir o tamanho da chave, e não só se mudou, porque colar metade da
-  /// chave é o erro mais provável: ela é longa e não tem onde quebrar.
-  static bool get configurado =>
+  /// A primeira versão era um getter que lia as constantes, e o teste
+  /// afirmava `configurado == false`. Funcionou por um dia: no instante em
+  /// que o Worker foi publicado e as duas linhas preenchidas, o teste passou
+  /// a falhar sem nada estar errado. **Teste que depende de configuração
+  /// local quebra quando a configuração é feita** — o certo é testar a regra,
+  /// não o valor de hoje.
+  ///
+  /// Confere o TAMANHO da chave, e não só se ela mudou, porque colar metade
+  /// dela é o erro mais provável: tem 87 caracteres e não tem onde quebrar.
+  static bool pareceConfigurado(String worker, String chavePublica) =>
       worker.startsWith('https://') &&
       !worker.contains('COLE-AQUI') &&
       chavePublica.length >= 80 &&
