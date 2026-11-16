@@ -153,6 +153,10 @@ class _MainScreenState extends State<MainScreen> {
     scale.listenToScales();
     chat.listenToMessages();
     chat.listenToTyping();
+    // Uma escuta só da lista de pessoas, para o app todo: o chat tinha a
+    // dele, e a Escala e o Início passaram a precisar da mesma coisa para
+    // dizer quem ainda não confirmou.
+    _auth!.ouvirPessoas();
 
     final agenda = context.read<AgendaProvider>();
     agenda.listen();
@@ -168,13 +172,15 @@ class _MainScreenState extends State<MainScreen> {
     if (_auth!.isAdmin) _agendarGeracao(agenda, scale);
   }
 
-  /// Creates the services of the next four weeks that are missing.
+  /// Cria os cultos das próximas quatro semanas que estão faltando.
   ///
-  /// Only a leader does this — the security rules refuse it for anybody else,
-  /// so a levita opening the app generates nothing. That is also the weak
-  /// point of this design: if no leader opens the app for weeks, the services
-  /// stop being created. A scheduled Cloud Function is the real answer, and
-  /// it needs the paid plan.
+  /// Só o líder faz isso — as regras recusam para qualquer outro, então um
+  /// levita abrindo o app não gera nada. Isto ERA a fragilidade do desenho:
+  /// sem nenhum líder abrir o app por semanas, os cultos paravam de ser
+  /// criados. Hoje o Worker faz o mesmo uma vez por dia (ver "O Worker gera
+  /// os cultos" no CLAUDE.md), e as duas são seguras de repetir: o id vem da
+  /// data e hora, e quem já existe é recusado. Esta continua valendo porque
+  /// dá resposta na hora a quem acabou de configurar a agenda.
   ///
   /// Waits for the first batch of services and the schedule to arrive, since
   /// generating without knowing what already exists would duplicate work (the

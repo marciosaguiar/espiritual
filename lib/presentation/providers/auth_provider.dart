@@ -71,6 +71,7 @@ class AuthProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _escutaPessoas?.cancel();
     _meuCadastro?.cancel();
     super.dispose();
   }
@@ -130,6 +131,40 @@ class AuthProvider extends ChangeNotifier {
 
     await conferirRecuperacao();
     await _loadPrefs(profile.id);
+  }
+
+  /// As pessoas do ministério, para resolver NOME por id.
+  ///
+  /// Uma escuta só, no app todo, e é economia: o chat já abria a dele, e a
+  /// Escala e o Início passaram a precisar da mesma lista para dizer quem
+  /// falta confirmar. Três escutas sobre ~15 documentos custariam o triplo de
+  /// leitura pela mesma informação.
+  ///
+  /// Por que resolver por id e não ler o nome gravado no culto: o gerador da
+  /// agenda fixa monta o culto a partir da equipe, que guarda só ids, e grava
+  /// `userName` vazio. E nome copiado dentro do culto fica errado quando a
+  /// pessoa corrige o próprio nome.
+  List<UserModel> _pessoas = const [];
+  List<UserModel> get pessoas => _pessoas;
+
+  Map<String, String> _nomes = const {};
+
+  /// Nome de cada pessoa, por id. É o que as telas passam para
+  /// `ScaleLevita.nomeCom`.
+  Map<String, String> get nomes => _nomes;
+
+  StreamSubscription<List<UserModel>>? _escutaPessoas;
+
+  void ouvirPessoas() {
+    _escutaPessoas?.cancel();
+    _escutaPessoas = AuthService.watchEscalaveis().listen((lista) {
+      _pessoas = lista;
+      _nomes = {for (final p in lista) p.id: p.name};
+      notifyListeners();
+    }, onError: (_) {
+      // Sem a lista, as telas caem no nome copiado dentro do culto e, na
+      // falta dele, em "Alguém". É leitura com valor padrão seguro.
+    });
   }
 
   /// O e-mail de recuperação desta conta, ou nulo quando ela ainda usa o

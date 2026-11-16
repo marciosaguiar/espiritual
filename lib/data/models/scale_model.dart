@@ -62,6 +62,35 @@ class ScaleLevita {
     this.confirmed = false,
   });
 
+  /// O nome para mostrar, resolvido POR ID.
+  ///
+  /// `userName` é cópia, e o gerador da agenda fixa grava vazio: ele monta o
+  /// culto a partir da equipe, que guarda só ids. Além disso nome copiado
+  /// dentro do culto fica errado quando a pessoa corrige o próprio nome — a
+  /// mesma razão por que a escala guarda referência de música, nunca cópia.
+  /// Então o cadastro manda, e a cópia é a reserva.
+  String nomeCom(Map<String, String> nomes) {
+    final doCadastro = (nomes[userId] ?? '').trim();
+    if (doCadastro.isNotEmpty) return doCadastro;
+    final copia = userName.trim();
+    if (copia.isNotEmpty) return copia;
+    // Nem cadastro nem cópia: alguém que saiu e cujo documento ficou. Dizer
+    // "Alguém" mostra que há um lugar ocupado ali, em vez de uma linha em
+    // branco que o líder leria como "não tem ninguém".
+    return 'Alguém';
+  }
+
+  /// A letra do avatar.
+  ///
+  /// NUNCA indexa texto vazio. A tela fazia `userName[0]`, e `''[0]` LANÇA —
+  /// então todo culto criado pela agenda fixa com equipe padrão derrubava a
+  /// tela do culto inteira, no meio da lista de escalados. O gerador grava
+  /// `userName` vazio de propósito.
+  String inicialCom(Map<String, String> nomes) {
+    final n = nomeCom(nomes);
+    return n.isEmpty ? '?' : n[0].toUpperCase();
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'userId': userId,
@@ -188,6 +217,53 @@ class ScaleModel {
   }
 
   int get confirmedCount => levitas.where((l) => l.confirmed).length;
+
+  /// Quem ainda não confirmou, na ordem em que está escalado.
+  ///
+  /// É a pergunta que o líder faz no sábado à noite, e a que ele respondia
+  /// abrindo o culto e contando os nomes verdes na mão.
+  List<ScaleLevita> get naoConfirmados =>
+      levitas.where((l) => !l.confirmed).toList();
+
+  /// "3 de 7 confirmaram", ou o que fizer sentido quando não são 3 de 7.
+  ///
+  /// Os casos de borda estão aqui, e não na tela, porque são eles que fazem a
+  /// frase soar como gente: "ninguém confirmou ainda" é mais claro que "0 de
+  /// 7 confirmaram", e "todos confirmaram" é a notícia que o líder quer ler
+  /// de longe. Com uma pessoa só, "1 de 1 confirmaram" estaria errado no
+  /// português e na conta.
+  String get textoDaConfirmacao {
+    final total = levitas.length;
+    if (total == 0) return 'Ninguém escalado';
+    final ok = confirmedCount;
+    if (ok == total) return total == 1 ? 'Confirmado' : 'Todos confirmaram';
+    if (ok == 0) return 'Ninguém confirmou ainda';
+    return '$ok de $total confirmaram';
+  }
+
+  /// Já está tudo confirmado? Serve para a tela escolher a cor.
+  bool get todosConfirmaram =>
+      levitas.isNotEmpty && confirmedCount == levitas.length;
+
+  /// "Falta confirmar: Ana, Bruno e mais 2" — ou vazio quando não falta
+  /// ninguém.
+  ///
+  /// Corta em [limite] nomes de propósito: a lista inteira numa escala de 12
+  /// pessoas viraria um parágrafo no cartão do Início, e quem lê quer a
+  /// primeira informação ("ainda falta gente") sem rolar a tela.
+  String faltamConfirmar(Map<String, String> nomes, {int limite = 3}) {
+    final faltam = naoConfirmados;
+    if (faltam.isEmpty) return '';
+    final nomesDeles = faltam.map((l) => l.nomeCom(nomes)).toList();
+    if (nomesDeles.length <= limite) {
+      if (nomesDeles.length == 1) return 'Falta confirmar: ${nomesDeles.first}';
+      final ultimo = nomesDeles.removeLast();
+      return 'Falta confirmar: ${nomesDeles.join(', ')} e $ultimo';
+    }
+    final mostrados = nomesDeles.take(limite).join(', ');
+    final resto = nomesDeles.length - limite;
+    return 'Falta confirmar: $mostrados e mais $resto';
+  }
 
   ScaleModel copyWith({
     String? id,

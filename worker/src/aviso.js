@@ -163,6 +163,15 @@ export function deveAvisar(inscricao, opcoes = {}) {
 /// fazer nada) ou para ninguém (o líder nunca sabe) dão a mesma resposta
 /// "enviado" no final.
 export function quemAvisaDoPedido(pessoas, inscricoes, opcoes = {}) {
+  return lideresInscritos(pessoas, inscricoes, { ...opcoes, tipo: 'pedido' });
+}
+
+/// As inscrições dos LÍDERES que devem receber um aviso de [tipo].
+///
+/// `excluirId` tira quem causou o aviso: um líder que confirma a própria
+/// presença não precisa ser avisado de si mesmo.
+export function lideresInscritos(pessoas, inscricoes, opcoes = {}) {
+  const { excluirId = '', tipo = 'chat' } = opcoes;
   const lideres = new Set(
     (Array.isArray(pessoas) ? pessoas : [])
       // `bot !== true` e não `!bot`: campo ausente é gente, que é o caso de
@@ -171,9 +180,30 @@ export function quemAvisaDoPedido(pessoas, inscricoes, opcoes = {}) {
       .map((p) => p._id),
   );
   return (Array.isArray(inscricoes) ? inscricoes : []).filter(
-    (i) => i && lideres.has(i.userId)
-        && deveAvisar(i, { ...opcoes, tipo: 'pedido' }),
+    (i) => i && lideres.has(i.userId) && i.userId !== excluirId
+        && deveAvisar(i, { ...opcoes, tipo }),
   );
+}
+
+/// "Ana confirmou" ou "Ana NÃO vai poder ir", para o líder.
+///
+/// Os dois textos são bem diferentes de propósito: confirmar é boa notícia e
+/// pode esperar; desmarcar é um instrumento faltando no domingo, e é a única
+/// das duas em que o líder tem algo a fazer.
+export function textoDaConfirmacao({ nome, culto, confirmou, agoraMs }) {
+  const quem = (nome ?? '').trim() || 'Alguém';
+  const tipo = (culto?.serviceType ?? '').trim() || 'Culto';
+  const quando = quandoEhOCulto(culto?.date, agoraMs);
+  if (confirmou) {
+    return {
+      titulo: 'Presença confirmada',
+      corpo: `${quem} vai ao ${tipo} ${quando}`.trim(),
+    };
+  }
+  return {
+    titulo: 'Desmarcou a presença',
+    corpo: `${quem} NÃO vai poder ir ao ${tipo} ${quando}`.trim(),
+  };
 }
 
 /// Limite por remetente, na memória deste isolate.

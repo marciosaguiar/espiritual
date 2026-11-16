@@ -433,6 +433,9 @@ class _NextServiceCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Nome por id: o culto guarda cópia, e o gerador da agenda fixa grava
+    // vazio — os chips apareciam em branco.
+    final nomes = context.watch<AuthProvider>().nomes;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Container(
@@ -543,14 +546,37 @@ class _NextServiceCard extends StatelessWidget {
             ],
             if (scale!.levitas.isNotEmpty) ...[
               const SizedBox(height: 12),
-              Text(
-                'Levitas (${scale!.levitas.length})',
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
-                ),
+              // "3 de 7 confirmaram" no lugar de "Levitas (7)".
+              //
+              // A pergunta do líder no sábado à noite não é quantas pessoas
+              // estão escaladas — é quantas já disseram que vêm. Ele
+              // respondia isso abrindo o culto e contando os nomes verdes.
+              Row(
+                children: [
+                  Icon(
+                    scale!.todosConfirmaram
+                        ? Icons.check_circle_rounded
+                        : Icons.schedule_rounded,
+                    size: 14,
+                    color: scale!.todosConfirmaram
+                        ? AppColors.success
+                        : AppColors.textSecondaryLight,
+                  ),
+                  const SizedBox(width: 5),
+                  Text(
+                    scale!.textoDaConfirmacao,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: scale!.todosConfirmaram
+                          ? AppColors.success
+                          : (isDark
+                              ? AppColors.textSecondaryDark
+                              : AppColors.textSecondaryLight),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 8),
               Wrap(
@@ -579,7 +605,7 @@ class _NextServiceCard extends StatelessWidget {
                               size: 12, color: AppColors.success),
                         if (l.confirmed) const SizedBox(width: 4),
                         Text(
-                          l.userName,
+                          l.nomeCom(nomes),
                           style: TextStyle(
                             fontFamily: 'Poppins',
                             fontSize: 11,
@@ -594,6 +620,24 @@ class _NextServiceCard extends StatelessWidget {
                   );
                 }).toList(),
               ),
+              // QUEM FALTA, pelo nome.
+              //
+              // Os chips já dizem quem confirmou, mas ler ausência numa lista
+              // é trabalho: o olho conta os que têm tique. A frase diz
+              // diretamente de quem o líder precisa cobrar — que é a única
+              // coisa que ele pode FAZER a respeito.
+              if (scale!.naoConfirmados.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  scale!.faltamConfirmar(nomes),
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 11,
+                    height: 1.35,
+                    color: AppColors.textSecondaryLight,
+                  ),
+                ),
+              ],
             ],
           ],
         ],

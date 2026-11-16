@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../data/models/scale_model.dart';
 import '../../data/models/team_model.dart';
+import '../../data/services/avisos_service.dart';
 import '../../data/services/firestore_service.dart';
 
 class ScaleProvider extends ChangeNotifier {
@@ -154,6 +155,11 @@ class ScaleProvider extends ChangeNotifier {
           .toList();
       return scale.copyWith(levitas: levitas);
     });
+
+    // Avisa os líderes. Depois de gravar, e sem esperar: quem desmarca tira
+    // um instrumento do domingo, e é o líder que remonta a escala. O aviso
+    // não devolve erro — a confirmação já está salva e na tela.
+    AvisosService.avisarConfirmacao(scaleId);
     return null;
   }
 

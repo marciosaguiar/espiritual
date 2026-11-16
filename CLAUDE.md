@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 350 testes
+flutter test                   # 364 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 245 testes
+cd test_regras && npm install && npm test    # 248 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -42,7 +42,7 @@ O mini-servidor dos avisos tem testes próprios, que não precisam de emulador
 nem de Flutter:
 
 ```bash
-node --test worker/teste/*.mjs               # 77 testes
+node --test worker/teste/*.mjs               # 83 testes
 node --test web/teste/*.mjs                  # 11 testes do service worker
 ```
 
@@ -336,6 +336,21 @@ servidor tudo o que as quatro escutas de `main_screen` alcançam — e **leitura
   cada push — sem ela, **descadastra o aparelho por abuso**, e aquele celular
   pararia de receber aviso para sempre, sem nada na tela. O `?? {}` conserta;
   foi o teste do service worker que achou, escrito para outra coisa.
+- **`''[0]` LANÇA, e a tela do culto fazia isso.** O avatar de cada escalado
+  era `levita.userName[0].toUpperCase()`. E o gerador da agenda fixa grava
+  `userName` VAZIO — ele monta o culto a partir da equipe, que guarda só ids.
+  Então todo culto gerado com equipe padrão derrubava a tela do culto
+  inteira, no meio da lista de escalados. Não tinha aparecido ainda porque os
+  horários estavam sem equipe padrão: bastava o líder escolher uma. O chat já
+  se protegia (`isNotEmpty ? ... : '?'`); a escala, não. Agora o nome é
+  resolvido por id (`ScaleLevita.nomeCom`) e a inicial nunca indexa vazio
+  (`inicialCom`).
+- **`affectedKeys()` NÃO conta campo gravado com o mesmo valor.** Um teste de
+  regra escrito para provar que o levita não muda o repertório de carona
+  passava sozinho: ele gravava `songs: [{songId:'s1'}]`, que era exatamente o
+  que já estava no documento. Para a regra, `songs` não mudou. Todo teste de
+  "não pode mexer em X de carona" precisa gravar em X um valor DIFERENTE do
+  que está lá.
 - **Diagnóstico errado que custou tempo:** quando o instrumento continuou
   aparecendo em inglês depois de corrigido, eu disse que era cache do service
   worker. Não era: não havia service worker nenhum. **Antes de culpar o
@@ -399,8 +414,8 @@ vez:
    novo pedido de entrada").
 5. ~~**O Worker gera os cultos da agenda fixa**~~ — **feito** (ver "O Worker
    gera os cultos").
-6. **"3 de 7 confirmaram"**, com quem falta, no Início e na lista de cultos —
-   e avisar o líder do culto quando alguém confirma ou desmarca.
+6. ~~**"3 de 7 confirmaram"**, com quem falta, e avisar o líder~~ —
+   **feito** (ver "Quem já confirmou").
 7. **"Minhas próximas músicas"** no Início, com o tom do culto, a função e o
    botão do YouTube.
 8. **Tom, se tem cifra e "tocada pela última vez em"** na hora de escolher as
@@ -1011,6 +1026,70 @@ carimbo por mensagem:
 **O que isto custou em leitura:** o chat passou a abrir duas escutas novas
 (~15 documentos cada): as leituras e a lista de pessoas — a segunda serve ao
 "visto por" e à lista de quem mencionar. São ~30 leituras por sessão, uma vez.
+
+### Quem já confirmou
+
+"Levitas (7)" dizia quantas pessoas estavam escaladas. A pergunta que o líder
+faz no sábado à noite é outra: **quantas já disseram que vêm** — e ele
+respondia isso abrindo o culto e contando os nomes verdes na mão.
+
+- **A frase mora no modelo** (`ScaleModel.textoDaConfirmacao`), não na tela,
+  porque são os casos de borda que a fazem soar como gente: "ninguém
+  confirmou ainda" em vez de "0 de 7 confirmaram", "todos confirmaram" para o
+  líder ler de longe, e "Confirmado" quando a escala tem uma pessoa só — "1 de
+  1 confirmaram" estaria errado no português e na conta.
+- **Culto sem ninguém escalado NÃO conta como pronto.** `todosConfirmaram` é
+  falso com a lista vazia: zero de zero não é escala pronta, é escala vazia, e
+  o verde ali diria ao líder que não há nada a fazer.
+- **Quem falta sai pelo NOME** (`faltamConfirmar`), cortado em três mais "e
+  mais N": os chips já dizem quem confirmou, mas ler ausência numa lista é
+  trabalho — o olho conta os que têm tique. A frase diz de quem o líder
+  precisa cobrar, que é a única coisa que ele pode fazer a respeito.
+- **Na lista de cultos o número fica verde quando está tudo confirmado.**
+  Antes era sempre vermelho, inclusive no culto pronto: cor que não muda não
+  informa nada.
+
+**O nome vem do cadastro, não da cópia dentro do culto.** `userName` é cópia,
+e o gerador da agenda fixa grava vazio. Resolver por id é a mesma razão por
+que a escala guarda referência de música e nunca cópia: quem corrige o próprio
+nome corrige em todos os cultos de uma vez.
+
+- **Uma escuta só da lista de pessoas, no app todo** (`AuthProvider.pessoas` /
+  `nomes`, iniciada em `main_screen`). O chat tinha a dele, e a Escala e o
+  Início passaram a precisar da mesma lista: três escutas sobre os mesmos ~15
+  documentos custariam o triplo de leitura pela mesma informação. O chat
+  passou a ler do provider, então o total de escutas **caiu**.
+- Sem cadastro nem cópia, o nome vira "Alguém" — alguém que saiu e cujo
+  documento ficou. Linha em branco o líder leria como "não tem ninguém aqui".
+
+**Avisar o líder quando alguém confirma ou desmarca:**
+
+- **Vai só para os LÍDERES**, e não para o ministério: é informação de quem
+  remonta a escala. Avisar 14 pessoas de algo que nenhuma delas pode resolver
+  é como se ensina a ignorar notificação. O líder que confirma a própria
+  presença não se avisa (`excluirId`).
+- **Quem decide quem é "o líder do culto" é a função, não o campo
+  `createdBy`.** Desde que o Worker gera os cultos, `createdBy` é o robô na
+  maioria deles — avisar "o criador" não avisaria ninguém.
+- **O texto sai do DOCUMENTO, não do corpo do pedido.** O app manda só o id
+  do culto; o Worker lê se a pessoa está confirmada ou não. Assim o aviso não
+  pode dizer o contrário do que está gravado.
+- **`confirmadoEm` é o carimbo de "acabou de confirmar"**, exigido pela regra
+  como `request.time`, e o Worker só avisa se for de menos de 2 minutos — a
+  mesma trava do chat e da escala. Sem ela, o id de um culto antigo, que todo
+  aprovado lê, reavisaria o líder a qualquer momento.
+- **O carimbo entra na MESMA escrita da confirmação**
+  (`mudou().hasOnly(['levitas','confirmadoEm'])`). Uma segunda escrita só para
+  carimbar dobraria a cota e deixaria o carimbo sem a confirmação quando a
+  segunda falhasse.
+- **Confirmar e desmarcar têm etiquetas diferentes.** Confirmar substitui o
+  aviso anterior do mesmo culto (`levita-confirma-<culto>`): o líder só precisa
+  saber que mexeu, e a contagem está no app. **Desmarcar é por pessoa**
+  (`levita-desmarca-<culto>-<uid>`) e nunca é substituído — é um instrumento
+  faltando no domingo, e perder esse nome seria perder a única notícia que
+  pede ação.
+- Liga e desliga à parte em Perfil, e o interruptor **só aparece para líder**,
+  como o de "novo pedido de entrada".
 
 ### O Worker gera os cultos
 

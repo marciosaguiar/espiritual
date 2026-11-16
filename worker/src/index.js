@@ -32,7 +32,7 @@ import {
 import { importarChaveVapid, enviarAviso } from './push.js';
 import {
   textoDoAviso, textoDeEscalado, textoDaVespera, deveAvisar, dentroDoLimite,
-  quemAvisaDoPedido,
+  quemAvisaDoPedido, lideresInscritos, textoDaConfirmacao,
   JANELA_DO_AVISO_MS,
 } from './aviso.js';
 
@@ -466,6 +466,70 @@ export default {
     }
 
     // ── Testar nos próprios aparelhos ──────────────────────────────────────
+    // ── "Ana confirmou" / "Ana não vai poder ir" ──────────────────────────
+    //
+    // Quem chama é a própria pessoa, logo depois de confirmar. O aviso vai só
+    // para os líderes: são eles que remontam a escala quando alguém desmarca.
+    if (url.pathname === '/confirmou') {
+      let corpo = {};
+      try { corpo = await pedido.json(); } catch (_) { /* corpo vazio */ }
+      const cultoId = String(corpo.cultoId ?? '');
+      if (!/^[A-Za-z0-9_-]{1,64}$/.test(cultoId)) {
+        return json({ erro: 'cultoId inválido' }, 400, cabecalhos);
+      }
+
+      const culto = await lerDoc(env, `scales/${cultoId}`);
+      if (!culto) return json({ erro: 'culto não existe' }, 404, cabecalhos);
+
+      // Três conferências, as mesmas do chat em espírito: a pessoa está DE
+      // FATO escalada, o estado que ela diz é o que está gravado, e a
+      // confirmação é de agora.
+      const levitas = Array.isArray(culto.levitas) ? culto.levitas : [];
+      const meu = levitas.find((l) => l && l.userId === dono.uid);
+      if (!meu) {
+        return json({ erro: 'você não está nesta escala' }, 403, cabecalhos);
+      }
+      // Lê do DOCUMENTO, não do corpo do pedido: assim o texto do aviso não
+      // pode dizer o contrário do que está gravado.
+      const confirmou = meu.confirmed === true;
+
+      const quando = Date.parse(culto.confirmadoEm ?? '');
+      if (Number.isNaN(quando) || Date.now() - quando > JANELA_DO_AVISO_MS) {
+        // Sem o carimbo recente, o id de um culto antigo — que todo aprovado
+        // lê — reavisaria o líder a qualquer momento.
+        return json({ erro: 'confirmação antiga demais para avisar' },
+          409, cabecalhos);
+      }
+
+      const pessoas = await lerColecao(env, 'users');
+      const todas = await lerColecao(env, 'pushSubs');
+      const alvos = lideresInscritos(pessoas, todas, {
+        tipo: 'confirmacao',
+        // Um líder que confirma a própria presença não se avisa.
+        excluirId: dono.uid,
+      });
+      if (!alvos.length) {
+        return json({ enviados: 0, ninguem: true }, 200, cabecalhos);
+      }
+
+      const resultado = await espalhar(env, alvos, {
+        ...textoDaConfirmacao({
+          nome: dono.nome, culto, confirmou,
+        }),
+        abrir: 'culto',
+        cultoId,
+        // Confirmação pode ser substituída: o líder só precisa saber que
+        // mexeu, e a contagem está no app. DESMARCAR não: é um instrumento
+        // faltando no domingo, e perder um nome aí seria perder a única
+        // notícia que pede ação.
+        etiqueta: confirmou
+          ? `levita-confirma-${cultoId}`
+          : `levita-desmarca-${cultoId}-${dono.uid}`,
+      }, await chaveVapid(env));
+
+      return json({ ...resultado, confirmou }, 200, cabecalhos);
+    }
+
     // ── Gerar os cultos da agenda fixa ────────────────────────────────────
     //
     // A mesma conta roda no app quando um líder o abre. O problema é esse: se

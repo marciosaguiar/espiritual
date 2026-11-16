@@ -809,7 +809,9 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
             Row(
               children: [
                 Text(
-                  'Levitas (${_scale.levitas.length})',
+                  // A contagem de confirmados, não a de escalados: é a
+                  // pergunta que o líder faz aqui.
+                  'Levitas · ${_scale.textoDaConfirmacao}',
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 15,
@@ -859,7 +861,10 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
             else
               ...List.generate(_scale.levitas.length, (i) {
                 final l = _scale.levitas[i];
-                return _LevitaRow(levita: l);
+                return _LevitaRow(
+                  levita: l,
+                  nomes: context.watch<AuthProvider>().nomes,
+                );
               }),
 
             const SizedBox(height: 20),
@@ -1123,8 +1128,12 @@ class _SongRow extends StatelessWidget {
 }
 
 class _LevitaRow extends StatelessWidget {
+  /// Nome de cada pessoa por id, para resolver o de quem está escalado. O
+  /// culto guarda cópia, e o gerador da agenda fixa grava vazio.
+  final Map<String, String> nomes;
+
   final ScaleLevita levita;
-  const _LevitaRow({required this.levita});
+  const _LevitaRow({required this.levita, required this.nomes});
 
   @override
   Widget build(BuildContext context) {
@@ -1151,7 +1160,7 @@ class _LevitaRow extends StatelessWidget {
                 ? AppColors.success.withOpacity(0.15)
                 : AppColors.blue.withOpacity(0.15),
             child: Text(
-              levita.userName[0].toUpperCase(),
+              levita.inicialCom(nomes),
               style: TextStyle(
                 fontFamily: 'Poppins',
                 fontWeight: FontWeight.w700,
@@ -1165,7 +1174,7 @@ class _LevitaRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  levita.userName,
+                  levita.nomeCom(nomes),
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 13,

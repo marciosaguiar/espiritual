@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   textoDoAviso, textoDeEscalado, textoDaVespera, quandoEhOCulto,
   deveAvisar, dentroDoLimite, esquecerLimites, quemAvisaDoPedido,
+  lideresInscritos, textoDaConfirmacao,
 } from '../src/aviso.js';
 import { conferirToken, limparCaches, simplificar } from '../src/firebase.js';
 
@@ -524,4 +525,61 @@ test('listas vazias ou tortas não derrubam o Worker', () => {
   assert.deepEqual(quemAvisaDoPedido(null, null), []);
   assert.deepEqual(quemAvisaDoPedido(PESSOAS, [null, sub('lider1')])
     .map((i) => i.userId), ['lider1']);
+});
+
+
+// ── "Ana confirmou" / "Ana não vai poder ir" ────────────────────────────────
+
+const CULTO_CONF = {
+  serviceType: 'Culto', date: '2026-11-22T22:00:00.000Z',
+};
+const AGORA_CONF = Date.parse('2026-11-21T20:00:00.000Z');
+
+test('confirmar e desmarcar têm textos bem diferentes', () => {
+  // Confirmar é boa notícia e pode esperar. Desmarcar é um instrumento
+  // faltando no domingo — e é a única das duas em que o líder tem o que fazer.
+  const sim = textoDaConfirmacao(
+    { nome: 'Ana', culto: CULTO_CONF, confirmou: true, agoraMs: AGORA_CONF });
+  assert.equal(sim.titulo, 'Presença confirmada');
+  assert.match(sim.corpo, /^Ana vai ao Culto amanhã às /);
+
+  const nao = textoDaConfirmacao(
+    { nome: 'Ana', culto: CULTO_CONF, confirmou: false, agoraMs: AGORA_CONF });
+  assert.equal(nao.titulo, 'Desmarcou a presença');
+  assert.match(nao.corpo, /Ana NÃO vai poder ir/);
+});
+
+test('sem nome não vira aviso em branco', () => {
+  const r = textoDaConfirmacao(
+    { nome: '   ', culto: CULTO_CONF, confirmou: false, agoraMs: AGORA_CONF });
+  assert.match(r.corpo, /^Alguém NÃO vai poder ir/);
+});
+
+test('culto sem tipo escrito vira "Culto"', () => {
+  const r = textoDaConfirmacao(
+    { nome: 'Ana', culto: { date: CULTO_CONF.date }, confirmou: true,
+      agoraMs: AGORA_CONF });
+  assert.match(r.corpo, /ao Culto /);
+});
+
+test('o líder que confirma a própria presença não se avisa', () => {
+  const alvos = lideresInscritos(PESSOAS, [sub('lider1'), sub('lider2')],
+    { tipo: 'confirmacao', excluirId: 'lider1' });
+  assert.deepEqual(alvos.map((i) => i.userId), ['lider2']);
+});
+
+test('levita não recebe aviso de confirmação de ninguém', () => {
+  // É informação de quem remonta a escala. Mandar para todos seria avisar 14
+  // pessoas de algo que nenhuma delas pode resolver.
+  const alvos = lideresInscritos(PESSOAS,
+    [sub('levita1'), sub('lider1')], { tipo: 'confirmacao' });
+  assert.deepEqual(alvos.map((i) => i.userId), ['lider1']);
+});
+
+test('o liga-desliga da confirmação é independente do de pedido', () => {
+  const alvos = lideresInscritos(PESSOAS,
+    [sub('lider1', { tipos: { confirmacao: false } }),
+     sub('lider2', { tipos: { pedido: false } })],
+    { tipo: 'confirmacao' });
+  assert.deepEqual(alvos.map((i) => i.userId), ['lider2']);
 });

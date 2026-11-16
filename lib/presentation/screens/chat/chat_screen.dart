@@ -11,7 +11,6 @@ import '../../widgets/common/error_banner.dart';
 import '../../widgets/chat/voz.dart';
 import '../../../data/models/leitura_do_chat.dart';
 import '../../../data/models/user_model.dart';
-import '../../../data/services/auth_service.dart';
 import '../../../data/services/avisos_service.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../../data/services/leituras_service.dart';
@@ -96,9 +95,12 @@ class _ChatScreenState extends State<ChatScreen> {
   /// que saem os dois tiques azuis e a lista de quem mencionar. Sem a lista
   /// de pessoas, "visto por" não teria contra quem comparar.
   List<LeituraDoChat> _leituras = const [];
+  /// As pessoas do ministério vêm do `AuthProvider`, que mantém UMA escuta
+  /// para o app todo. Esta tela tinha a sua, e a Escala e o Início passaram a
+  /// precisar da mesma lista: três escutas sobre os mesmos ~15 documentos
+  /// custariam o triplo de leitura pela mesma informação.
   List<UserModel> _pessoas = const [];
   StreamSubscription<List<LeituraDoChat>>? _escutaLeituras;
-  StreamSubscription<List<UserModel>>? _escutaPessoas;
 
   /// Quem foi mencionado nesta mensagem que estou escrevendo: nome → uid.
   ///
@@ -134,9 +136,6 @@ class _ChatScreenState extends State<ChatScreen> {
       // Sem as leituras, as bolhas ficam com um tique cinza. É o pior caso
       // seguro: nunca dois tiques azuis adivinhados.
     });
-    _escutaPessoas = AuthService.watchEscalaveis().listen((p) {
-      if (mounted) setState(() => _pessoas = p);
-    }, onError: (_) {});
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _marcarComoLido();
@@ -259,7 +258,6 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageCtrl.removeListener(_handleTyping);
     _messageCtrl.removeListener(_olharPorMencao);
     _escutaLeituras?.cancel();
-    _escutaPessoas?.cancel();
     _focoDaMensagem.dispose();
     _searchCtrl.removeListener(_onSearchChanged);
     _typingStopTimer?.cancel();
@@ -410,6 +408,11 @@ class _ChatScreenState extends State<ChatScreen> {
     final chat = context.watch<ChatProvider>();
     final songs = context.watch<SongsProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    // A lista vem do provider, que a escuta uma vez para o app todo. Guardada
+    // no estado porque os métodos de desenho das bolhas já a usam de vários
+    // lugares, e passar por parâmetro mudaria dez assinaturas.
+    _pessoas = auth.pessoas;
 
     final headerColor = isDark ? _Wa.headerDark : _Wa.headerLight;
 

@@ -606,17 +606,30 @@ class _ServiceCard extends StatelessWidget {
                       ],
                     ),
                     const SizedBox(height: 4),
+                    // Verde quando todos confirmaram: é o que o líder
+                    // procura ao correr o olho pela lista. Antes era sempre
+                    // vermelho, inclusive no culto que estava pronto — cor
+                    // que não muda não informa nada.
                     Row(
                       children: [
-                        const Icon(Icons.people_outline_rounded,
-                            size: 12, color: AppColors.red),
+                        Icon(
+                          scale.todosConfirmaram
+                              ? Icons.check_circle_rounded
+                              : Icons.people_outline_rounded,
+                          size: 12,
+                          color: scale.todosConfirmaram
+                              ? AppColors.success
+                              : AppColors.red,
+                        ),
                         const SizedBox(width: 3),
                         Text(
                           '${scale.confirmedCount}/${scale.levitas.length}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontFamily: 'Poppins',
                             fontSize: 12,
-                            color: AppColors.red,
+                            color: scale.todosConfirmaram
+                                ? AppColors.success
+                                : AppColors.red,
                           ),
                         ),
                       ],

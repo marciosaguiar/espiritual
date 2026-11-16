@@ -360,9 +360,20 @@ service cloud.firestore {
         // ministério a qualquer momento.
         && (!('levitasEm' in mudou())
             || request.resource.data.levitasEm == request.time)
+        // `confirmadoEm` é o carimbo de "alguém acabou de confirmar", e é o
+        // que o servidor dos avisos confere antes de avisar o líder. Mesma
+        // razão do `levitasEm`: com a hora do aparelho, um celular adiantado
+        // faria o carimbo valer por horas, e o id de um culto antigo — que
+        // todo aprovado lê — reavisaria o líder a qualquer momento.
+        && (!('confirmadoEm' in mudou())
+            || request.resource.data.confirmadoEm == request.time)
         && (
           (ehLider() && texto('serviceType', 60) && texto('observations', 5000))
-          || (aprovado() && mudou().hasOnly(['levitas']))
+          // O levita confirma presença: alcança `levitas` e o carimbo, nada
+          // mais. O carimbo entra junto porque é a mesma escrita — pedir uma
+          // segunda escrita para carimbar dobraria a cota e deixaria o
+          // carimbo sem a confirmação quando a segunda falhasse.
+          || (aprovado() && mudou().hasOnly(['levitas', 'confirmadoEm']))
         );
 
       // NINGUÉM apaga culto pelo app, nem o líder.

@@ -1501,8 +1501,9 @@ class _AvisosDoAppState extends State<_AvisosDoApp> {
           // aprova, e o Worker manda só para ele. Um liga-desliga de algo que
           // nunca chega é só confusão na tela de quem não é líder.
           final souLider = context.read<AuthProvider>().isAdmin;
+          const soDoLider = {TipoDeAviso.pedido, TipoDeAviso.confirmacao};
           final tipos = TipoDeAviso.values
-              .where((t) => t != TipoDeAviso.pedido || souLider);
+              .where((t) => !soDoLider.contains(t) || souLider);
           for (final tipo in tipos) {
             miolo.add(Padding(
               padding: const EdgeInsets.only(top: 2),

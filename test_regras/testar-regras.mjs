@@ -1302,6 +1302,39 @@ await teste('levita não carimba a escalação de carona', () =>
     levitas: [], levitasEm: serverTimestamp(),
   })));
 
+// ── o carimbo da confirmação ──
+// `confirmadoEm` é o que o servidor dos avisos confere antes de avisar o
+// líder de que alguém confirmou ou desmarcou.
+await teste('confirmar presença PODE carimbar, com a hora do servidor',
+  () => assertSucceeds(updateDoc(doc(levita(), 'scales', 'c1'), {
+    levitas: [{ userId: LEVITA, userName: 'Ana', instrument: 'vocalist',
+                confirmed: true }],
+    confirmadoEm: serverTimestamp(),
+  })));
+
+// Com a hora do aparelho, um celular adiantado faria o carimbo valer por
+// horas — e o id de um culto antigo, que todo aprovado lê, reavisaria o líder
+// a qualquer momento.
+await teste('a hora do APARELHO é recusada no carimbo da confirmação',
+  () => assertFails(updateDoc(doc(levita(), 'scales', 'c1'), {
+    levitas: [{ userId: LEVITA, userName: 'Ana', instrument: 'vocalist',
+                confirmed: true }],
+    confirmadoEm: new Date(2030, 0, 1),
+  })));
+
+// O carimbo não abre a porta para mexer em mais nada.
+//
+// O id da música é OUTRO de propósito: `affectedKeys()` não conta campo
+// gravado com o mesmo valor que já estava lá, e a primeira versão deste teste
+// passava por isso — o culto já tinha `songs: [{songId:'s1'}]` de um teste
+// anterior, então o campo não aparecia como mudado e a regra, com razão,
+// deixava passar.
+await teste('o levita não muda o repertório de carona com o carimbo',
+  () => assertFails(updateDoc(doc(levita(), 'scales', 'c1'), {
+    levitas: [], confirmadoEm: serverTimestamp(),
+    songs: [{ songId: 'outra-musica' }],
+  })));
+
 await teste('só o líder (e o robô) mexem na trava da véspera', async () => {
   await assertSucceeds(setDoc(doc(lider(), 'avisosDaVespera', '2026-11-22'), {
     dia: '2026-11-22', cultos: 2, pessoas: 7, em: new Date(),

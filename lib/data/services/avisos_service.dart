@@ -22,7 +22,10 @@ enum TipoDeAviso {
 
   /// Só o líder recebe — é ele que aprova. Aparece em Perfil só para ele,
   /// porque um liga-desliga de algo que nunca chega é só confusão.
-  pedido('pedido', 'Novo pedido de entrada (líder)');
+  pedido('pedido', 'Novo pedido de entrada (líder)'),
+
+  /// Também só o líder: é ele que remonta a escala quando alguém desmarca.
+  confirmacao('confirmacao', 'Alguém confirma ou desmarca (líder)');
 
   const TipoDeAviso(this.chave, this.rotulo);
 
@@ -382,6 +385,27 @@ class AvisosService {
       }
     } catch (e) {
       debugPrint('[avisos] não avisei os escalados: $e');
+    }
+  }
+
+  /// Avisa os líderes de que alguém confirmou ou desmarcou a presença.
+  ///
+  /// Chamada logo depois da confirmação, pela própria pessoa. Não devolve
+  /// erro: a confirmação já está gravada e aparece na tela de todo mundo. Um
+  /// balão vermelho dizendo "não avisei" assustaria quem acabou de confirmar,
+  /// sem nada a fazer a respeito.
+  ///
+  /// Quem decide o texto é o Worker, lendo o estado DO DOCUMENTO — então o
+  /// aviso nunca pode dizer o contrário do que está gravado.
+  static Future<void> avisarConfirmacao(String cultoId) async {
+    if (!AvisosConfig.configurado) return;
+    try {
+      final r = await _chamar('/confirmou', {'cultoId': cultoId});
+      if (r.status < 200 || r.status >= 300) {
+        debugPrint('[avisos] confirmação: ${r.status} ${r.corpo}');
+      }
+    } catch (e) {
+      debugPrint('[avisos] não avisei da confirmação: $e');
     }
   }
 

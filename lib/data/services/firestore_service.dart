@@ -397,9 +397,17 @@ class FirestoreService {
             .map((l) => l.toMap())
             .toList();
 
-        // Only this field is written, so nothing else in the service is
-        // touched, and the security rules allow it for a levita.
-        tx.update(ref, {'levitas': levitas});
+        // Só estes dois campos são escritos, então nada mais do culto é
+        // tocado, e as regras permitem isso para um levita.
+        //
+        // `confirmadoEm` é a hora do SERVIDOR, e a regra exige que seja: é
+        // esse carimbo que o servidor dos avisos confere antes de avisar o
+        // líder, e com a hora do aparelho um celular adiantado faria o
+        // carimbo valer por horas.
+        tx.update(ref, {
+          'levitas': levitas,
+          'confirmadoEm': FieldValue.serverTimestamp(),
+        });
       });
       return (success: true, error: null);
     } on FirebaseException catch (e) {
