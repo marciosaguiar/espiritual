@@ -15,6 +15,7 @@ import '../songs/song_detail_screen.dart';
 import '../biblia/biblia_screen.dart';
 import '../../widgets/common/glass.dart';
 import '../../widgets/common/recuperacao_por_email.dart';
+import '../../widgets/common/minhas_proximas_musicas.dart';
 
 class HomeScreen extends StatefulWidget {
   /// Leva para a aba Perfil. A foto no canto parecia um botão e não era:
@@ -153,6 +154,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   // faz. O modelo já sabia responder (isUserInScale,
                   // hasUserConfirmed) e nada chamava esses métodos.
                   _MyNextCallCard(scale: nextScale),
+
+                  // Logo depois do "você toca domingo": é a pergunta
+                  // seguinte, e era a razão de a pessoa abrir o app. Para
+                  // chegar à cifra do domingo ela saía do Início, ia na
+                  // Escala, abria o culto, achava a música e tocava nela.
+                  const MinhasProximasMusicas(),
 
                   // Verse of the Day Card
                   _VerseCard(verse: AppStrings.verses[_verseIndex]),

@@ -102,6 +102,57 @@ class ScaleProvider extends ChangeNotifier {
     return culto.date.isAfter(agora.subtract(duracaoDoCulto));
   }
 
+  /// As músicas que EU vou tocar nos próximos [dias] dias.
+  ///
+  /// Função pura, e recebe `agora`, pelo mesmo motivo de `aindaVale`: é conta
+  /// de data, e conta de data quebra na virada do dia — onde o teste precisa
+  /// poder ficar.
+  ///
+  /// Só entra culto em que a pessoa está escalada. Quem não está escalado
+  /// recebe lista vazia, e a tela não desenha cartão nenhum: cartão vazio
+  /// dizendo "nenhuma música" é pior que cartão nenhum, porque ocupa o lugar
+  /// de algo útil e ensina a pessoa a passar o olho por cima.
+  static List<MinhaMusica> minhasProximasMusicas({
+    required List<ScaleModel> cultos,
+    required String userId,
+    required DateTime agora,
+    int dias = 7,
+  }) {
+    if (userId.isEmpty) return const [];
+    final limite = agora.add(Duration(days: dias));
+    final saida = <MinhaMusica>[];
+
+    for (final culto in cultos) {
+      if (!aindaVale(culto, agora)) continue;
+      if (culto.date.isAfter(limite)) continue;
+
+      // A função é a DAQUELE culto, não a do perfil: quem canta num domingo e
+      // toca baixo no outro precisa abrir a música no modo certo.
+      String? minhaFuncao;
+      for (final l in culto.levitas) {
+        if (l.userId == userId) {
+          minhaFuncao = l.instrument;
+          break;
+        }
+      }
+      if (minhaFuncao == null) continue;
+
+      for (final ref in culto.songs) {
+        saida.add(MinhaMusica(
+          culto: culto,
+          ref: ref,
+          instrumento: minhaFuncao,
+        ));
+      }
+    }
+
+    // A lista do banco já vem por data, mas ordenar aqui deixa a função
+    // independente de quem a chama — e o teste pode passar os cultos em
+    // qualquer ordem.
+    saida.sort((a, b) => a.culto.date.compareTo(b.culto.date));
+    return saida;
+  }
+
   /// Upcoming services, cancelled ones left out — they are kept in the
   /// database so the generator does not recreate them, but nobody needs to
   /// see a cancelled service as "the next one".
@@ -284,4 +335,23 @@ class ScaleProvider extends ChangeNotifier {
         .map((s) => DateTime(s.date.year, s.date.month, s.date.day))
         .toSet();
   }
+}
+
+/// Uma música que eu vou tocar, e em que culto.
+///
+/// Junta as três coisas que a tela precisa dizer de uma vez: qual música, em
+/// que culto (dia e hora), e em que função eu estou naquele culto — que é o
+/// que decide se a música abre em cifra ou só com a letra.
+class MinhaMusica {
+  final ScaleModel culto;
+  final ScaleSong ref;
+
+  /// A função NAQUELE culto (`vocalist`, `bass`…), não a do perfil.
+  final String instrumento;
+
+  const MinhaMusica({
+    required this.culto,
+    required this.ref,
+    required this.instrumento,
+  });
 }
