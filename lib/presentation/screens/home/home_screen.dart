@@ -14,6 +14,7 @@ import '../scale/scale_detail_screen.dart';
 import '../songs/song_detail_screen.dart';
 import '../biblia/biblia_screen.dart';
 import '../../widgets/common/glass.dart';
+import '../../widgets/common/recuperacao_por_email.dart';
 
 class HomeScreen extends StatefulWidget {
   /// Leva para a aba Perfil. A foto no canto parecia um botão e não era:
@@ -139,6 +140,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   // não recebe aviso nenhum no iPhone.
                   const InstallBanner(),
 
+                  // Depois de instalar, a outra coisa que só funciona se for
+                  // feita ANTES de precisar: o e-mail de recuperação.
+                  //
+                  // Fica aqui, e não só em Perfil, porque ninguém abre o
+                  // Perfil por conta própria — e uma conta sem e-mail, com a
+                  // senha esquecida, é acesso perdido sem conserto. Sai da
+                  // tela sozinho assim que a pessoa cadastra.
+                  const _CartaoRecuperarSenha(),
+
                   // Primeira coisa da tela: a pergunta que o ministério mais
                   // faz. O modelo já sabia responder (isUserInScale,
                   // hasUserConfirmed) e nada chamava esses métodos.
@@ -254,6 +264,76 @@ class _AtalhoBiblia extends StatelessWidget {
             const Icon(Icons.chevron_right_rounded,
                 color: AppColors.textSecondaryLight),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Cadastre um e-mail para recuperar a senha", no Início.
+///
+/// Some sozinho quando a conta já tem e-mail, e NÃO tem "agora não" — o
+/// botão de dispensar foi o que fez o dono do app passar semanas sem o
+/// aplicativo instalado, sem entender por que os avisos não chegavam. Aqui o
+/// preço de dispensar seria maior: perder o acesso à própria conta.
+class _CartaoRecuperarSenha extends StatelessWidget {
+  const _CartaoRecuperarSenha();
+
+  @override
+  Widget build(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    if (auth.emailDeRecuperacao != null) return const SizedBox.shrink();
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: GestureDetector(
+        onTap: () => mostrarRecuperacaoPorEmail(context),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
+          decoration: BoxDecoration(
+            color: AppColors.yellow.withValues(alpha: isDark ? 0.14 : 0.10),
+            borderRadius: BorderRadius.circular(14),
+            border:
+                Border.all(color: AppColors.yellow.withValues(alpha: 0.35)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.shield_outlined,
+                  size: 22, color: AppColors.yellowDark),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Cadastre um e-mail',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    const Text(
+                      'Sem ele, uma senha esquecida não tem volta.',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 12.5,
+                        height: 1.35,
+                        color: AppColors.textSecondaryLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppColors.textSecondaryLight),
+            ],
+          ),
         ),
       ),
     );

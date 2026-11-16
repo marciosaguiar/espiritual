@@ -43,6 +43,13 @@ jobs:
         # tela. O teste faz o papel do aparelho e decifra de volta.
         run: node --test worker/teste/*.mjs
 
+      - name: Testar o service worker
+        # Ele decide qual etiqueta cada aviso usa e para onde vai quem toca.
+        # Erro aqui não aparece na tela de ninguém: o aviso chega bonito e
+        # leva à tela errada, ou um aviso apaga o outro e um pedido de
+        # entrada se perde.
+        run: node --test web/teste/*.mjs
+
       - name: Build web
         # --pwa-strategy=none: o service worker que o Flutter gera hoje só se
         #   desregistra, e registrá-lo apagaria o nosso (web/sw.js), que é

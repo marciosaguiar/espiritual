@@ -153,6 +153,29 @@ export function deveAvisar(inscricao, opcoes = {}) {
   return true;
 }
 
+/// Quem recebe o aviso de "novo pedido de entrada".
+///
+/// Só os LÍDERES: são eles que aprovam. Robô fora, como em todo o resto — ele
+/// não usa o app, não tem inscrição e não aprova ninguém.
+///
+/// Está aqui, separado da rota, porque é a parte que erra em silêncio: mandar
+/// para o ministério inteiro (todos leriam "alguém quer entrar" sem poder
+/// fazer nada) ou para ninguém (o líder nunca sabe) dão a mesma resposta
+/// "enviado" no final.
+export function quemAvisaDoPedido(pessoas, inscricoes, opcoes = {}) {
+  const lideres = new Set(
+    (Array.isArray(pessoas) ? pessoas : [])
+      // `bot !== true` e não `!bot`: campo ausente é gente, que é o caso de
+      // todo cadastro antigo.
+      .filter((p) => p && p.role === 'admin' && p.bot !== true)
+      .map((p) => p._id),
+  );
+  return (Array.isArray(inscricoes) ? inscricoes : []).filter(
+    (i) => i && lideres.has(i.userId)
+        && deveAvisar(i, { ...opcoes, tipo: 'pedido' }),
+  );
+}
+
 /// Limite por remetente, na memória deste isolate.
 ///
 /// É de propósito simples: a Cloudflare roda vários isolates, então o limite

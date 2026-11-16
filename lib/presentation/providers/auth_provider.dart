@@ -202,6 +202,11 @@ class AuthProvider extends ChangeNotifier {
         );
       }
 
+      // Avisa os líderes. Sem isto, um cadastro novo ficava esperando até
+      // alguém abrir a tela Membros por conta própria — e quem espera
+      // aprovação não vê nada do app, então o silêncio parece defeito.
+      await AvisosService.avisarPedidoDeEntrada();
+
       notifyListeners();
       return true;
     } else {

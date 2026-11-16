@@ -576,6 +576,27 @@ service cloud.firestore {
     //
     // Só o líder, porque o robô entra como líder — este projeto não usa chave
     // de administrador.
+    // ── "Já avisei os líderes deste pedido de entrada" ─────────────────────
+    //
+    // Um documento por cadastro, escrito pelo servidor dos avisos (que entra
+    // como líder comum). É o que faz cada cadastro avisar UMA vez na vida.
+    //
+    // Por que não uma janela de tempo, como no chat e na escala: o único
+    // carimbo disponível seria o `createdAt` do cadastro, que vem do relógio
+    // do APARELHO — um celular adiantado valeria por dias, um atrasado nunca
+    // avisaria. A marca não depende de relógio nenhum.
+    //
+    // Quem está pendente NÃO lê nem escreve isto: saber se o líder já foi
+    // avisado não é assunto de quem está esperando, e deixar escrever seria
+    // deixar apagar a marca para avisar de novo.
+    match /pedidosAvisados/{userId} {
+      // Leitura e escrita em linhas separadas, pelo mesmo motivo de
+      // `avisosDaVespera`: `tamanhoRazoavel()` lê `request.resource`, que não
+      // existe numa leitura, e juntas a regra negaria o `get` do próprio robô.
+      allow read: if ehLider();
+      allow write: if ehLider() && tamanhoRazoavel();
+    }
+
     match /avisosDaVespera/{dia} {
       // Leitura e escrita em linhas SEPARADAS: `tamanhoRazoavel()` lê
       // `request.resource`, que não existe numa leitura — juntas, a regra

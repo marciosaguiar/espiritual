@@ -92,10 +92,13 @@ void main() {
     });
 
     test('todos desligados', () {
-      expect(
-          AvisosService.tiposLigados(
-              {'chat': false, 'escalado': false, 'vespera': false}),
-          isEmpty);
+      // O mapa sai de `TipoDeAviso.values`, não escrito à mão: este teste
+      // quebrou quando entrou o quarto tipo ("novo pedido de entrada"),
+      // dizendo que havia defeito onde havia só um tipo novo.
+      final tudoDesligado = {
+        for (final t in TipoDeAviso.values) t.chave: false,
+      };
+      expect(AvisosService.tiposLigados(tudoDesligado), isEmpty);
     });
 
     test('valor estranho conta como ligado, não como desligado', () {

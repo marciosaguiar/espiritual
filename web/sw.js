@@ -101,7 +101,12 @@ self.addEventListener('push', (evento) => {
   evento.waitUntil((async () => {
     let dados = {};
     try {
-      dados = evento.data ? evento.data.json() : {};
+      // O `?? {}` não é enfeite: um push cujo corpo seja exatamente `null` é
+      // JSON válido, e `json()` devolve `null` — aí ler `dados.titulo`
+      // lançaria, nenhuma notificação apareceria, e o navegador
+      // descadastraria o aparelho por abuso. O aparelho pararia de receber
+      // aviso para sempre, sem nada na tela.
+      dados = (evento.data ? evento.data.json() : null) ?? {};
     } catch (_) {
       // Aviso sem corpo legível ainda tem de aparecer: o navegador exige
       // uma notificação visível para cada push, e não mostrar nada faria o
@@ -110,7 +115,9 @@ self.addEventListener('push', (evento) => {
 
     const titulo = dados.titulo || 'LevitaSync';
     const corpo = dados.corpo || 'Mensagem nova no chat';
-    const abrir = dados.abrir === 'culto' ? 'culto' : 'chat';
+    const abrir = (dados.abrir === 'culto' || dados.abrir === 'membros')
+      ? dados.abrir
+      : 'chat';
     const cultoId = typeof dados.cultoId === 'string' ? dados.cultoId : '';
 
     // Aviso de CULTO não se junta com o do chat: "você foi escalado" e o
@@ -118,7 +125,14 @@ self.addEventListener('push', (evento) => {
     // contagem esconderia justamente o que importa. Etiqueta por culto, para
     // o lembrete substituir o "foi escalado" do mesmo culto em vez de
     // empilhar dois.
-    const etiqueta = abrir === 'culto' ? `levita-culto-${cultoId}` : ETIQUETA;
+    //
+    // Quem manda a etiqueta pode ser o Worker: "novo pedido de entrada" usa
+    // uma por pessoa, para dois cadastros no mesmo dia serem dois avisos na
+    // tela em vez de um apagando o outro — perder um nome ali é perder o
+    // pedido de alguém.
+    const etiqueta = (typeof dados.etiqueta === 'string' && dados.etiqueta)
+      ? dados.etiqueta
+      : (abrir === 'culto' ? `levita-culto-${cultoId}` : ETIQUETA);
 
     // Quantas já estão na tela sem ninguém ter visto? (Só no chat.)
     let quantas = 1;
@@ -150,7 +164,9 @@ self.addEventListener('push', (evento) => {
 self.addEventListener('notificationclick', (evento) => {
   evento.notification.close();
   const dados = evento.notification.data || {};
-  const onde = dados.abrir === 'culto' ? 'culto' : 'chat';
+  const onde = (dados.abrir === 'culto' || dados.abrir === 'membros')
+    ? dados.abrir
+    : 'chat';
   const cultoId = typeof dados.cultoId === 'string' ? dados.cultoId : '';
 
   evento.waitUntil((async () => {
@@ -170,7 +186,7 @@ self.addEventListener('notificationclick', (evento) => {
     // apaga assim que o Flutter sobe.
     const marca = onde === 'culto' && cultoId
       ? `?abrir=culto&culto=${encodeURIComponent(cultoId)}`
-      : '?abrir=chat';
+      : `?abrir=${onde === 'membros' ? 'membros' : 'chat'}`;
     await self.clients.openWindow(`${self.registration.scope}${marca}`);
   })());
 });

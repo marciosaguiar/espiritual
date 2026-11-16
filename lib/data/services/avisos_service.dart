@@ -18,7 +18,11 @@ import 'local_storage_service.dart';
 enum TipoDeAviso {
   chat('chat', 'Mensagem nova no chat'),
   escalado('escalado', 'Quando eu for escalado'),
-  vespera('vespera', 'Lembrete na véspera do culto');
+  vespera('vespera', 'Lembrete na véspera do culto'),
+
+  /// Só o líder recebe — é ele que aprova. Aparece em Perfil só para ele,
+  /// porque um liga-desliga de algo que nunca chega é só confusão.
+  pedido('pedido', 'Novo pedido de entrada (líder)');
 
   const TipoDeAviso(this.chave, this.rotulo);
 
@@ -378,6 +382,28 @@ class AvisosService {
       }
     } catch (e) {
       debugPrint('[avisos] não avisei os escalados: $e');
+    }
+  }
+
+  /// Avisa os líderes de que alguém acabou de pedir para entrar.
+  ///
+  /// Chamada logo depois do cadastro, por quem está `pendente` — é a única
+  /// chamada ao Worker feita por quem ainda não foi aprovado, e por isso a
+  /// rota dele tem conferência própria (o cadastro tem de existir e estar
+  /// pendente, e cada cadastro avisa UMA vez na vida).
+  ///
+  /// Não devolve erro: a conta já foi criada e o pedido já aparece na tela
+  /// Membros do líder. Um balão vermelho dizendo "não avisei" assustaria
+  /// quem acabou de se cadastrar, sem nada a fazer a respeito.
+  static Future<void> avisarPedidoDeEntrada() async {
+    if (!AvisosConfig.configurado) return;
+    try {
+      final r = await _chamar('/pedido', const {});
+      if (r.status < 200 || r.status >= 300) {
+        debugPrint('[avisos] pedido de entrada: ${r.status} ${r.corpo}');
+      }
+    } catch (e) {
+      debugPrint('[avisos] não avisei do pedido de entrada: $e');
     }
   }
 

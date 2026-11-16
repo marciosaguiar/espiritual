@@ -1497,7 +1497,13 @@ class _AvisosDoAppState extends State<_AvisosDoApp> {
           // chat chega a toda hora, "você foi escalado" chega raro e importa,
           // e o lembrete da véspera é o que faz a pessoa não esquecer o
           // culto. Quem desliga o chat quase nunca quer desligar os outros.
-          for (final tipo in TipoDeAviso.values) {
+          // "Novo pedido de entrada" só vale para o líder: é ele que
+          // aprova, e o Worker manda só para ele. Um liga-desliga de algo que
+          // nunca chega é só confusão na tela de quem não é líder.
+          final souLider = context.read<AuthProvider>().isAdmin;
+          final tipos = TipoDeAviso.values
+              .where((t) => t != TipoDeAviso.pedido || souLider);
+          for (final tipo in tipos) {
             miolo.add(Padding(
               padding: const EdgeInsets.only(top: 2),
               child: Row(

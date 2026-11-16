@@ -20,7 +20,7 @@ flutter test                   # 342 testes
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 240 testes
+cd test_regras && npm install && npm test    # 244 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -42,8 +42,18 @@ O mini-servidor dos avisos tem testes próprios, que não precisam de emulador
 nem de Flutter:
 
 ```bash
-node --test worker/teste/*.mjs               # 48 testes
+node --test worker/teste/*.mjs               # 57 testes
+node --test web/teste/*.mjs                  # 11 testes do service worker
 ```
+
+O segundo roda o `web/sw.js` de verdade, com o `self` do navegador simulado:
+é ele que decide qual etiqueta cada aviso usa e para onde vai quem toca, e
+erro ali não aparece na tela de ninguém — o aviso chega bonito e leva à tela
+errada, ou um aviso apaga o outro e um pedido de entrada se perde. **No
+navegador isso não dá para medir:** `Notification.permission` responde
+`denied` no Chromium headless, e nem o `grantPermissions` do Playwright nem o
+`Browser.grantPermissions` do protocolo do Chrome mudam isso — o push chega ao
+service worker e o `showNotification` lança.
 
 ## Estado atual
 
@@ -318,6 +328,13 @@ servidor tudo o que as quatro escutas de `main_screen` alcançam — e **leitura
   guardar sai do build na publicação, e a CI falha se o canvaskit voltar ao
   CDN ou se o Flutter voltar a registrar um service worker. **Medido: de 3,26
   MB e 2,5 s por abertura para abrir sem internet nenhuma.**
+- **Push com corpo `null` derrubava o aviso.** O `sw.js` fazia
+  `dados = evento.data ? evento.data.json() : {}`. Um push cujo corpo seja
+  exatamente `null` é JSON **válido**: o `json()` não lança, devolve `null`, e
+  ler `dados.titulo` lançava. O navegador exige uma notificação visível para
+  cada push — sem ela, **descadastra o aparelho por abuso**, e aquele celular
+  pararia de receber aviso para sempre, sem nada na tela. O `?? {}` conserta;
+  foi o teste do service worker que achou, escrito para outra coisa.
 - **Diagnóstico errado que custou tempo:** quando o instrumento continuou
   aparecendo em inglês depois de corrigido, eu disse que era cache do service
   worker. Não era: não havia service worker nenhum. **Antes de culpar o
@@ -377,8 +394,8 @@ vez:
    senha"). O segundo caminho pedido — líder define senha provisória — foi
    recusado com motivo: é impossível sem chave de administrador, e a chave
    não tem escopo menor que "entrar como qualquer um".
-4. **"Novo pedido de entrada"** avisa o líder (o mecanismo já existe; falta o
-   gatilho).
+4. ~~**"Novo pedido de entrada"** avisa o líder~~ — **feito** (ver "Aviso de
+   novo pedido de entrada").
 5. **O Worker gera os cultos da agenda fixa**, para não depender de um líder
    abrir o app.
 6. **"3 de 7 confirmaram"**, com quem falta, no Início e na lista de cultos —
@@ -994,6 +1011,70 @@ carimbo por mensagem:
 (~15 documentos cada): as leituras e a lista de pessoas — a segunda serve ao
 "visto por" e à lista de quem mencionar. São ~30 leituras por sessão, uma vez.
 
+### Aviso de novo pedido de entrada
+
+Quem se cadastra fica `pendente` e **não vê nada do app** até um líder
+aprovar. Antes, o líder só descobria o pedido abrindo a tela Membros por
+conta própria — então o silêncio parecia defeito para quem estava esperando.
+
+- **É a ÚNICA rota do Worker que atende quem NÃO está aprovado**, e tem de
+  ser: quem acabou de se cadastrar está `pendente`, e é justamente desse
+  cadastro que o líder precisa saber. Por isso ela vem antes do `quemPediu`,
+  com conferência própria: token válido deste projeto, e o cadastro tem de
+  existir e estar `pendente`. Um aprovado que chamasse a rota mandaria ao
+  líder um aviso sem pedido nenhum por trás.
+- **A trava não é uma janela de tempo, é uma marca:** `pedidosAvisados/{uid}`,
+  um documento por cadastro, e cada cadastro avisa **uma vez na vida**. As
+  outras rotas conferem "foi escrito agora", mas aqui o único carimbo
+  disponível seria o `createdAt` do cadastro, que vem do **relógio do
+  aparelho** — um celular adiantado valeria por dias, um atrasado nunca
+  avisaria.
+- **A marca é lida ANTES das duas leituras de coleção**, e é gravada mesmo
+  quando ninguém recebeu. É trava de custo: sem ela, uma conta pendente em
+  laço faria ~30 leituras por chamada e queimaria a cota do dia. Com ela, a
+  segunda chamada custa uma leitura e volta. O pedido não se perde por isso,
+  porque o selo na tela Membros não depende de notificação.
+- **Só os líderes recebem** — são eles que aprovam —, e robô fora.
+  `quemAvisaDoPedido` é função pura e testada, porque é a parte que erra em
+  silêncio: mandar para o ministério inteiro (todos leriam "alguém quer
+  entrar" sem poder fazer nada) e mandar para ninguém dão a mesma resposta no
+  fim.
+- **Etiqueta por pessoa** (`levita-pedido-<uid>`): dois cadastros no mesmo dia
+  são dois avisos na tela. Com etiqueta fixa, o segundo apagaria o primeiro e
+  um nome se perderia. Para isso o `sw.js` passou a aceitar uma `etiqueta`
+  vinda do Worker.
+- **Tocar no aviso abre a tela Membros**, onde se aprova — pelos mesmos dois
+  caminhos do chat e do culto, porque o app não tem endereço por tela. O
+  `main_screen` confere `isAdmin` de novo antes de abrir: quem foi rebaixado
+  entre o envio e o toque veria uma tela sem botão nenhum.
+- **Liga e desliga à parte, e só o líder vê o interruptor** em Perfil: um
+  liga-desliga de algo que nunca chega é só confusão para quem não é líder.
+  Chave ausente é ligada, como nos outros tipos.
+- **O pedido de entrada respeita o "silenciar até amanhã"**, ao contrário da
+  menção no chat: não é urgente, e o selo na tela não vai a lugar nenhum.
+
+### Pedir o e-mail na hora certa
+
+O e-mail de recuperação só funciona se for cadastrado **antes** de a senha ser
+esquecida, e exige a senha atual. Então o app pede nos dois momentos em que a
+pessoa ainda a tem na cabeça:
+
+- **Na tela de espera da aprovação.** É o melhor momento do app inteiro: a
+  pessoa acabou de digitar a senha e está parada, sem nada para fazer.
+  Funciona mesmo estando `pendente`, porque trocar o endereço é operação do
+  Firebase Authentication e não escreve no banco — o sim/não no cadastro só é
+  gravado depois da aprovação, na conferência da abertura (as regras não
+  deixam quem está pendente escrever nada).
+- **No Início, depois de aprovado**, num cartão que sai da tela sozinho
+  quando o e-mail existe. Fica ali, e não só em Perfil, porque ninguém abre o
+  Perfil por conta própria. E **não tem "agora não"**, pelo mesmo motivo do
+  cartão de instalar — só que aqui o preço de dispensar seria perder o acesso
+  à própria conta.
+- Os dois leem `AuthProvider.emailDeRecuperacao`, que vem do Firebase
+  Authentication, não do campo no banco: é a verdade do momento, e vale para
+  quem está pendente. Efeito colateral conhecido: quem confirma o link com o
+  app aberto só vê o cartão sair na próxima abertura.
+
 ### Avisos da escala
 
 "Você foi escalado" quando o líder salva a escala, e o lembrete da véspera com
@@ -1068,9 +1149,7 @@ reinstalar o app essa lista é vazia, então uma falha de leitura teria virado
 ## O que não existe (e o relatório de auditoria aponta)
 
 Busca de música na internet, anexo de imagem no chat, PDF da escala, foto de
-perfil, transformar uma mensagem do chat em decisão da agenda, e aviso de
-"novo pedido de entrada" para o líder (o mecanismo já existe; falta o
-gatilho).
+perfil, e transformar uma mensagem do chat em decisão da agenda.
 
 E **o líder não define a senha de ninguém** — não por falta de código, mas
 porque exigiria uma chave de administrador cujo escopo menor possível é

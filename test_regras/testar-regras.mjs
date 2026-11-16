@@ -1284,6 +1284,21 @@ await teste('só o líder (e o robô) mexem na trava da véspera', async () => {
   await assertFails(getDoc(doc(novato(), 'avisosDaVespera', '2026-11-22')));
 });
 
+console.log('\n── pedido de entrada já avisado ──');
+// A marca que faz cada cadastro avisar UMA vez. Quem escreve é o servidor dos
+// avisos, que entra como líder comum.
+await teste('o robô (líder) marca que já avisou', () =>
+  assertSucceeds(setDoc(doc(lider(), 'pedidosAvisados', LEVITA),
+    { userId: LEVITA, nome: 'Ana', em: new Date(), lideres: 1 })));
+await teste('o líder confere se já avisou', () =>
+  assertSucceeds(getDoc(doc(lider(), 'pedidosAvisados', LEVITA))));
+// Se o pendente pudesse apagar a marca, avisaria o líder quantas vezes
+// quisesse — e o aviso é o único caminho que acorda quem não está no app.
+await teste('levita NÃO apaga a marca para ser avisado de novo', () =>
+  assertFails(deleteDoc(doc(levita(), 'pedidosAvisados', LEVITA))));
+await teste('levita NÃO lê a marca', () =>
+  assertFails(getDoc(doc(levita(), 'pedidosAvisados', LEVITA))));
+
 console.log('\n── coleção desconhecida ──');
 await teste('coleção sem regra fica bloqueada', () =>
   assertFails(setDoc(doc(lider(), 'qualquerCoisa', 'x'), { a: 1 })));

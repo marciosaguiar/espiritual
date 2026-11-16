@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   textoDoAviso, textoDeEscalado, textoDaVespera, quandoEhOCulto,
-  deveAvisar, dentroDoLimite, esquecerLimites,
+  deveAvisar, dentroDoLimite, esquecerLimites, quemAvisaDoPedido,
 } from '../src/aviso.js';
 import { conferirToken, limparCaches, simplificar } from '../src/firebase.js';
 
@@ -431,4 +431,97 @@ test('culto sem tipo escrito vira "Culto"', () => {
     textoDaVespera({ culto: { date: '2026-11-22T22:00:00.000Z' },
       confirmado: true, agoraMs: agora }).corpo,
     /^Culto /);
+});
+
+
+// ── Quem recebe "novo pedido de entrada" ────────────────────────────────────
+//
+// Esta é a parte que erra em silêncio: mandar para o ministério inteiro, ou
+// para ninguém, dá a mesma resposta no fim. Daí os testes serem sobre quem
+// sobra na lista.
+
+const PESSOAS = [
+  { _id: 'lider1', role: 'admin' },
+  { _id: 'lider2', role: 'admin' },
+  { _id: 'levita1', role: 'levita' },
+  { _id: 'pendente1', role: 'pendente' },
+  { _id: 'removido1', role: 'removido' },
+  { _id: 'robo', role: 'admin', bot: true },
+];
+
+function sub(userId, extra = {}) {
+  return {
+    _id: `s-${userId}`, userId,
+    endpoint: 'https://push.exemplo/x', p256dh: 'p', auth: 'a',
+    ...extra,
+  };
+}
+
+test('só os líderes recebem', () => {
+  const alvos = quemAvisaDoPedido(PESSOAS, [
+    sub('lider1'), sub('lider2'), sub('levita1'),
+    sub('pendente1'), sub('removido1'),
+  ]);
+  assert.deepEqual(alvos.map((i) => i.userId), ['lider1', 'lider2']);
+});
+
+test('o robô não recebe, mesmo sendo admin', () => {
+  // Ele é líder no banco porque é assim que entra, sem chave de
+  // administrador. Mas não usa o app: um aviso para ele é um aviso perdido.
+  const alvos = quemAvisaDoPedido(PESSOAS, [sub('robo'), sub('lider1')]);
+  assert.deepEqual(alvos.map((i) => i.userId), ['lider1']);
+});
+
+test('líder antigo, sem o campo bot, continua recebendo', () => {
+  // `bot !== true` e não `!bot`: cadastro antigo não tem o campo, e tratá-lo
+  // como robô deixaria justamente os líderes humanos de fora.
+  const alvos = quemAvisaDoPedido([{ _id: 'lider1', role: 'admin' }],
+    [sub('lider1')]);
+  assert.equal(alvos.length, 1);
+});
+
+test('líder que desligou este tipo de aviso não recebe', () => {
+  const alvos = quemAvisaDoPedido(PESSOAS, [
+    sub('lider1', { tipos: { pedido: false } }),
+    sub('lider2'),
+  ]);
+  assert.deepEqual(alvos.map((i) => i.userId), ['lider2']);
+});
+
+test('CHAVE AUSENTE É LIGADA: quem tem outros tipos gravados recebe', () => {
+  // Todo aparelho inscrito antes desta mudança não tem a chave `pedido`. Se a
+  // falta valesse "desligado", o líder nunca saberia de cadastro novo e
+  // ninguém descobriria por quê.
+  const alvos = quemAvisaDoPedido(PESSOAS,
+    [sub('lider1', { tipos: { chat: false, vespera: true } })]);
+  assert.equal(alvos.length, 1);
+});
+
+test('líder com os avisos desligados no aparelho não recebe', () => {
+  const alvos = quemAvisaDoPedido(PESSOAS,
+    [sub('lider1', { avisosLigados: false })]);
+  assert.equal(alvos.length, 0);
+});
+
+test('silêncio até amanhã também vale aqui', () => {
+  // Pedido de entrada não é urgente: quem pediu silêncio vê pela manhã. O
+  // selo na tela Membros não depende de notificação nenhuma.
+  const agoraMs = Date.parse('2026-11-16T23:00:00.000Z');
+  const alvos = quemAvisaDoPedido(PESSOAS,
+    [sub('lider1', { silenciarAte: '2026-11-17T10:00:00.000Z' })],
+    { agoraMs });
+  assert.equal(alvos.length, 0);
+});
+
+test('inscrição sem chaves de cifra é descartada', () => {
+  const alvos = quemAvisaDoPedido(PESSOAS,
+    [{ _id: 's1', userId: 'lider1', endpoint: 'https://x' }]);
+  assert.equal(alvos.length, 0);
+});
+
+test('listas vazias ou tortas não derrubam o Worker', () => {
+  assert.deepEqual(quemAvisaDoPedido([], []), []);
+  assert.deepEqual(quemAvisaDoPedido(null, null), []);
+  assert.deepEqual(quemAvisaDoPedido(PESSOAS, [null, sub('lider1')])
+    .map((i) => i.userId), ['lider1']);
 });

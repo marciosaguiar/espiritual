@@ -160,7 +160,7 @@
   try {
     var params = new URL(window.location.href).searchParams;
     var onde = params.get('abrir');
-    if (onde === 'chat' || onde === 'culto') {
+    if (onde === 'chat' || onde === 'culto' || onde === 'membros') {
       pedido = { onde: onde, cultoId: params.get('culto') || '' };
       // Limpa o endereço para o pedido não se repetir se a pessoa
       // recarregar, e para o app instalado não guardar isto como sua página.

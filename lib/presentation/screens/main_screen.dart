@@ -21,6 +21,7 @@ import 'scale/scale_screen.dart';
 import 'scale/scale_detail_screen.dart';
 import 'chat/chat_screen.dart';
 import 'profile/profile_screen.dart';
+import 'profile/members_screen.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -82,8 +83,28 @@ class _MainScreenState extends State<MainScreen> {
         if (_currentIndex != _abaChat) _goToTab(_abaChat);
         return;
       }
+      if (pedido.onde == 'membros') {
+        _abrirMembros();
+        return;
+      }
       _abrirCulto(pedido.cultoId);
     });
+  }
+
+  /// Leva à tela Membros, onde o pedido de entrada é aprovado ou recusado.
+  ///
+  /// Só para o líder: um levita que recebesse este aviso por engano abriria
+  /// uma tela onde não há botão nenhum para ele. O Worker já manda só para
+  /// líderes; esta é a segunda tranca, para o caso de alguém ser rebaixado
+  /// entre o envio e o toque.
+  void _abrirMembros() {
+    final auth = context.read<AuthProvider>();
+    _goToTab(_abaPerfil);
+    if (!auth.isAdmin) return;
+    Navigator.push(
+      context,
+      GlassPageRoute(builder: (_) => const MembersScreen()),
+    );
   }
 
   /// Leva ao culto que o aviso mandou abrir.

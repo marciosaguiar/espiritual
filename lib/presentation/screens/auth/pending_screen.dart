@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../providers/auth_provider.dart';
+import '../../widgets/common/recuperacao_por_email.dart';
 
 /// A tela de quem se cadastrou e ainda não foi aprovado pelo líder.
 ///
@@ -106,6 +107,82 @@ class PendingScreen extends StatelessWidget {
                               fontSize: 13.5,
                               height: 1.45,
                               color: corTexto,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                // APROVEITA A ESPERA PARA A ÚNICA COISA QUE NÃO TEM
+                // CONSERTO DEPOIS.
+                //
+                // Cadastrar o e-mail de recuperação exige a senha atual, que
+                // a pessoa acabou de digitar e ainda tem na cabeça. Esperando
+                // a aprovação, ela está parada nesta tela sem nada para fazer
+                // — é o melhor momento do app inteiro para isto.
+                //
+                // Funciona mesmo estando `pendente`, porque troca o endereço
+                // no Firebase Authentication e não escreve no banco. O
+                // sim/não no cadastro só é gravado depois da aprovação, na
+                // conferência da abertura.
+                if (auth.emailDeRecuperacao == null) ...[
+                  const SizedBox(height: 14),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AppColors.yellow.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: AppColors.yellow.withValues(alpha: 0.30)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.shield_outlined,
+                                size: 20, color: AppColors.yellow),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Cadastre um e-mail enquanto espera',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: corTexto,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'É o único jeito de voltar se você esquecer a '
+                          'senha. Sem e-mail, ninguém consegue devolver o '
+                          'seu acesso — nem o líder.',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 13.5,
+                            height: 1.45,
+                            color: corFraca,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            onPressed: () =>
+                                mostrarRecuperacaoPorEmail(context),
+                            icon: const Icon(Icons.mail_outline, size: 18),
+                            label: const Text('Cadastrar meu e-mail'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: AppColors.yellow,
+                              foregroundColor: Colors.black87,
+                              padding:
+                                  const EdgeInsets.symmetric(vertical: 13),
                             ),
                           ),
                         ),

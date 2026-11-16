@@ -28,6 +28,7 @@ import {
 import { importarChaveVapid, enviarAviso } from './push.js';
 import {
   textoDoAviso, textoDeEscalado, textoDaVespera, deveAvisar, dentroDoLimite,
+  quemAvisaDoPedido,
   JANELA_DO_AVISO_MS,
 } from './aviso.js';
 
@@ -153,6 +154,82 @@ export default {
 
     if (pedido.method !== 'POST') {
       return json({ erro: 'não existe' }, 404, cabecalhos);
+    }
+
+    // ── "Novo pedido de entrada" ──────────────────────────────────────────
+    //
+    // A ÚNICA rota que atende quem NÃO está aprovado — e tem de ser: quem
+    // acabou de se cadastrar está `pendente`, e é justamente desse cadastro
+    // que o líder precisa saber. Por isso ela vem ANTES do `quemPediu`, que
+    // recusa quem não é aprovado, com conferência própria e mais estreita.
+    if (url.pathname === '/pedido') {
+      const cabecalho = pedido.headers.get('Authorization') ?? '';
+      if (!cabecalho.startsWith('Bearer ')) {
+        return json({ erro: 'Faça login de novo.' }, 401, cabecalhos);
+      }
+      let quem;
+      try {
+        quem = await conferirToken(cabecalho.slice(7), env.FIREBASE_PROJECT_ID);
+      } catch (e) {
+        console.warn('[avisos] token recusado:', e.message);
+        return json({ erro: 'Faça login de novo.' }, 401, cabecalhos);
+      }
+      if (!dentroDoLimite(quem.uid, Number(env.LIMITE_POR_MINUTO ?? 30))) {
+        return json({ erro: 'Espere um minuto.' }, 429, cabecalhos);
+      }
+
+      // Só quem está ESPERANDO avisa que está esperando. Um aprovado que
+      // chamasse esta rota mandaria ao líder um aviso sem pedido nenhum por
+      // trás — e o líder abriria Membros para achar o nada.
+      const cadastro = await lerDoc(env, `users/${quem.uid}`);
+      if (!cadastro || cadastro.role !== 'pendente') {
+        return json({ erro: 'não há pedido de entrada nesta conta' },
+          403, cabecalhos);
+      }
+
+      // UM aviso por cadastro, para sempre, e a marca vem ANTES das leituras.
+      //
+      // Ela faz o papel da janela de 2 minutos das outras rotas, que aqui não
+      // serviria: o único carimbo disponível é o `createdAt` do cadastro, e
+      // ele vem do RELÓGIO DO APARELHO — um celular adiantado valeria por
+      // dias, um atrasado nunca avisaria. A marca não depende de relógio.
+      //
+      // E ela é o que impede o pior caso de custo: sem marca, uma conta
+      // pendente em laço faria duas leituras de coleção por chamada (~30
+      // documentos) e queimaria a cota de leitura do dia. Com marca, a
+      // segunda chamada custa uma leitura e volta.
+      const marca = `pedidosAvisados/${quem.uid}`;
+      if (await lerDoc(env, marca)) {
+        return json({ jaAvisado: true }, 200, cabecalhos);
+      }
+
+      // Quem recebe é função pura e testada (`quemAvisaDoPedido`): só
+      // líderes, sem robô, respeitando o liga-desliga do tipo.
+      const pessoas = await lerColecao(env, 'users');
+      const todas = await lerColecao(env, 'pushSubs');
+      const alvos = quemAvisaDoPedido(pessoas, todas);
+      const nome = String(cadastro.name ?? '').trim() || 'Alguém';
+
+      let resultado = { enviados: 0, mortos: 0, falharam: 0 };
+      if (alvos.length) {
+        resultado = await espalhar(env, alvos, {
+          titulo: 'Novo pedido de entrada',
+          corpo: `${nome} quer entrar no ministério`,
+          abrir: 'membros',
+          // Etiqueta por pessoa: dois cadastros no mesmo dia são dois avisos
+          // na tela, não um substituindo o outro. Perder um nome aqui seria
+          // perder o pedido de alguém.
+          etiqueta: `levita-pedido-${quem.uid}`,
+        }, await chaveVapid(env));
+      }
+
+      // A marca é gravada mesmo quando ninguém recebeu — inclusive quando
+      // nenhum líder tem aviso ligado. É a trava de custo acima; o pedido não
+      // se perde, porque o selo na tela Membros não depende de notificação.
+      await gravarDoc(env, marca, {
+        userId: quem.uid, nome, em: new Date(), lideres: alvos.length,
+      });
+      return json({ ...resultado, lideres: alvos.length }, 200, cabecalhos);
     }
 
     const dono = await quemPediu(pedido, env);
