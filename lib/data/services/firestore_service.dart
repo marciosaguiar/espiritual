@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/song_model.dart';
 import '../models/arrangement_model.dart';
@@ -982,6 +984,105 @@ class FirestoreService {
     );
   }
 
+  // ─── Mensagens de voz ─────────────────────────────────────────────────────
+
+  static const String _audios = 'audios';
+
+  /// Teto de bytes por áudio, conferido aqui e na regra do banco.
+  ///
+  /// O documento do Firestore vai até 1 MiB. Pedir 32 kbps não garante 32:
+  /// medido num Chromium, dois minutos sairiam com 531 KiB — 36 kbps, por
+  /// causa do contêiner. 800 KiB aceita um aparelho que grave bem mais gordo
+  /// que isso e ainda fica longe do limite do banco. O teto apertado era o
+  /// jeito de recusar a mensagem DEPOIS de a pessoa falar dois minutos.
+  static const int audioMaximoBytes = 800 * 1024;
+
+  /// Grava o áudio e a mensagem que o anuncia, juntos.
+  ///
+  /// Os dois num lote só: uma mensagem apontando para um áudio que não
+  /// existe seria um play eternamente carregando, e um áudio sem mensagem
+  /// seria lixo que ninguém vê e a faxina só apaga em 30 dias.
+  static Future<({bool success, String? error})> enviarAudio({
+    required String userId,
+    required String userName,
+    required Uint8List bytes,
+    required String tipo,
+    required int duracaoMs,
+  }) async {
+    if (bytes.length > audioMaximoBytes) {
+      return (
+        success: false,
+        error: 'Áudio grande demais (${(bytes.length / 1024).round()} KB). '
+            'Grave um mais curto.'
+      );
+    }
+
+    final agora = DateTime.now();
+    final expira = agora.add(MessageModel.validade);
+    final audioId = CryptoUtils.generateId();
+    final mensagemId = CryptoUtils.generateId();
+
+    try {
+      final lote = _db.batch();
+      lote.set(_db.collection(_audios).doc(audioId), {
+        'id': audioId,
+        'mensagemId': mensagemId,
+        'userId': userId,
+        'bytes': Blob(bytes),
+        'tipo': tipo,
+        'duracaoMs': duracaoMs,
+        'criadoEm': Timestamp.fromDate(agora),
+        // O áudio vence junto com a mensagem, e some junto quando ela é
+        // fixada. Guardado aqui porque a faxina apaga as duas coleções sem
+        // precisar cruzar uma com a outra.
+        'expiraEm': Timestamp.fromDate(expira),
+      });
+      lote.set(_db.collection(_messages).doc(mensagemId), MessageModel(
+        id: mensagemId,
+        userId: userId,
+        userName: userName,
+        text: '',
+        type: MessageType.audio,
+        timestamp: agora,
+        expiraEm: expira,
+        audioId: audioId,
+        audioDuracaoMs: duracaoMs,
+        audioTipo: tipo,
+      ).toFirestore());
+      await lote.commit();
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (success: false, error: _describe(e, 'enviar o áudio'));
+    }
+  }
+
+  /// Os bytes de um áudio. Chamado SÓ quando alguém toca no play.
+  static Future<({Uint8List? bytes, String? tipo, String? error})> baixarAudio(
+      String audioId) async {
+    try {
+      final doc = await _db.collection(_audios).doc(audioId).get();
+      if (!doc.exists) {
+        return (
+          bytes: null,
+          tipo: null,
+          error: 'Este áudio não está mais disponível.'
+        );
+      }
+      final dados = doc.data()!;
+      final blob = dados['bytes'];
+      if (blob is! Blob) {
+        return (bytes: null, tipo: null, error: 'Áudio gravado errado.');
+      }
+      return (
+        bytes: blob.bytes,
+        tipo: dados['tipo'] as String? ?? 'audio/mp4',
+        error: null
+      );
+    } on FirebaseException catch (e) {
+      return (bytes: null, tipo: null, error: _describe(e, 'baixar o áudio'));
+    }
+  }
+
   /// Fixa ou desafixa uma mensagem. Só o líder — ver firestore.rules.
   ///
   /// Fixar apaga o prazo; desafixar devolve o prazo contado do horário
@@ -992,15 +1093,24 @@ class FirestoreService {
     bool fixar,
     String porQuemId,
   ) async {
+    final prazo = fixar
+        ? null
+        : Timestamp.fromDate(mensagem.timestamp.add(MessageModel.validade));
     try {
-      await _db.collection(_messages).doc(mensagem.id).update({
+      // O áudio acompanha a mensagem: fixar sem mexer nele deixaria a faxina
+      // apagar o áudio de uma mensagem que ficou no topo — a bolha sobrevive
+      // e o play fica mudo para sempre.
+      final lote = _db.batch();
+      lote.update(_db.collection(_messages).doc(mensagem.id), {
         'fixada': fixar,
         'fixadaPor': fixar ? porQuemId : null,
-        'expiraEm': fixar
-            ? null
-            : Timestamp.fromDate(
-                mensagem.timestamp.add(MessageModel.validade)),
+        'expiraEm': prazo,
       });
+      if (mensagem.audioId != null) {
+        lote.update(_db.collection(_audios).doc(mensagem.audioId!),
+            {'expiraEm': prazo});
+      }
+      await lote.commit();
       return (success: true, error: null);
     } on FirebaseException catch (e) {
       return (

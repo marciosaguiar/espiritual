@@ -8,6 +8,9 @@ import '../../providers/chat_provider.dart';
 import '../../providers/songs_provider.dart';
 import '../../providers/scale_provider.dart';
 import '../../widgets/common/error_banner.dart';
+import '../../widgets/chat/voz.dart';
+import '../../../data/services/firestore_service.dart';
+import '../../../core/platform/voz.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/message_model.dart';
 import '../../../data/models/song_model.dart';
@@ -331,7 +334,82 @@ class _ChatScreenState extends State<ChatScreen> {
                 : _buildMessages(visible, auth, songs, isDark,
                     showNotice: !searching, searching: searching),
           ),
+          if (_gravandoVoz) _tarjaGravando(isDark),
           if (!_searchMode) _buildInputBar(isDark),
+        ],
+      ),
+    );
+  }
+
+  // Estado da gravação, só para desenhar a tarja: quem manda é o botão.
+  bool _gravandoVoz = false;
+  bool _vozVaiCancelar = false;
+  int _vozMs = 0;
+
+  /// Envia o áudio gravado. O áudio e a mensagem vão num lote só — ver
+  /// `FirestoreService.enviarAudio`.
+  Future<void> _enviarVoz(AudioGravado audio) async {
+    final auth = context.read<AuthProvider>();
+    final eu = auth.user;
+    if (eu == null) return;
+
+    final r = await FirestoreService.enviarAudio(
+      userId: eu.id,
+      userName: eu.name,
+      bytes: audio.bytes,
+      tipo: audio.tipo,
+      duracaoMs: audio.duracaoMs,
+    );
+    if (!mounted) return;
+    if (!r.success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+            content: Text(r.error ?? 'Não foi possível enviar o áudio.'),
+            backgroundColor: AppColors.red),
+      );
+    }
+  }
+
+  /// A tarja de "gravando", acima da barra de digitar.
+  Widget _tarjaGravando(bool isDark) {
+    final s = (_vozMs / 1000).floor();
+    final tempo = '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+    final cancelando = _vozVaiCancelar;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: (cancelando ? AppColors.red : AppColors.blue)
+          .withValues(alpha: isDark ? 0.18 : 0.10),
+      child: Row(
+        children: [
+          Icon(cancelando ? Icons.delete_outline_rounded : Icons.mic_rounded,
+              size: 18, color: cancelando ? AppColors.red : AppColors.blue),
+          const SizedBox(width: 10),
+          Text(
+            tempo,
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: isDark
+                  ? AppColors.textPrimaryDark
+                  : AppColors.textPrimaryLight,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              cancelando
+                  ? 'Solte para cancelar'
+                  : 'Arraste para o lado para cancelar · máximo 2 minutos',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 12,
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -661,11 +739,26 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             const SizedBox(width: 6),
-            // Round green send button — only this rebuilds while typing.
+            // Enviar quando há texto; microfone quando não há. É a troca que
+            // o WhatsApp faz, e evita dois botões disputando o mesmo canto.
             ValueListenableBuilder<TextEditingValue>(
               valueListenable: _messageCtrl,
               builder: (context, value, _) {
                 final hasText = value.text.trim().isNotEmpty;
+                if (!hasText && vozSuportada) {
+                  return BotaoDeVoz(
+                    isDark: isDark,
+                    aoMudar: (gravando, vaiCancelar, ms) {
+                      if (!mounted) return;
+                      setState(() {
+                        _gravandoVoz = gravando;
+                        _vozVaiCancelar = vaiCancelar;
+                        _vozMs = ms;
+                      });
+                    },
+                    aoGravar: _enviarVoz,
+                  );
+                }
                 return GestureDetector(
                   onTap: hasText ? _sendMessage : null,
                   child: Container(
@@ -1146,6 +1239,13 @@ class _WaMessageBubble extends StatelessWidget {
                             ),
                           ),
                         ),
+                      // Mensagem de voz: o player no lugar do texto.
+                      if (message.temAudio)
+                        BolhaDeVoz(
+                          mensagem: message,
+                          isMe: isMe,
+                          isDark: isDark,
+                        ),
                       // O texto vem antes do cartão da música: quem compartilha
                       // escreve o recado ("essa cabe no domingo") e o cartão é
                       // o anexo, não o contrário.
@@ -1153,15 +1253,16 @@ class _WaMessageBubble extends StatelessWidget {
                         alignment: WrapAlignment.end,
                         crossAxisAlignment: WrapCrossAlignment.end,
                         children: [
-                          Text(
-                            message.text,
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              fontSize: 14.5,
-                              height: 1.3,
-                              color: textColor,
+                          if (!message.temAudio)
+                            Text(
+                              message.text,
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 14.5,
+                                height: 1.3,
+                                color: textColor,
+                              ),
                             ),
-                          ),
                           Padding(
                             padding: const EdgeInsets.only(left: 8, top: 2),
                             // Só a hora. O ✓✓ prometia confirmação de leitura,

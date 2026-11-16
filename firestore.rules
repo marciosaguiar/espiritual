@@ -319,8 +319,13 @@ service cloud.firestore {
         && tamanhoRazoavel()
         && request.resource.data.userId == eu()
         && request.resource.data.text is string
-        && request.resource.data.text.size() > 0
         && request.resource.data.text.size() <= 2000
+        // Mensagem de voz não tem texto. Uma das duas coisas tem de existir,
+        // senão dá para encher o chat de bolhas vazias.
+        && (request.resource.data.text.size() > 0
+            || request.resource.data.audioId is string)
+        && texto('audioId', 64)
+        && texto('audioTipo', 80)
         && texto('userName', 60);
 
       // Mensagem enviada não se reescreve: o texto é o que foi dito, e
@@ -346,6 +351,43 @@ service cloud.firestore {
       // repertório é património da igreja; aqui é recado de combinação, e o
       // valor está em sumir.
       allow delete: if ehLider();
+    }
+
+    // ── Mensagens de voz ────────────────────────────────────────────────────
+    // Os bytes ficam aqui, num documento por áudio, e NÃO dentro da mensagem.
+    // A razão é custo: o chat escuta `messages` o tempo todo, e áudio junto
+    // faria cada abertura baixar meio mega por minuto de voz da conversa
+    // inteira. Assim só desce quando alguém toca no play.
+    //
+    // Não é Cloud Storage porque o Storage saiu do plano gratuito: exigiria
+    // Blaze, e este projeto fica no Spark.
+    match /audios/{audioId} {
+      allow read: if aprovado();
+
+      allow create: if aprovado()
+        && tamanhoRazoavel()
+        && request.resource.data.userId == eu()
+        && request.resource.data.bytes is bytes
+        && request.resource.data.bytes.size() > 0
+        // 600 KiB. O documento do Firestore vai até 1 MiB, e dois minutos a
+        // 32 kbps mono dão ~469 KiB; a folga cobre um aparelho que grave
+        // mais gordo sem a escrita inteira ser recusada pelo banco.
+        && request.resource.data.bytes.size() <= 819200
+        && request.resource.data.duracaoMs is int
+        && request.resource.data.duracaoMs > 0
+        // Dois minutos, com folga para o relógio do aparelho.
+        && request.resource.data.duracaoMs <= 125000
+        && texto('tipo', 80)
+        && request.resource.data.expiraEm is timestamp;
+
+      // Fixar a mensagem tira o prazo do áudio junto; desafixar devolve.
+      // Nada mais se altera: os bytes gravados são os bytes gravados.
+      allow update: if ehLider() && mudou().hasOnly(['expiraEm']);
+
+      // O líder (e a faxina, que entra como líder) apaga; o autor apaga o
+      // próprio. Ninguém apaga áudio alheio.
+      allow delete: if ehLider()
+        || (aprovado() && resource.data.userId == eu());
     }
 
     // ── "Está digitando…" ───────────────────────────────────────────────────

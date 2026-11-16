@@ -67,38 +67,53 @@ const quem = await signInWithEmailAndPassword(auth, EMAIL, SENHA);
 console.log('Entrou como', quem.user.uid);
 
 const agora = Timestamp.now();
-let apagadas = 0;
 
-// Em volta, porque uma rodada pode não dar conta de tudo depois de uma
-// parada longa. Para quando não houver mais nada vencido.
-for (;;) {
-  const vencidas = await getDocs(query(
-    collection(db, 'messages'),
-    where('expiraEm', '<=', agora),
-    orderBy('expiraEm'),
-    limit(POR_LOTE),
-  ));
-  if (vencidas.empty) break;
+/// Apaga o que venceu numa coleção. Devolve quantos.
+///
+/// `audios` e `messages` carregam o mesmo `expiraEm`, posto pelo app, e
+/// fixar a mensagem tira o prazo dos dois. Então a mesma varredura serve
+/// para as duas, e nenhuma precisa consultar a outra.
+async function limpar(colecao) {
+  let apagados = 0;
+  // Em volta, porque uma rodada pode não dar conta de tudo depois de uma
+  // parada longa. Para quando não houver mais nada vencido.
+  for (;;) {
+    const vencidos = await getDocs(query(
+      collection(db, colecao),
+      where('expiraEm', '<=', agora),
+      orderBy('expiraEm'),
+      limit(POR_LOTE),
+    ));
+    if (vencidos.empty) break;
 
-  const lote = writeBatch(db);
-  let neste = 0;
-  for (const d of vencidas.docs) {
-    // A trava que não depende da consulta: fixada não se apaga, ponto.
-    if (d.data().fixada === true) {
-      console.warn('  PULANDO fixada que veio na consulta:', d.id);
-      continue;
+    const lote = writeBatch(db);
+    let neste = 0;
+    for (const d of vencidos.docs) {
+      // A trava que não depende da consulta: fixada não se apaga, ponto.
+      // Vale para o áudio também, que perde o prazo junto com a mensagem.
+      if (d.data().fixada === true) {
+        console.warn(`  PULANDO fixada que veio na consulta: ${d.id}`);
+        continue;
+      }
+      lote.delete(d.ref);
+      neste++;
     }
-    lote.delete(d.ref);
-    neste++;
-  }
-  if (neste > 0) await lote.commit();
+    if (neste > 0) await lote.commit();
 
-  apagadas += neste;
-  console.log('  apagadas', apagadas);
-  if (vencidas.size < POR_LOTE) break;
+    apagados += neste;
+    console.log(`  ${colecao}: ${apagados}`);
+    if (vencidos.size < POR_LOTE) break;
+  }
+  return apagados;
 }
 
-console.log(apagadas === 0
+// Os áudios primeiro. Se a rodada morrer no meio, sobra mensagem apontando
+// para áudio que já foi — uma bolha que diz "não está mais disponível", que
+// é melhor do que áudio órfão de meio mega que ninguém alcança para apagar.
+const audios = await limpar('audios');
+const mensagens = await limpar('messages');
+
+console.log(audios + mensagens === 0
   ? 'Nada vencido. Conversa em dia.'
-  : `${apagadas} mensagens apagadas.`);
+  : `${mensagens} mensagens e ${audios} áudios apagados.`);
 process.exit(0);

@@ -10,7 +10,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc,
-  serverTimestamp,
+  serverTimestamp, Bytes,
 } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 
@@ -646,6 +646,112 @@ await teste('pendente não lê o chat', () =>
 
 await teste('removido não lê o chat', () =>
   assertFails(getDocs(collection(removido(), 'messages'))));
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Mensagens de voz
+//
+// Os bytes ficam numa coleção à parte, para o chat não baixar áudio a cada
+// abertura. O que estes testes fixam: quem pode mandar, quem pode ouvir, e
+// que um áudio grande demais é recusado ANTES de estourar o limite do banco.
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n── mensagens de voz ──');
+
+// `Bytes` e não `Uint8Array` cru: o SDK recusa o array solto com
+// "Unsupported field value", e o teste falharia por motivo errado.
+const bytesDe = (quantos) =>
+  Bytes.fromUint8Array(new Uint8Array(quantos).fill(7));
+const audio = (dono, bytes, extra = {}) => ({
+  id: 'a1', mensagemId: 'm1', userId: dono,
+  bytes, tipo: 'audio/mp4', duracaoMs: 5000,
+  criadoEm: new Date(), expiraEm: new Date(Date.now() + 30 * 864e5),
+  ...extra,
+});
+
+await teste('aprovado manda áudio', () =>
+  assertSucceeds(setDoc(doc(levita(), 'audios', 'a-ok'),
+    audio(LEVITA, bytesDe(50 * 1024)))));
+
+await teste('áudio de 800 KiB ainda passa', () =>
+  assertSucceeds(setDoc(doc(levita(), 'audios', 'a-limite'),
+    audio(LEVITA, bytesDe(819200)))));
+
+await teste('áudio acima do limite é recusado', () =>
+  assertFails(setDoc(doc(levita(), 'audios', 'a-grande'),
+    audio(LEVITA, bytesDe(819201)))));
+
+await teste('áudio vazio é recusado', () =>
+  assertFails(setDoc(doc(levita(), 'audios', 'a-vazio'),
+    audio(LEVITA, bytesDe(0)))));
+
+await teste('áudio mais longo que 2 minutos é recusado', () =>
+  assertFails(setDoc(doc(levita(), 'audios', 'a-longo'),
+    audio(LEVITA, bytesDe(1024), { duracaoMs: 130000 }))));
+
+await teste('não dá para mandar áudio em nome de outra pessoa', () =>
+  assertFails(setDoc(doc(levita(), 'audios', 'a-falso'),
+    audio(LIDER, bytesDe(1024)))));
+
+await teste('áudio sem prazo é recusado (a faxina nunca o alcançaria)', () =>
+  assertFails(setDoc(doc(levita(), 'audios', 'a-sem-prazo'),
+    audio(LEVITA, bytesDe(1024), { expiraEm: null }))));
+
+await teste('pendente não manda áudio', () =>
+  assertFails(setDoc(doc(pendente(), 'audios', 'a-pend'),
+    audio('uid-pendente', bytesDe(1024)))));
+
+await teste('removido não manda áudio', () =>
+  assertFails(setDoc(doc(removido(), 'audios', 'a-rem'),
+    audio('uid-removido', bytesDe(1024)))));
+
+await teste('aprovado ouve o áudio', () =>
+  assertSucceeds(getDoc(doc(lider(), 'audios', 'a-ok'))));
+
+await teste('pendente não ouve áudio', () =>
+  assertFails(getDoc(doc(pendente(), 'audios', 'a-ok'))));
+
+await teste('removido não ouve áudio', () =>
+  assertFails(getDoc(doc(removido(), 'audios', 'a-ok'))));
+
+await teste('deslogado não ouve áudio', () =>
+  assertFails(getDoc(doc(deslogado(), 'audios', 'a-ok'))));
+
+await teste('ninguém reescreve os bytes de um áudio', () =>
+  assertFails(updateDoc(doc(levita(), 'audios', 'a-ok'),
+    { bytes: bytesDe(10) })));
+
+await teste('o líder mexe no prazo (é o que fixar faz)', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'audios', 'a-ok'),
+    { expiraEm: null })));
+
+await teste('levita não mexe no prazo de um áudio', () =>
+  assertFails(updateDoc(doc(levita(), 'audios', 'a-ok'),
+    { expiraEm: new Date() })));
+
+await teste('o autor apaga o próprio áudio', () =>
+  assertSucceeds(deleteDoc(doc(levita(), 'audios', 'a-limite'))));
+
+await teste('ninguém apaga áudio alheio', () =>
+  assertFails(deleteDoc(doc(novato(), 'audios', 'a-ok'))));
+
+await teste('o líder apaga — é como a faxina limpa os vencidos', () =>
+  assertSucceeds(deleteDoc(doc(lider(), 'audios', 'a-ok'))));
+
+console.log('\n── a bolha do áudio ──');
+
+await teste('mensagem de voz entra sem texto, por ter audioId', () =>
+  assertSucceeds(setDoc(doc(levita(), 'messages', 'm-voz'), {
+    id: 'm-voz', userId: LEVITA, userName: 'Ana', text: '', type: 'audio',
+    linkedSongId: null, linkedSongName: null, timestamp: new Date(),
+    audioId: 'a-ok', audioDuracaoMs: 5000, audioTipo: 'audio/mp4',
+    fixada: false, fixadaPor: null, expiraEm: new Date(Date.now() + 864e5),
+  })));
+
+await teste('mensagem sem texto E sem áudio é recusada', () =>
+  assertFails(setDoc(doc(levita(), 'messages', 'm-vazia'), {
+    id: 'm-vazia', userId: LEVITA, userName: 'Ana', text: '', type: 'text',
+    linkedSongId: null, linkedSongName: null, timestamp: new Date(),
+    fixada: false, fixadaPor: null, expiraEm: new Date(Date.now() + 864e5),
+  })));
 
 console.log('\n── coleção desconhecida ──');
 await teste('coleção sem regra fica bloqueada', () =>

@@ -87,6 +87,66 @@ void main() {
     });
   });
 
+  group('mensagem de voz', () {
+    MessageModel voz({int duracaoMs = 7000, String tipo = 'audio/mp4'}) =>
+        MessageModel(
+          id: 'm2',
+          userId: 'u1',
+          userName: 'Ana',
+          text: '',
+          type: MessageType.audio,
+          timestamp: agora,
+          expiraEm: agora.add(MessageModel.validade),
+          audioId: 'a1',
+          audioDuracaoMs: duracaoMs,
+          audioTipo: tipo,
+        );
+
+    test('a ficha do áudio sobrevive ao banco', () {
+      final lida = MessageModel.fromFirestore(voz().toFirestore());
+      expect(lida.temAudio, isTrue);
+      expect(lida.audioId, 'a1');
+      expect(lida.audioDuracaoMs, 7000);
+      expect(lida.audioTipo, 'audio/mp4');
+      expect(lida.type, MessageType.audio);
+    });
+
+    test('o formato é guardado, e é o que decide se toca', () {
+      // Sem o formato gravado, a bolha não teria como saber que aquele webm
+      // não toca num iPhone antigo — e mostraria um play mudo.
+      expect(voz(tipo: 'audio/webm;codecs=opus').audioTipo,
+          'audio/webm;codecs=opus');
+    });
+
+    test('duração no formato do WhatsApp', () {
+      expect(voz(duracaoMs: 7000).audioDuracao, '0:07');
+      expect(voz(duracaoMs: 92000).audioDuracao, '1:32');
+      expect(voz(duracaoMs: 120000).audioDuracao, '2:00');
+    });
+
+    test('mensagem de texto não finge ter áudio', () {
+      expect(msg(quando: agora).temAudio, isFalse);
+      expect(msg(quando: agora).audioId, isNull);
+    });
+
+    test('o áudio vence junto com a mensagem', () {
+      final velha = MessageModel.fromFirestore(
+        voz().toFirestore()
+          ..['timestamp'] = Timestamp.fromDate(
+              agora.subtract(const Duration(days: 40)))
+          ..['expiraEm'] = Timestamp.fromDate(
+              agora.subtract(const Duration(days: 10))),
+      );
+      expect(velha.venceu(agora), isTrue);
+    });
+
+    test('voz fixada não vence, e aí o áudio dela também não', () {
+      final fixa = MessageModel.fromFirestore(
+          voz().toFirestore()..['fixada'] = true);
+      expect(fixa.venceu(DateTime(2030)), isFalse);
+    });
+  });
+
   group('ida e volta no banco', () {
     test('os três campos sobrevivem', () {
       final original = msg(

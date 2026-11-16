@@ -312,6 +312,10 @@
     })();
   </script>
 
+  <!-- Gravar e tocar voz. Carregado aqui, e não dentro do Flutter,
+       porque MediaRecorder e <audio> são do navegador. -->
+  <script src="audio.js"></script>
+
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

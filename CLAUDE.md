@@ -409,6 +409,52 @@ comuns (20 mil/dia na cota do Spark, muito acima do que um ministério gera).
   mudar seria apagar justamente o que pediram para guardar.
 - Sem os segredos configurados ela roda, diz que não está configurada e
   termina em verde.
+- **Ela apaga os áudios ANTES das mensagens.** Se parar no meio, o pior caso
+  é uma bolha dizendo que o áudio não está mais disponível — não meio mega de
+  som órfão que ninguém alcança para apagar.
+
+### Mensagem de voz
+
+Segurar o microfone para gravar, arrastar para o lado para cancelar, limite de
+dois minutos. O som vai para o Firestore, porque o **Cloud Storage não está no
+plano grátis** desde fev/2026.
+
+- **O áudio mora num documento à parte** (`audios/{audioId}`), e a mensagem só
+  guarda a ficha: `audioId`, `audioDuracaoMs`, `audioTipo`. É isso que faz
+  abrir o chat custar o mesmo de antes: os bytes só descem quando alguém toca
+  no play. Os dois são gravados **num lote só** — mensagem apontando para
+  áudio que não existe seria um play carregando para sempre.
+- **Gravar e tocar é JavaScript** (`web/audio.js`), como já são a detecção de
+  PWA e o compartilhar. `MediaRecorder` e `<audio>` o navegador já tem; o
+  pacote Flutter equivalente pediria configuração nativa de Android e iOS
+  para resolver o que o navegador faz sozinho.
+- **O formato é a parte que dá errado, e um teste de navegador provou.**
+  Pedir `audio/mp4` e conferir são coisas diferentes: `isTypeSupported` disse
+  que sim e o MediaRecorder entregou `audio/mp4;codecs=opus` — contêiner da
+  Apple com som que a Apple não toca. Então o AAC é pedido **pelo nome**
+  (`audio/mp4;codecs=mp4a.40.2`), webm/opus vem antes do mp4 solto (ao menos
+  se anuncia pelo que é), e o formato de verdade viaja junto do áudio.
+- **`levitaPodeTocar` não tira o `;codecs=` antes de perguntar.** Tirava, para
+  "evitar falso negativo", e era justamente o que transformava um mp4/opus num
+  play mudo no iPhone. E porque `canPlayType` responder "maybe" é literalmente
+  um talvez, o elemento tem `onerror`: o id que falhou sai em
+  `levitaEstadoAudio`, e a bolha troca o play por **"Este áudio não toca neste
+  aparelho"**. Dois caminhos para o mesmo aviso, porque um play que não faz
+  nada é o pior desfecho possível.
+- **Teto de 800 KiB**, conferido no app e na regra. 32 kbps é um pedido, não
+  uma promessa: medido, dois minutos saíram a 34–36 kbps (~531 KiB). Um teto
+  apertado seria recusar a mensagem *depois* de a pessoa falar dois minutos.
+- **O áudio vence junto com a mensagem** — `expiraEm` igual nos dois, nulo nos
+  dois quando fixada. Fixar e desafixar mexem nos dois documentos no mesmo
+  lote, senão a mensagem ficaria no topo e o som sumiria em 30 dias.
+- **A trava de dois minutos para a gravação e guarda o que já foi dito**, em
+  vez de descartar tudo por passar do tempo.
+- **Medido no Chromium** (`getUserMedia` trocado por um oscilador, porque
+  contêiner não tem placa de som — todo o resto é o código real): grava, o
+  base64 volta, o `<audio>` toca, pausa e retoma, cancelar solta o microfone e
+  gravar de novo funciona, e áudio corrompido devolve `falhou` em vez de
+  silêncio. **O que NÃO pude testar aqui é o microfone de verdade num
+  iPhone** — a permissão e o formato que o Safari escolhe.
 
 ### Quando a tela diz "vazio"
 
