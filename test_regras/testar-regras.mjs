@@ -753,6 +753,113 @@ await teste('mensagem sem texto E sem áudio é recusada', () =>
     fixada: false, fixadaPor: null, expiraEm: new Date(Date.now() + 864e5),
   })));
 
+console.log('\n── várias funções por pessoa ──');
+
+await teste('a pessoa escolhe várias funções no próprio perfil', () =>
+  assertSucceeds(updateDoc(doc(levita(), 'users', LEVITA), {
+    instrument: 'vocalist', instruments: ['vocalist', 'guitar'],
+  })));
+
+await teste('lista vazia é recusada', () =>
+  // Sem função, a escala não sabe o que oferecer e o modo de leitura não tem
+  // de onde sair.
+  assertFails(updateDoc(doc(levita(), 'users', LEVITA), { instruments: [] })));
+
+await teste('função inventada é recusada', () =>
+  assertFails(updateDoc(doc(levita(), 'users', LEVITA), {
+    instruments: ['vocalist', 'gaita'],
+  })));
+
+await teste('lista longa demais é recusada', () =>
+  assertFails(updateDoc(doc(levita(), 'users', LEVITA), {
+    instruments: ['vocalist', 'guitar', 'bass', 'drums', 'keyboard', 'other',
+                  'vocalist'],
+  })));
+
+await teste('instruments não é texto', () =>
+  assertFails(updateDoc(doc(levita(), 'users', LEVITA), {
+    instruments: 'vocalist',
+  })));
+
+await teste('o líder também ajusta as funções de um membro', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'users', LEVITA), {
+    instruments: ['keyboard'],
+  })));
+
+console.log('\n── editar o cadastro da música ──');
+
+await teste('o líder corrige o nome', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'songs', 's1'), {
+    name: 'Digno És', observacoes: 'entra sem bateria',
+  })));
+
+await teste('quem cadastrou corrige o próprio cadastro', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'songs', 's-da-ana'), {
+      id: 's-da-ana', name: 'Oceanos', artist: '', lyrics: '',
+      originalKey: 'D', links: [], observacoes: '',
+      isOfflineAvailable: false, createdAt: new Date(), addedBy: LEVITA,
+      archived: false, archivedAt: null, archivedBy: null,
+    });
+  });
+  await assertSucceeds(updateDoc(doc(levita(), 'songs', 's-da-ana'), {
+    name: 'Oceanos (Onde Meus Pés Podem Falhar)', artist: 'Hillsong',
+    originalKey: 'B', observacoes: 'começa só com teclado',
+  }));
+});
+
+await teste('quem cadastrou NÃO tira a música do repertório', () =>
+  // Corrigir o cadastro e mexer no repertório são decisões diferentes.
+  assertFails(updateDoc(doc(levita(), 'songs', 's-da-ana'), {
+    archived: true, archivedAt: new Date(), archivedBy: LEVITA,
+  })));
+
+await teste('quem cadastrou não troca a letra (isso é colar cifra)', () =>
+  assertFails(updateDoc(doc(levita(), 'songs', 's-da-ana'), {
+    lyrics: 'outra letra inteira',
+  })));
+
+await teste('levita não corrige música de outra pessoa', () =>
+  assertFails(updateDoc(doc(levita(), 'songs', 's1'), { name: 'Outro nome' })));
+
+await teste('ninguém se põe como quem cadastrou', () =>
+  assertFails(updateDoc(doc(levita(), 'songs', 's1'), { addedBy: LEVITA })));
+
+await teste('observação gigante é recusada', () =>
+  assertFails(updateDoc(doc(lider(), 'songs', 's1'), {
+    observacoes: 'x'.repeat(2001),
+  })));
+
+await teste('apagar música continua proibido para todos', async () => {
+  await assertFails(deleteDoc(doc(lider(), 'songs', 's1')));
+  await assertFails(deleteDoc(doc(levita(), 'songs', 's-da-ana')));
+});
+
+console.log('\n── contas de robô ──');
+
+await teste('o líder marca uma conta como robô', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'users', LEVITA), { bot: true })));
+
+await teste('o líder desmarca', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'users', LEVITA), { bot: false })));
+
+await teste('ninguém se marca robô sozinho', () =>
+  // Sumiria das escalas e das contagens, e a pessoa não entenderia por que
+  // deixou de ser chamada.
+  assertFails(updateDoc(doc(levita(), 'users', LEVITA), { bot: true })));
+
+await teste('levita não marca o robô de outra pessoa', () =>
+  assertFails(updateDoc(doc(levita(), 'users', LIDER), { bot: true })));
+
+await teste('bot só aceita verdadeiro ou falso', () =>
+  assertFails(updateDoc(doc(lider(), 'users', LEVITA), { bot: 'sim' })));
+
+await teste('sair do ministério não deixa marcar robô de carona', () =>
+  assertFails(updateDoc(doc(levita(), 'users', LEVITA), {
+    role: 'removido', removedBy: LEVITA, removedAt: new Date(), bot: true,
+  })));
+
+
 console.log('\n── avisos do chat (pushSubs) ──');
 
 // A inscrição como o app a grava (AvisosService._gravar).

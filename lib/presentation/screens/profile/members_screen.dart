@@ -50,10 +50,19 @@ class MembersScreen extends StatelessWidget {
           // Três grupos, porque são três decisões diferentes: quem espera uma
           // resposta, quem já está dentro, e quem saiu — este último visível
           // de propósito, para um "não" por engano ter conserto.
-          final pendentes = members.where((m) => m.isPendente).toList();
-          final equipe = members.where((m) => m.aprovado).toList();
-          final removidos = members.where((m) => m.isRemovido).toList();
+          // Robô fora de tudo: a faxina do chat e o servidor dos avisos
+          // entram como líderes comuns, e apareciam aqui como se fossem
+          // gente — inclusive na contagem "3 líderes · 5 membros".
+          //
+          // Os nomes ficam: o robô pode ter removido alguém, e a linha
+          // "saiu em 14/11, por Faxina" precisa saber traduzir o id.
           final nomes = {for (final m in members) m.id: m.name};
+          final gente = members.where((m) => !m.bot).toList();
+
+          final pendentes = gente.where((m) => m.isPendente).toList();
+          final equipe = gente.where((m) => m.aprovado).toList();
+          final removidos = gente.where((m) => m.isRemovido).toList();
+          final robos = members.where((m) => m.bot && m.aprovado).toList();
           final leaders = equipe.where((m) => m.isAdmin).length;
 
           Widget linha(UserModel m) => _MemberRow(
@@ -93,6 +102,14 @@ class MembersScreen extends StatelessWidget {
                 )
               else
                 ...equipe.map(linha),
+              if (robos.isNotEmpty && auth.isAdmin) ...[
+                const SizedBox(height: 22),
+                _SecaoRecolhida(
+                  titulo: 'Contas de robô (${robos.length})',
+                  isDark: isDark,
+                  filhos: robos.map(linha).toList(),
+                ),
+              ],
               if (removidos.isNotEmpty && auth.isAdmin) ...[
                 const SizedBox(height: 22),
                 _SecaoRecolhida(
@@ -256,6 +273,78 @@ class _MemberRowState extends State<_MemberRow> {
     );
   }
 
+  /// Marca (ou desmarca) a conta como robô.
+  ///
+  /// Robô sai de tudo: lista, contagem, equipes, escalas e avisos — e deixa
+  /// de contar na proteção do último líder. Por isso marcar exige confirmar
+  /// com o nome, como remover: marcar uma pessoa por engano a tiraria das
+  /// escalas sem ela entender o motivo.
+  Future<void> _marcarRobo(bool virarRobo) async {
+    final m = widget.member;
+
+    // Um robô que fosse o último líder "de verdade" deixaria o ministério sem
+    // ninguém que aprove. A conta é a mesma do remover, e vem antes de
+    // perguntar.
+    if (virarRobo && m.isAdmin && await AuthService.adminCount() <= 1) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Este é o único líder de verdade. Promova outra '
+              'pessoa antes de marcar esta conta como robô.'),
+          backgroundColor: AppColors.red,
+        ),
+      );
+      return;
+    }
+    if (!mounted) return;
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(virarRobo
+            ? 'Marcar ${m.name} como robô?'
+            : '${m.name} é uma pessoa?'),
+        content: Text(
+          virarRobo
+              ? 'Contas de robô (a faxina do chat, o servidor dos avisos) '
+                  'somem da lista de membros e das contagens, não entram em '
+                  'equipe nem em escala, não recebem avisos e não contam como '
+                  'líder.\n\nNão use isto numa pessoa.'
+              : '${m.name} volta a aparecer na lista de membros, nas equipes '
+                  'e nas escalas.',
+          style: const TextStyle(fontFamily: 'Poppins', fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: virarRobo ? AppColors.blue : AppColors.success),
+            child: Text(virarRobo ? 'É um robô' : 'É uma pessoa'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    setState(() => _saving = true);
+    final erro = await FirestoreService.marcarComoBot(m, virarRobo);
+    if (!mounted) return;
+    setState(() => _saving = false);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(erro ??
+            (virarRobo
+                ? '${m.name} agora é uma conta de robô.'
+                : '${m.name} voltou a ser uma pessoa.')),
+        backgroundColor: erro == null ? AppColors.success : AppColors.red,
+      ),
+    );
+  }
+
   /// Explains why the app cannot set someone else's password any more.
   ///
   /// Sign-in moved to Firebase Authentication, which only lets an account
@@ -353,8 +442,11 @@ class _MemberRowState extends State<_MemberRow> {
                 ),
                 const SizedBox(height: 2),
                 Text(
+                  // TODAS as funções, aqui: é nesta tela que o líder decide
+                  // quem pode ser escalado em quê. Nas outras telas aparece
+                  // só a principal, onde só cabe uma.
                   '${m.isAdmin ? '👑 Líder' : '🎵 Levita'} · '
-                  '${m.instrument.emoji} ${m.instrument.label}',
+                  '${m.instruments.map((f) => '${f.emoji} ${f.label}').join(' · ')}',
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 11.5,
@@ -385,6 +477,8 @@ class _MemberRowState extends State<_MemberRow> {
                     _explainPasswordReset();
                   } else if (value == 'remover') {
                     _remover();
+                  } else if (value == 'robo') {
+                    _marcarRobo(!m.bot);
                   }
                 },
                 itemBuilder: (_) => [
@@ -413,6 +507,24 @@ class _MemberRowState extends State<_MemberRow> {
                       ],
                     ),
                   ),
+                  // Marcar robô não aparece na própria linha: ninguém se
+                  // esconde do ministério por engano.
+                  if (!widget.isMe)
+                    PopupMenuItem(
+                      value: 'robo',
+                      child: Row(
+                        children: [
+                          Icon(
+                            m.bot
+                                ? Icons.person_outline_rounded
+                                : Icons.smart_toy_outlined,
+                            size: 18,
+                          ),
+                          const SizedBox(width: 10),
+                          Text(m.bot ? 'É uma pessoa' : 'É uma conta de robô'),
+                        ],
+                      ),
+                    ),
                   // Nunca na própria linha: sair do ministério é decisão de
                   // quem sai, e fica em Perfil → Sair do ministério.
                   if (!widget.isMe)

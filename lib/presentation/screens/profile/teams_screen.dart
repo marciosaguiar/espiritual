@@ -358,7 +358,7 @@ class _EditorEquipeState extends State<_EditorEquipe> {
         ],
       ),
       body: StreamBuilder<List<UserModel>>(
-        stream: AuthService.getAllUsers(),
+        stream: AuthService.watchEscalaveis(),
         builder: (context, snap) {
           final pessoas = snap.data ?? const <UserModel>[];
 

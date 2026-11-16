@@ -189,9 +189,18 @@ class _AddSongScreenState extends State<AddSongScreen> {
                 controller: _cifraCtrl,
                 onAnalisar: (r) {
                   final tom = tomDaLista(r.tom);
-                  if (tom != null && tom != _selectedKey) {
-                    setState(() => _selectedKey = tom);
-                  }
+                  setState(() {
+                    if (tom != null && tom != _selectedKey) _selectedKey = tom;
+                    // Título e artista só entram em campo VAZIO: aqui a
+                    // pessoa está cadastrando, e sobrescrever o que ela
+                    // acabou de digitar é pior que não ajudar.
+                    if (_nameCtrl.text.trim().isEmpty && r.titulo != null) {
+                      _nameCtrl.text = r.titulo!;
+                    }
+                    if (_artistCtrl.text.trim().isEmpty && r.artista != null) {
+                      _artistCtrl.text = r.artista!;
+                    }
+                  });
                 },
               ),
               const SizedBox(height: 16),

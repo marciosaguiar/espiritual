@@ -30,6 +30,7 @@ A     G
 ''';
 
 void main() {
+  _cabecalhoGrudado();
   group('CifraColada.analisar', () {
     final r = CifraColada.analisar(coladoDoCifraClub);
 
@@ -140,5 +141,126 @@ Sou grato por Seu amor'''.trim());
       expect(r.tom, isNull);
     });
 
+  });
+}
+
+/// O cabeçalho do Cifra Club colado SEM as quebras de linha que a página
+/// mostrava. Os dois casos abaixo são texto real, do jeito que chegou:
+/// "Sou Grato Por Seu AmorGet de: Joshua Coleman" e
+/// "Tom: DAfinação: E A D G B E".
+///
+/// O que estava em jogo não era estética: grudado, o "Tom:" não era
+/// reconhecido, a música ficava com o tom antigo (G) e a cifra em D — e o
+/// levita toca no tom errado no domingo.
+void _cabecalhoGrudado() {
+  group('cabeçalho grudado do Cifra Club', () {
+    const real = '''
+Sou Grato Por Seu AmorGet de: Joshua Coleman
+Tom: DAfinação: E A D G B E
+
+[Intro] D  A  G
+
+   D              A
+Sou grato por Seu amor
+      G                D
+Que me alcançou onde eu estava
+''';
+
+    test('o tom sai do "Tom:" grudado no "Afinação:"', () {
+      expect(CifraColada.analisar(real).tom, 'D');
+    });
+
+    test('título e artista são reconhecidos', () {
+      final r = CifraColada.analisar(real);
+      expect(r.titulo, 'Sou Grato Por Seu Amor');
+      expect(r.artista, 'Joshua Coleman');
+    });
+
+    test('e saem do corpo: a cifra começa na música', () {
+      final r = CifraColada.analisar(real);
+      expect(r.cifra.split('\n').first.trim(), '[Intro] D  A  G');
+      expect(r.cifra, isNot(contains('Joshua')));
+      expect(r.cifra, isNot(contains('Afinação')));
+      expect(r.cifra, isNot(contains('Tom:')));
+    });
+
+    test('a letra também fica limpa', () {
+      final r = CifraColada.analisar(real);
+      expect(r.letra, isNot(contains('Joshua')));
+      expect(r.letra, isNot(contains('Afinação')));
+      expect(r.letra, contains('Sou grato por Seu amor'));
+    });
+
+    test('"Afinação: E A D G B E" NÃO conta como linha de acordes', () {
+      // É a pior de todas para deixar passar: a linha é feita de nomes de
+      // acorde, então entrava na cifra como se fosse acorde de verdade.
+      final r = CifraColada.analisar(real);
+      expect(r.linhasDeAcordes, 3);
+    });
+
+    test('sabendo o nome da música, o título volta inteiro', () {
+      // O "Get" do botão do site fica grudado no fim do título; comparar por
+      // prefixo é o que o reconhece como o mesmo título.
+      final r = CifraColada.analisar(real,
+          nomeConhecido: 'Sou Grato Por Seu Amor');
+      expect(r.titulo, 'Sou Grato Por Seu Amor');
+      expect(r.cifra, isNot(contains('Get')));
+    });
+
+    test('o nome conhecido pode vir com acento e caixa diferentes', () {
+      const colado = 'Grandes Coisasde: Fernandinho\nTom: G\n\nG  D\nAleluia';
+      final r = CifraColada.analisar(colado, nomeConhecido: 'GRANDES COISAS');
+      expect(r.tom, 'G');
+      expect(r.artista, 'Fernandinho');
+      expect(r.cifra, isNot(contains('Fernandinho')));
+    });
+
+    test('cabeçalho com todos os rótulos do site sai inteiro', () {
+      const colado = '''
+Bondade de Deus
+de: Isaias Saad
+Tom: G
+Afinação: E A D G B E
+Capotraste: 2ª casa
+Instrumento: Violão
+Dificuldade: Fácil
+
+[Intro] G  D
+
+G
+Eu te agradeço
+''';
+      final r = CifraColada.analisar(colado);
+      expect(r.tom, 'G');
+      expect(r.artista, 'Isaias Saad');
+      expect(r.cifra.split('\n').first.trim(), '[Intro] G  D');
+      for (final rotulo in ['Afinação', 'Capotraste', 'Instrumento',
+        'Dificuldade', 'Isaias']) {
+        expect(r.cifra, isNot(contains(rotulo)), reason: rotulo);
+      }
+    });
+
+    test('sem artista no cabeçalho, a primeira linha NÃO é descartada', () {
+      // A trava contra comer um verso: sem o sinal de cabeçalho de site,
+      // a linha de letra fica. Perder um verso é pior que deixar um título.
+      const colado = 'Eu navegarei no oceano do Espírito\n\nG  D\nE lá entrarei';
+      final r = CifraColada.analisar(colado);
+      expect(r.titulo, isNull);
+      expect(r.letra, contains('Eu navegarei no oceano'));
+    });
+
+    test('"de:" no meio da letra, longe do cabeçalho, não vira artista', () {
+      final linhas = List.filled(10, 'Linha qualquer da música').join('\n');
+      final r = CifraColada.analisar('$linhas\nFala de: amor e perdão');
+      expect(r.artista, isNull);
+      expect(r.letra, contains('Fala de: amor e perdão'));
+    });
+
+    test('linha de acordes com ":" não é confundida com artista', () {
+      const colado = 'Tom: C\n\nC  G  Am  F\nQuem é como Tu';
+      final r = CifraColada.analisar(colado);
+      expect(r.artista, isNull);
+      expect(r.cifra, contains('C  G  Am  F'));
+    });
   });
 }

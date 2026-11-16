@@ -7,15 +7,32 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/utils/chord_transposer.dart';
 import '../../../core/utils/cifra_colada.dart';
+import '../../widgets/common/abrir_link.dart';
 import '../../widgets/common/glass.dart';
 import '../../widgets/songs/colar_cifra.dart';
+import 'editar_musica_screen.dart';
 import '../../../data/models/arrangement_model.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../../data/models/song_model.dart';
+import '../../../data/models/user_model.dart';
 
 class SongDetailScreen extends StatefulWidget {
   final SongModel song;
-  const SongDetailScreen({super.key, required this.song});
+
+  /// A função em que a pessoa vai NESTE culto, quando a música foi aberta de
+  /// dentro de um culto.
+  ///
+  /// Quem canta num domingo e faz baixo no outro precisa ver coisas
+  /// diferentes, e o cadastro não sabe qual é hoje — a escala sabe. Nulo
+  /// significa "aberta pelo repertório": aí vale o que a pessoa escolheu no
+  /// perfil, como antes.
+  final UserInstrument? funcaoNoCulto;
+
+  const SongDetailScreen({
+    super.key,
+    required this.song,
+    this.funcaoNoCulto,
+  });
 
   @override
   State<SongDetailScreen> createState() => _SongDetailScreenState();
@@ -23,6 +40,17 @@ class SongDetailScreen extends StatefulWidget {
 
 class _SongDetailScreenState extends State<SongDetailScreen> {
   bool _showChords = false;
+
+  /// Quem canta, para esta abertura da tela.
+  ///
+  /// A função do culto manda; sem culto, vale a escolha do perfil. A pessoa
+  /// pode trocar na hora pelo botão "Letra / Cifra" — a troca vale só
+  /// enquanto a tela está aberta, e não mexe no perfil.
+  bool _cantaAgora(BuildContext context) {
+    final f = widget.funcaoNoCulto;
+    if (f != null) return UserModel.leituraDaFuncao(f) == ModoLeitura.canto;
+    return context.read<AuthProvider>().user?.canta ?? false;
+  }
   bool _isWorshipMode = false;
   int _semitones = 0;
   double _fontSize = 16.0;
@@ -42,7 +70,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       final saved = auth.getSavedTone(widget.song.id);
       if (saved != 0) setState(() => _semitones = saved);
       // Quem canta lê de longe: letra grande também no Modo Culto.
-      if (auth.user?.canta ?? false) setState(() => _fontSize = 26);
+      if (_cantaAgora(context)) setState(() => _fontSize = 26);
       _loadArrangement();
     });
   }
@@ -50,13 +78,94 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   Future<void> _loadArrangement() async {
     final found = await FirestoreService.getArrangement(widget.song.id);
     if (!mounted) return;
-    final canta = context.read<AuthProvider>().user?.canta ?? false;
+    final canta = _cantaAgora(context);
     setState(() {
       _arrangement = found;
       _loadingArrangement = false;
       // Quem toca abre direto na cifra, no tom dele; quem canta, na letra.
       _showChords = !canta && (found?.hasChords ?? false);
     });
+  }
+
+  /// Quem cadastrou a música pode corrigir o cadastro dela.
+  bool _souQuemCadastrou(String? meuId) =>
+      meuId != null && meuId.isNotEmpty && widget.song.addedBy == meuId;
+
+  /// Corrigir nome, artista, tom, BPM, link do YouTube e observações.
+  ///
+  /// O BPM vai para o ARRANJO, e não para a música: é de como esta igreja
+  /// toca. Se ainda não houver arranjo, um é criado só com o BPM — sem cifra,
+  /// que é o que já acontece quando o líder define o tom da igreja antes de
+  /// ter a cifra em mãos.
+  Future<void> _editar() async {
+    final songs = context.read<SongsProvider>();
+    final auth = context.read<AuthProvider>();
+
+    final r = await Navigator.push<EdicaoDeMusica>(
+      context,
+      GlassPageRoute(
+        builder: (_) => EditarMusicaScreen(
+          musica: widget.song,
+          arranjo: _arrangement,
+        ),
+      ),
+    );
+    if (r == null || !mounted) return;
+
+    String? erro = await songs.updateSong(r.musica);
+
+    final bpmMudou = r.bpm != (_arrangement?.bpm ?? 0);
+    if (erro == null && bpmMudou) {
+      final base = _arrangement ??
+          FirestoreService.createArrangementModel(
+            songId: widget.song.id,
+            churchKey: r.musica.originalKey,
+            approvedBy: auth.user?.id,
+          );
+      final salvo = await FirestoreService.saveArrangement(
+          base.copyWith(bpm: r.bpm, updatedAt: DateTime.now()));
+      if (salvo.success) {
+        if (mounted) setState(() => _arrangement = salvo.arrangement);
+      } else {
+        erro = salvo.error;
+      }
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(erro ?? 'Música atualizada.'),
+        backgroundColor: erro == null ? AppColors.success : AppColors.red,
+      ),
+    );
+  }
+
+  /// "A cifra está em D, a música está em G. Trocar?"
+  ///
+  /// Diz os dois tons no texto, porque "Trocar o tom?" sem os valores não dá
+  /// à pessoa como decidir.
+  Future<bool> _confirmarTroca(String atual, String doSite) async {
+    final trocar = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Tom diferente'),
+        content: Text(
+          'A cifra que você colou está em $doSite, e esta música está '
+          'cadastrada em $atual.\n\nQuer passar o tom original para $doSite?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Manter $atual'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Usar $doSite'),
+          ),
+        ],
+      ),
+    );
+    return trocar ?? false;
   }
 
   /// Líder cola a cifra de novo (conserta música cadastrada com a cifra
@@ -102,13 +211,35 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         erro = salvo.error;
       }
     }
-    if (erro == null && r.letra.isNotEmpty && r.letra != widget.song.lyrics) {
-      erro = await songs.updateSong(widget.song.copyWith(lyrics: r.letra));
+    // O TOM ORIGINAL. Era aqui que a música ficava "em G" com a cifra em D:
+    // a cifra colada trazia o tom, e ninguém perguntava nada — o campo
+    // continuava com o valor antigo e o levita lia o tom errado.
+    //
+    // Trocar sem perguntar também não serve: o tom original é da obra, e o
+    // site pode estar mostrando a cifra em outro. Então: vazio, preenche;
+    // diferente, pergunta.
+    var novoTom = widget.song.originalKey;
+    final tomDoSite = tomDaLista(r.tom);
+    if (tomDoSite != null && tomDoSite != widget.song.originalKey) {
+      if (widget.song.originalKey.trim().isEmpty) {
+        novoTom = tomDoSite;
+      } else if (await _confirmarTroca(widget.song.originalKey, tomDoSite)) {
+        novoTom = tomDoSite;
+      }
+      if (!mounted) return;
+    }
+
+    final letraNova = r.letra.isNotEmpty && r.letra != widget.song.lyrics;
+    if (erro == null && (letraNova || novoTom != widget.song.originalKey)) {
+      erro = await songs.updateSong(widget.song.copyWith(
+        lyrics: letraNova ? r.letra : null,
+        originalKey: novoTom,
+      ));
     }
     if (!mounted) return;
     setState(() {
       _arrangement = novo;
-      if (r.temAcordes && !(auth.user?.canta ?? false)) _showChords = true;
+      if (r.temAcordes && !_cantaAgora(context)) _showChords = true;
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
@@ -182,14 +313,12 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     );
   }
 
-  Future<void> _openYoutube() async {
-    final url = widget.song.videoUrl;
-    if (url == null) return;
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
+  /// Abre o vídeo, e AVISA quando não dá.
+  ///
+  /// Antes: `canLaunchUrl` dizendo não fazia o toque não produzir nada —
+  /// nem som, nem aviso, nem tela. No iPhone instalado isso acontece com
+  /// alguma frequência, e a pessoa lê como app travado.
+  Future<void> _openYoutube() => abrirLink(context, widget.song.videoUrl);
 
   Future<void> _saveTone() async {
     final auth = context.read<AuthProvider>();
@@ -262,7 +391,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     final isFav = auth.isFavorite(widget.song.id);
     final isOffline = songs.isOffline(widget.song.id);
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final canta = auth.user?.canta ?? false;
+    final canta = _cantaAgora(context);
     final letra = _letra(songs);
     final texto = _textoExibido(letra, canta);
     final mono = _monoespacada(letra, canta);
@@ -294,10 +423,16 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             ),
             onPressed: () => auth.toggleFavorite(widget.song.id),
           ),
-          // Admin delete
-          if (auth.isAdmin)
+          // O menu aparece para o líder e para quem cadastrou a música:
+          // quem digitou o nome errado é quem mais precisa consertá-lo, e
+          // antes só o líder podia.
+          if (auth.isAdmin || _souQuemCadastrou(auth.user?.id))
             PopupMenuButton<String>(
               onSelected: (v) async {
+                if (v == 'editar') {
+                  await _editar();
+                  return;
+                }
                 if (v == 'colar') {
                   await _colarCifra();
                   return;
@@ -362,27 +497,41 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(
-                  value: 'colar',
+                  value: 'editar',
                   child: Row(
                     children: [
-                      Icon(Icons.content_paste_rounded, size: 18),
+                      Icon(Icons.edit_outlined, size: 18),
                       SizedBox(width: 8),
-                      Text('Colar cifra'),
+                      Text('Editar música'),
                     ],
                   ),
                 ),
-                const PopupMenuItem(
-                  value: 'arquivar',
-                  child: Row(
-                    children: [
-                      Icon(Icons.archive_outlined,
-                          color: AppColors.red, size: 18),
-                      SizedBox(width: 8),
-                      Text('Tirar do repertório',
-                          style: TextStyle(color: AppColors.red)),
-                    ],
+                if (auth.isAdmin)
+                  const PopupMenuItem(
+                    value: 'colar',
+                    child: Row(
+                      children: [
+                        Icon(Icons.content_paste_rounded, size: 18),
+                        SizedBox(width: 8),
+                        Text('Colar cifra'),
+                      ],
+                    ),
                   ),
-                ),
+                // Tirar do repertório continua só do líder: é decisão sobre o
+                // repertório da igreja, não sobre o cadastro de uma música.
+                if (auth.isAdmin)
+                  const PopupMenuItem(
+                    value: 'arquivar',
+                    child: Row(
+                      children: [
+                        Icon(Icons.archive_outlined,
+                            color: AppColors.red, size: 18),
+                        SizedBox(width: 8),
+                        Text('Tirar do repertório',
+                            style: TextStyle(color: AppColors.red)),
+                      ],
+                    ),
+                  ),
               ],
             ),
         ],
@@ -583,6 +732,42 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           Divider(
               height: 1,
               color: isDark ? Colors.grey.shade800 : Colors.grey.shade200),
+          // O recado do líder sobre a música: "entra sem bateria", "repete o
+          // refrão três vezes". Fica ACIMA da letra, e não num menu, porque
+          // é combinação que vale no momento de tocar.
+          if (widget.song.observacoes.trim().isNotEmpty)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.fromLTRB(20, 14, 20, 0),
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.blue.withOpacity(0.08),
+                borderRadius: BorderRadius.circular(12),
+                border:
+                    Border.all(color: AppColors.blue.withOpacity(0.25)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.push_pin_outlined,
+                      size: 16, color: AppColors.blue),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      widget.song.observacoes.trim(),
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 12.5,
+                        height: 1.4,
+                        color: isDark
+                            ? AppColors.textPrimaryDark
+                            : AppColors.textPrimaryLight,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Lyrics / Chords
           Expanded(
             child: SingleChildScrollView(

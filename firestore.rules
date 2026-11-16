@@ -183,13 +183,32 @@ service cloud.firestore {
         // "Eu canto" / "Eu toco" no perfil.
         && (!('leitura' in request.resource.data)
             || request.resource.data.leitura in ['canto', 'toco'])
+        && (!('bot' in request.resource.data)
+            || request.resource.data.bot is bool)
+        // Várias funções por pessoa: a lista é fechada, como a das funções do
+        // ministério. Lista vazia é recusada — sem função, a escala não sabe
+        // o que oferecer e o modo de leitura não tem de onde sair.
+        && (!('instruments' in request.resource.data)
+            || (request.resource.data.instruments is list
+                && request.resource.data.instruments.size() >= 1
+                && request.resource.data.instruments.size() <= 6
+                && request.resource.data.instruments.hasOnly(
+                    ['vocalist', 'guitar', 'bass', 'drums', 'keyboard',
+                     'other'])))
         && (
           // Seu próprio perfil: nome, instrumento, "eu canto / eu toco".
           // Exige estar aprovado — quem está pendente ou removido não
           // escreve nada em lugar nenhum, nem no próprio cadastro.
-          (souEu(userId) && aprovado() && !('role' in mudou()))
+          //
+          // `bot` fica DE FORA: conta de robô não entra em escala, equipe,
+          // contagem nem aviso. Quem se marcasse robô sairia das escalas e
+          // ninguém entenderia por que deixou de ser chamado. Marcar é só do
+          // líder, e com confirmação pelo nome.
+          (souEu(userId) && aprovado()
+              && !('role' in mudou()) && !('bot' in mudou()))
           // Sair do ministério por conta própria.
-          || (souEu(userId) && saindoPorContaPropria())
+          || (souEu(userId) && saindoPorContaPropria()
+              && !('bot' in mudou()))
           // O líder decide sobre os outros: aprovar, recusar, promover,
           // remover e devolver o acesso.
           || ehLider()
@@ -211,16 +230,40 @@ service cloud.firestore {
     match /songs/{songId} {
       allow read: if aprovado();
 
-      // Só o líder cadastra, corrige, tira do repertório e devolve. Como
+      // Só o líder cadastra, e só ele tira do repertório e devolve. Como
       // tirar do repertório é um update comum, a mesma linha cobre as duas
       // coisas: ninguém além do líder arquiva ou desarquiva.
-      allow create, update: if ehLider()
-        && tamanhoRazoavel()
-        && texto('name', 150)
-        && texto('artist', 150)
-        && texto('lyrics', 20000)
-        && texto('originalKey', 10)
-        && arquivamentoValido();
+      allow create: if ehLider() && _musicaValida();
+
+      // Corrigir o CADASTRO é também de quem cadastrou a música.
+      //
+      // Quem digitou o nome errado é quem mais precisa consertá-lo, e antes
+      // só o líder podia — a música ficava errada para sempre, ou era
+      // cadastrada de novo, perdendo o histórico dos cultos.
+      //
+      // A lista fechada é o que separa "corrigir o cadastro" de "mexer no
+      // repertório": `archived` fica de fora, então quem cadastrou não tira
+      // nada do repertório, e `lyrics` também, porque trocar a letra é o que
+      // "Colar cifra" faz, e isso é do líder.
+      allow update: if _musicaValida()
+        && (
+          ehLider()
+          || (aprovado()
+              && resource.data.addedBy == eu()
+              && request.resource.data.addedBy == eu()
+              && mudou().hasOnly(
+                  ['name', 'artist', 'originalKey', 'links', 'observacoes']))
+        );
+
+      function _musicaValida() {
+        return tamanhoRazoavel()
+          && texto('name', 150)
+          && texto('artist', 150)
+          && texto('lyrics', 20000)
+          && texto('originalKey', 10)
+          && texto('observacoes', 2000)
+          && arquivamentoValido();
+      }
 
       // NINGUÉM apaga música pelo app, nem o líder.
       //

@@ -44,10 +44,19 @@ class PainelColarCifra extends StatefulWidget {
   final TextEditingController controller;
   final ValueChanged<CifraColada>? onAnalisar;
 
+  /// O nome e o artista que a música JÁ tem, quando ela já existe.
+  ///
+  /// Com eles, tirar o título do corpo da cifra é comparação em vez de
+  /// adivinhação — ver `CifraColada._lerCabecalho`.
+  final String? nomeConhecido;
+  final String? artistaConhecido;
+
   const PainelColarCifra({
     super.key,
     required this.controller,
     this.onAnalisar,
+    this.nomeConhecido,
+    this.artistaConhecido,
   });
 
   @override
@@ -65,7 +74,13 @@ class _PainelColarCifraState extends State<PainelColarCifra> {
   }
 
   void _analisar(String texto, {bool avisar = true}) {
-    final r = texto.trim().isEmpty ? null : CifraColada.analisar(texto);
+    final r = texto.trim().isEmpty
+        ? null
+        : CifraColada.analisar(
+            texto,
+            nomeConhecido: widget.nomeConhecido,
+            artistaConhecido: widget.artistaConhecido,
+          );
     setState(() => _r = r);
     if (avisar && r != null) widget.onAnalisar?.call(r);
   }
@@ -114,6 +129,18 @@ class _PainelColarCifraState extends State<PainelColarCifra> {
                     color: AppColors.blue,
                   ),
                 ),
+                if (r.artista != null || r.titulo != null) ...[
+                  const SizedBox(height: 3),
+                  Text(
+                    'Cabeçalho do site retirado'
+                    '${r.artista != null ? ' · artista: ${r.artista}' : ''}',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 11.5,
+                      color: secundaria,
+                    ),
+                  ),
+                ],
                 if (r.temAcordes) ...[
                   const SizedBox(height: 4),
                   GestureDetector(
@@ -191,7 +218,14 @@ class _ColarCifraScreenState extends State<ColarCifraScreen> {
           TextButton(
             onPressed: () {
               if (_ctrl.text.trim().isEmpty) return;
-              Navigator.pop(context, CifraColada.analisar(_ctrl.text));
+              Navigator.pop(
+                context,
+                CifraColada.analisar(
+                  _ctrl.text,
+                  nomeConhecido: widget.musica,
+                  artistaConhecido: widget.artista,
+                ),
+              );
             },
             child: const Text('Salvar'),
           ),
@@ -209,7 +243,11 @@ class _ColarCifraScreenState extends State<ColarCifraScreen> {
               label: const Text('Buscar no Cifra Club'),
             ),
             const SizedBox(height: 16),
-            PainelColarCifra(controller: _ctrl),
+            PainelColarCifra(
+              controller: _ctrl,
+              nomeConhecido: widget.musica,
+              artistaConhecido: widget.artista,
+            ),
             const SizedBox(height: 12),
             const Text(
               'Ao salvar, a cifra vira a da igreja e a letra da música é '

@@ -4,6 +4,7 @@ import 'package:levitasync/data/models/scale_model.dart';
 import 'package:levitasync/data/models/song_model.dart';
 
 void main() {
+  _editarCadastro();
   group('links da música', () {
     test('o nome do link vem do site quando não é informado', () {
       expect(const SongLink(url: 'https://www.youtube.com/watch?v=x').displayLabel,
@@ -188,6 +189,65 @@ void main() {
       expect(volta.semitones, -2);
       expect(volta.notes, 'capotraste na 2ª');
       expect(volta.capo, 2);
+    });
+  });
+}
+
+/// Editar o cadastro da música: observações e o link do YouTube.
+///
+/// O menu ⋮ só tinha "Colar cifra" e "Tirar do repertório": um nome digitado
+/// errado ficava errado para sempre, ou a música era cadastrada de novo e o
+/// histórico dos cultos em que ela foi tocada se perdia.
+void _editarCadastro() {
+  group('editar o cadastro', () {
+    final base = SongModel(
+      id: 's1',
+      name: 'Bondade de Deus',
+      artist: 'Isaias Saad',
+      lyrics: 'Eu te agradeço',
+      originalKey: 'G',
+      links: const [
+        SongLink(url: 'https://www.cifraclub.com.br/x', label: 'Cifra Club'),
+        SongLink(url: 'https://youtu.be/antigo', label: 'YouTube'),
+      ],
+      createdAt: DateTime(2026, 11, 16),
+    );
+
+    test('trocar o vídeo não derruba os outros links', () {
+      final r = base.comVideo('https://youtu.be/novo');
+      expect(r.videoUrl, 'https://youtu.be/novo');
+      expect(r.links.length, 2);
+      expect(r.links.any((l) => l.displayLabel == 'Cifra Club'), isTrue);
+    });
+
+    test('campo vazio tira o vídeo e mantém o resto', () {
+      final r = base.comVideo('');
+      expect(r.videoUrl, isNull);
+      expect(r.links.length, 1);
+      expect(r.links.first.displayLabel, 'Cifra Club');
+    });
+
+    test('espaço em volta do endereço é aparado', () {
+      expect(base.comVideo('  https://youtu.be/x  ').videoUrl,
+          'https://youtu.be/x');
+    });
+
+    test('música sem link nenhum ganha o vídeo', () {
+      final sem = base.copyWith(links: const []);
+      expect(sem.comVideo('https://youtu.be/x').links.length, 1);
+    });
+
+    test('observações sobrevivem ao banco e à sessão', () {
+      final com = base.copyWith(observacoes: 'entra sem bateria');
+      expect(SongModel.fromFirestore(com.toFirestore()).observacoes,
+          'entra sem bateria');
+      expect(SongModel.fromJson(com.toJson()).observacoes,
+          'entra sem bateria');
+    });
+
+    test('música antiga, sem o campo, não vira "null" na tela', () {
+      final dados = base.toFirestore()..remove('observacoes');
+      expect(SongModel.fromFirestore(dados).observacoes, '');
     });
   });
 }

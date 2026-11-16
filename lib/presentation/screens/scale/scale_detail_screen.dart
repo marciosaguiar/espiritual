@@ -9,6 +9,9 @@ import '../../../data/models/scale_model.dart';
 import '../../../data/models/song_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/auth_service.dart';
+import '../../widgets/common/abrir_link.dart';
+import '../../widgets/common/glass.dart';
+import '../songs/song_detail_screen.dart';
 
 class ScaleDetailScreen extends StatefulWidget {
   final ScaleModel scale;
@@ -287,9 +290,27 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
     }
   }
 
+  /// A função de cada pessoa NESTE culto, escolhida no diálogo de escalar.
+  Map<String, String> _funcaoEscolhida = const {};
+
+  /// Em que função EU vou neste culto, se estou escalado.
+  ///
+  /// Nulo quando não estou na escala: aí a música abre como sempre, pelo que
+  /// escolhi no perfil.
+  UserInstrument? _minhaFuncaoNesteCulto(BuildContext context) {
+    final eu = context.read<AuthProvider>().user?.id;
+    if (eu == null) return null;
+    for (final l in _scale.levitas) {
+      if (l.userId == eu) {
+        return UserInstrumentExtension.fromString(l.instrument);
+      }
+    }
+    return null;
+  }
+
   Future<void> _showAddLevitaDialog() async {
     final List<UserModel> allUsers =
-        await AuthService.getAllUsers().first;
+        await AuthService.watchEscalaveis().first;
 
     if (!mounted) return;
 
@@ -297,6 +318,14 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
       context: context,
       builder: (ctx) {
         final currentIds = _scale.levitas.map((l) => l.userId).toSet();
+        // Em qual função cada pessoa vai NESTE culto.
+        //
+        // Quem toca duas coisas — canta e faz violão, baixo e teclado — ia
+        // sempre na função principal do cadastro, e o líder não tinha como
+        // dizer "hoje ela canta". A escolha é por culto, não por pessoa.
+        final funcaoNoCulto = <String, String>{
+          for (final l in _scale.levitas) l.userId: l.instrument,
+        };
         return StatefulBuilder(builder: (ctx2, setDialog) {
           return AlertDialog(
             title: const Text('Definir Levitas',
@@ -309,37 +338,93 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                 itemBuilder: (_, i) {
                   final u = allUsers[i];
                   final checked = currentIds.contains(u.id);
-                  return CheckboxListTile(
-                    secondary: CircleAvatar(
-                      radius: 16,
-                      backgroundColor: AppColors.blue.withOpacity(0.15),
-                      child: Text(
-                        u.name[0].toUpperCase(),
-                        style: const TextStyle(
-                          color: AppColors.blue,
-                          fontFamily: 'Poppins',
-                          fontWeight: FontWeight.w700,
+                  final escolhida = funcaoNoCulto[u.id] ??
+                      u.instrument.name;
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CheckboxListTile(
+                        secondary: CircleAvatar(
+                          radius: 16,
+                          backgroundColor: AppColors.blue.withOpacity(0.15),
+                          child: Text(
+                            u.name[0].toUpperCase(),
+                            style: const TextStyle(
+                              color: AppColors.blue,
+                              fontFamily: 'Poppins',
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
                         ),
+                        title: Text(u.name,
+                            style: const TextStyle(
+                                fontFamily: 'Poppins', fontSize: 13)),
+                        subtitle: Text(
+                            u.instruments
+                                .map((f) => '${f.emoji} ${f.label}')
+                                .join(' · '),
+                            style: const TextStyle(
+                                fontFamily: 'Poppins', fontSize: 11)),
+                        value: checked,
+                        activeColor: AppColors.blue,
+                        onChanged: (v) {
+                          setDialog(() {
+                            if (v == true) {
+                              currentIds.add(u.id);
+                              funcaoNoCulto[u.id] ??= u.instrument.name;
+                            } else {
+                              currentIds.remove(u.id);
+                            }
+                          });
+                        },
                       ),
-                    ),
-                    title: Text(u.name,
-                        style: const TextStyle(
-                            fontFamily: 'Poppins', fontSize: 13)),
-                    subtitle: Text(
-                        '${u.instrument.emoji} ${u.instrument.label}',
-                        style: const TextStyle(
-                            fontFamily: 'Poppins', fontSize: 11)),
-                    value: checked,
-                    activeColor: AppColors.blue,
-                    onChanged: (v) {
-                      setDialog(() {
-                        if (v == true) {
-                          currentIds.add(u.id);
-                        } else {
-                          currentIds.remove(u.id);
-                        }
-                      });
-                    },
+                      // Só para quem faz mais de uma coisa, e só quando está
+                      // escalada: perguntar antes de escalar seria perguntar
+                      // à toa.
+                      if (checked && u.temVariasFuncoes)
+                        Padding(
+                          padding:
+                              const EdgeInsets.only(left: 72, bottom: 10),
+                          child: Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: u.instruments.map((f) {
+                              final ativa = escolhida == f.name;
+                              return GestureDetector(
+                                onTap: () => setDialog(
+                                    () => funcaoNoCulto[u.id] = f.name),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 9, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: ativa
+                                        ? AppColors.blue
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: Border.all(
+                                        color: ativa
+                                            ? AppColors.blue
+                                            : Colors.grey.shade400),
+                                  ),
+                                  child: Text(
+                                    '${f.emoji} ${f.label}',
+                                    style: TextStyle(
+                                      fontFamily: 'Poppins',
+                                      fontSize: 11,
+                                      fontWeight: ativa
+                                          ? FontWeight.w600
+                                          : FontWeight.w400,
+                                      color: ativa
+                                          ? Colors.white
+                                          : AppColors.textSecondaryLight,
+                                    ),
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ),
+                    ],
                   );
                 },
               ),
@@ -350,7 +435,10 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                 child: const Text('Cancelar'),
               ),
               ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, currentIds.toList()),
+                onPressed: () {
+                  _funcaoEscolhida = Map.of(funcaoNoCulto);
+                  Navigator.pop(ctx, currentIds.toList());
+                },
                 style:
                     ElevatedButton.styleFrom(backgroundColor: AppColors.blue),
                 child: const Text('Confirmar'),
@@ -367,9 +455,6 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
       );
 
       final levitas = selectedIds.map((uid) {
-        if (existingLevitas.containsKey(uid)) {
-          return existingLevitas[uid]!;
-        }
         final user = allUsers.firstWhere(
           (u) => u.id == uid,
           orElse: () => UserModel(
@@ -378,10 +463,25 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
             createdAt: DateTime.now(),
           ),
         );
+        final funcao = _funcaoEscolhida[uid] ?? user.instrument.name;
+        final jaEstava = existingLevitas[uid];
+        // Quem já estava escalado NÃO perde a confirmação de presença por
+        // causa de uma troca de função — é o mesmo cuidado que o provider
+        // tem ao salvar a equipe.
+        if (jaEstava != null) {
+          return jaEstava.instrument == funcao
+              ? jaEstava
+              : ScaleLevita(
+                  userId: jaEstava.userId,
+                  userName: jaEstava.userName,
+                  instrument: funcao,
+                  confirmed: jaEstava.confirmed,
+                );
+        }
         return ScaleLevita(
           userId: user.id,
           userName: user.name,
-          instrument: user.instrument.name,
+          instrument: funcao,
         );
       }).toList();
 
@@ -644,7 +744,14 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
             else
               ...List.generate(_scale.songs.length, (i) {
                 final s = _scale.songs[i];
-                return _SongRow(song: s, index: i + 1);
+                return _SongRow(
+                  song: s,
+                  index: i + 1,
+                  // A função desta pessoa NESTE culto decide se a música
+                  // abre em letra ou em cifra. Era a escolha fixa do perfil,
+                  // que não sabe que hoje ela canta e domingo toca baixo.
+                  funcaoNoCulto: _minhaFuncaoNesteCulto(context),
+                );
               }),
 
             const SizedBox(height: 20),
@@ -884,8 +991,13 @@ class _SectionHeader extends StatelessWidget {
 class _SongRow extends StatelessWidget {
   final ScaleSong song;
   final int index;
+  final UserInstrument? funcaoNoCulto;
 
-  const _SongRow({required this.song, required this.index});
+  const _SongRow({
+    required this.song,
+    required this.index,
+    this.funcaoNoCulto,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -893,7 +1005,23 @@ class _SongRow extends StatelessWidget {
     // The service stores only the id; what to show comes from the repertoire.
     final songs = context.watch<SongsProvider>();
     final missing = !songs.exists(song);
-    return Container(
+    final completa = songs.getSongById(song.songId);
+    final video = completa?.videoUrl;
+    return GestureDetector(
+      // O culto e o repertório não se falavam: para ver a cifra da música do
+      // domingo, a pessoa saía do culto, ia em Músicas e procurava pelo nome.
+      onTap: completa == null
+          ? null
+          : () => Navigator.push(
+                context,
+                GlassPageRoute(
+                  builder: (_) => SongDetailScreen(
+                    song: completa,
+                    funcaoNoCulto: funcaoNoCulto,
+                  ),
+                ),
+              ),
+      child: Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -954,6 +1082,17 @@ class _SongRow extends StatelessWidget {
               ],
             ),
           ),
+          // O vídeo, aqui no culto, é para ensaiar antes — abrir a música
+          // inteira só para achar o link era um caminho a mais no celular,
+          // em cima do horário.
+          if (video != null)
+            IconButton(
+              tooltip: 'Abrir no YouTube',
+              icon: const Icon(Icons.play_circle_outline_rounded,
+                  size: 22, color: AppColors.red),
+              onPressed: () => abrirLink(context, video),
+              visualDensity: VisualDensity.compact,
+            ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
@@ -971,6 +1110,7 @@ class _SongRow extends StatelessWidget {
             ),
           ),
         ],
+        ),
       ),
     );
   }

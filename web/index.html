@@ -53,9 +53,24 @@
        receber o teclado; a fonte dele vem do estilo do widget, que é menor que
        16px. Como esse campo não aparece, forçar 16px nele não muda nada do que
        se vê — só remove a causa do zoom. */
+    /* E o teclado do iPhone pedia DOIS toques.
+       O motor do Flutter marca `user-select: none` no <body> para o canvas
+       não virar texto selecionável. Só que `user-select` se HERDA, e o campo
+       invisível que recebe o teclado mora dentro do body — então ele nascia
+       com `user-select: none`. No WebKit do iPhone, um campo assim ganha o
+       foco e o cursor, mas NÃO levanta o teclado; o segundo toque, agora
+       sobre um campo já focado, é que levanta.
+
+       Medido no DOM vivo do app publicado: `<body>` com
+       `user-select: none` e `touch-action: none`, e o input dentro de
+       `<flt-text-editing-host>` herdando `none`. Devolver `text` só a ele
+       não muda nada do que se vê — o campo é invisível —, e o canvas
+       continua não selecionável, porque esta regra não o alcança. */
     input, textarea, select, [contenteditable],
     .flt-text-editing, flt-text-editing-host * {
       font-size: 16px !important;
+      -webkit-user-select: text !important;
+      user-select: text !important;
     }
 
     /* Um app Flutter nunca precisa rolar a página de lado: se algum dia algo

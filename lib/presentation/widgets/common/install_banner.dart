@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/platform/install.dart';
@@ -11,8 +10,15 @@ import '../../../core/platform/install.dart';
 /// the **only** way notifications can arrive at all (iOS 16.4+). Everything in
 /// the next step depends on this one.
 ///
-/// Nothing is shown when the app is already installed, when running on
-/// Android/iOS natively, or after the person dismisses it.
+/// NÃO TEM MAIS "AGORA NÃO".
+///
+/// Tinha, e guardava a escolha para sempre. Um toque sem pensar, no primeiro
+/// dia, e o convite nunca mais aparecia — foi o que aconteceu com o dono do
+/// app, que passou semanas sem o aplicativo instalado e sem entender por que
+/// os avisos não chegavam. Agora o cartão fica até estar instalado, que é a
+/// única coisa que o resolve de verdade.
+///
+/// Só não aparece quando o app já está instalado ou quando roda nativo.
 class InstallBanner extends StatefulWidget {
   const InstallBanner({super.key});
 
@@ -21,41 +27,12 @@ class InstallBanner extends StatefulWidget {
 }
 
 class _InstallBannerState extends State<InstallBanner> {
-  static const _chaveDispensado = 'instalacao_dispensada';
-
-  bool _carregando = true;
-  bool _dispensado = false;
   InstallRoute _caminho = InstallRoute.naoSeAplica;
 
   @override
   void initState() {
     super.initState();
-    _verificar();
-  }
-
-  Future<void> _verificar() async {
-    final caminho = caminhoDeInstalacao;
-    var dispensado = false;
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      dispensado = prefs.getBool(_chaveDispensado) ?? false;
-    } catch (_) {
-      // Sem armazenamento local a faixa simplesmente reaparece.
-    }
-    if (!mounted) return;
-    setState(() {
-      _caminho = caminho;
-      _dispensado = dispensado;
-      _carregando = false;
-    });
-  }
-
-  Future<void> _dispensar() async {
-    setState(() => _dispensado = true);
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_chaveDispensado, true);
-    } catch (_) {}
+    _caminho = caminhoDeInstalacao;
   }
 
   Future<void> _instalar() async {
@@ -66,24 +43,19 @@ class _InstallBannerState extends State<InstallBanner> {
     }
   }
 
-  void _mostrarInstrucoes() {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _FolhaDeInstrucoes(caminho: _caminho),
-    );
-  }
+  void _mostrarInstrucoes() => mostrarComoInstalar(context, _caminho);
 
   @override
   Widget build(BuildContext context) {
-    if (_carregando ||
-        _dispensado ||
-        _caminho == InstallRoute.naoSeAplica) {
+    if (_caminho == InstallRoute.naoSeAplica) {
       return const SizedBox.shrink();
     }
 
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final secundaria =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
     final convidavel = _caminho == InstallRoute.conviteDoNavegador;
+    final noIphone = _caminho == InstallRoute.instrucoesIphone;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
@@ -104,7 +76,7 @@ class _InstallBannerState extends State<InstallBanner> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text(
-                  'Deixe o LevitaSync na tela de início',
+                  'Instale o LevitaSync no celular',
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 13.5,
@@ -114,15 +86,18 @@ class _InstallBannerState extends State<InstallBanner> {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  _caminho == InstallRoute.instrucoesIphone
-                      ? 'Abre como aplicativo e é o que permite receber avisos '
-                          'de escala no iPhone.'
-                      : 'Abre como aplicativo, sem a barra do navegador.',
-                  style: const TextStyle(
+                  noIphone
+                      // No iPhone não é preferência: fora da tela de início o
+                      // Safari não tem Web Push nenhum.
+                      ? 'No iPhone, os avisos de mensagem nova só chegam com o '
+                          'app na tela de início. Pelo navegador, nunca chegam.'
+                      : 'Abre como aplicativo, sem a barra do navegador, e é '
+                          'assim que os avisos de mensagem nova chegam.',
+                  style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 12,
                     height: 1.35,
-                    color: AppColors.textSecondaryLight,
+                    color: secundaria,
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -138,23 +113,11 @@ class _InstallBannerState extends State<InstallBanner> {
                         padding: const EdgeInsets.symmetric(horizontal: 14),
                       ),
                       child: Text(
-                        convidavel ? 'Instalar' : 'Como fazer',
+                        convidavel ? 'Instalar' : 'Ver como fazer',
                         style: const TextStyle(
                             fontFamily: 'Poppins',
                             fontSize: 12.5,
                             fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: _dispensar,
-                      style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact),
-                      child: const Text(
-                        'Agora não',
-                        style: TextStyle(
-                            fontFamily: 'Poppins',
-                            fontSize: 12.5,
-                            color: AppColors.textSecondaryLight),
                       ),
                     ),
                   ],
@@ -166,6 +129,18 @@ class _InstallBannerState extends State<InstallBanner> {
       ),
     );
   }
+}
+
+/// Abre o passo a passo de instalação, escrito para o navegador em que a
+/// pessoa está. Usado pelo cartão do Início e pela linha do Perfil.
+void mostrarComoInstalar(BuildContext context, [InstallRoute? caminho]) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: Colors.transparent,
+    builder: (_) =>
+        _FolhaDeInstrucoes(caminho: caminho ?? caminhoDeInstalacao),
+  );
 }
 
 /// The three steps, written for whichever browser the person is actually in.
@@ -249,10 +224,13 @@ class _FolhaDeInstrucoes extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Três toques. Depois é só abrir pelo ícone, como qualquer outro '
-            'aplicativo.',
-            style: TextStyle(
+          Text(
+            caminho == InstallRoute.instrucoesIphone
+                ? 'Três toques. Depois é só abrir pelo ícone — e é a partir '
+                    'daí que o iPhone deixa os avisos de mensagem chegarem.'
+                : 'Três toques. Depois é só abrir pelo ícone, como qualquer '
+                    'outro aplicativo.',
+            style: const TextStyle(
               fontFamily: 'Poppins',
               fontSize: 13,
               height: 1.4,

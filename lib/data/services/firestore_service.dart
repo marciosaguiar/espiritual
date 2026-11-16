@@ -984,6 +984,20 @@ class FirestoreService {
     );
   }
 
+  /// Marca ou desmarca uma conta como robô. Devolve null quando dá certo.
+  ///
+  /// Grava SÓ o campo `bot`, nada mais: a regra do banco deixa o líder mexer
+  /// nesse campo e em nenhum outro do cadastro alheio, e gravar o documento
+  /// inteiro apagaria o que a pessoa editou no perfil ao mesmo tempo.
+  static Future<String?> marcarComoBot(UserModel alvo, bool bot) async {
+    try {
+      await _db.collection('users').doc(alvo.id).update({'bot': bot});
+      return null;
+    } on FirebaseException catch (e) {
+      return _describe(e, 'marcar a conta');
+    }
+  }
+
   // ─── Mensagens de voz ─────────────────────────────────────────────────────
 
   static const String _audios = 'audios';

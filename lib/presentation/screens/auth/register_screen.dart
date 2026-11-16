@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common/selecao_de_funcoes.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../widgets/common/app_button.dart';
@@ -19,7 +20,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   final _nameCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
-  UserInstrument _selectedInstrument = UserInstrument.vocalist;
+  List<UserInstrument> _funcoes = [UserInstrument.vocalist];
 
   @override
   void dispose() {
@@ -35,7 +36,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final success = await auth.register(
       name: _nameCtrl.text.trim(),
       password: _passwordCtrl.text,
-      instrument: _selectedInstrument,
+      instruments: _funcoes,
     );
     if (success && mounted) {
       Navigator.pop(context);
@@ -187,43 +188,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                 ),
                               ),
                               const SizedBox(height: 8),
-                              Wrap(
-                                spacing: 8,
-                                runSpacing: 8,
-                                children: UserInstrument.values.map((inst) {
-                                  final selected = _selectedInstrument == inst;
-                                  return GestureDetector(
-                                    onTap: () {
-                                      setState(() => _selectedInstrument = inst);
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                          horizontal: 12, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        color: selected
-                                            ? AppColors.blue
-                                            : Colors.grey.shade100,
-                                        borderRadius: BorderRadius.circular(8),
-                                        border: Border.all(
-                                          color: selected
-                                              ? AppColors.blue
-                                              : Colors.grey.shade200,
-                                        ),
-                                      ),
-                                      child: Text(
-                                        '${inst.emoji} ${inst.label}',
-                                        style: TextStyle(
-                                          fontFamily: 'Poppins',
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
-                                          color: selected
-                                              ? Colors.white
-                                              : AppColors.textPrimaryLight,
-                                        ),
-                                      ),
-                                    ),
-                                  );
-                                }).toList(),
+                              SelecaoDeFuncoes(
+                                funcoes: _funcoes,
+                                isDark: false,
+                                aoMudar: (f) => setState(() => _funcoes = f),
                               ),
                               const SizedBox(height: 16),
                               // Role is decided by the server (first member

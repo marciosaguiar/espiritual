@@ -136,6 +136,7 @@ class AuthProvider extends ChangeNotifier {
     required String name,
     required String password,
     UserInstrument instrument = UserInstrument.other,
+    List<UserInstrument>? instruments,
   }) async {
     _status = AuthStatus.loading;
     _errorMessage = null;
@@ -145,6 +146,7 @@ class AuthProvider extends ChangeNotifier {
       name: name,
       password: password,
       instrument: instrument,
+      instruments: instruments,
     );
 
     if (result.success && result.user != null) {
@@ -280,12 +282,14 @@ class AuthProvider extends ChangeNotifier {
   /// Update user profile
   Future<bool> updateProfile({
     UserInstrument? instrument,
+    List<UserInstrument>? instruments,
     String? photoUrl,
     ModoLeitura? leitura,
   }) async {
     if (_user == null) return false;
     final updated = _user!.copyWith(
       instrument: instrument,
+      instruments: instruments,
       photoUrl: photoUrl,
       leitura: leitura,
     );

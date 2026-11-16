@@ -41,6 +41,7 @@ class AuthService {
     required String name,
     required String password,
     UserInstrument instrument = UserInstrument.other,
+    List<UserInstrument>? instruments,
   }) async {
     final trimmed = name.trim();
     if (trimmed.length < 3) {
@@ -73,6 +74,7 @@ class AuthService {
         email: email,
         role: UserRole.pendente,
         instrument: instrument,
+        instruments: instruments,
         createdAt: DateTime.now(),
       );
 
@@ -205,6 +207,7 @@ class AuthService {
     try {
       await _db.collection(_collection).doc(user.id).update({
         'instrument': user.instrument.name,
+        'instruments': user.instruments.map((f) => f.name).toList(),
         'photoUrl': user.photoUrl,
         'favoriteSongs': user.favoriteSongs,
         if (user.leitura != null) 'leitura': user.leitura!.name,
@@ -265,6 +268,17 @@ class AuthService {
             .toList());
   }
 
+  /// Quem pode ser escalado ou entrar numa equipe.
+  ///
+  /// Aprovados e SEM os robôs. A faxina do chat e o servidor dos avisos
+  /// entram como líderes comuns — sem este filtro eles apareciam na lista de
+  /// quem escalar, e dava para pôr o robô no teclado de domingo.
+  ///
+  /// `getAllUsers` continua existindo e continua trazendo todo mundo: a tela
+  /// Membros precisa dos robôs, para o líder poder desmarcá-los.
+  static Stream<List<UserModel>> watchEscalaveis() => getAllUsers().map(
+      (todos) => todos.where((u) => u.aprovado && !u.bot).toList());
+
   static Future<UserModel?> getUserById(String id) async {
     try {
       final doc = await _db.collection(_collection).doc(id).get();
@@ -288,12 +302,24 @@ class AuthService {
 
   /// How many leaders the ministry has. Used to refuse removing the last one,
   /// which would lock everybody out of the leader-only screens.
+  /// Quantos líderes DE VERDADE existem.
+  ///
+  /// Robô não conta. A faxina do chat e o servidor dos avisos entram como
+  /// líderes comuns (este projeto não usa chave de administrador), e enquanto
+  /// eles contavam aqui dava para remover a última pessoa de verdade — a
+  /// proteção do último líder achava que ainda havia um. O ministério ficaria
+  /// com um robô como único líder, e ninguém conseguiria aprovar mais nada.
+  ///
+  /// O filtro é no cliente, e não no `where`: documento antigo não tem o
+  /// campo `bot`, e `where('bot', '!=', true)` NÃO devolve documento sem o
+  /// campo — a consulta deixaria de fora justamente os líderes humanos
+  /// antigos, que são os que precisam ser contados.
   static Future<int> adminCount() async {
     final snap = await _db
         .collection(_collection)
         .where('role', isEqualTo: 'admin')
         .get();
-    return snap.docs.length;
+    return snap.docs.where((d) => d.data()['bot'] != true).length;
   }
 
   static Future<({bool success, String? error})> setUserRole(

@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 203 testes
+flutter test                   # 243 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 171 testes
+cd test_regras && npm install && npm test    # 191 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -35,7 +35,7 @@ de dentro do `firebase-tools` — os dois comandos acima se contradiziam.
 O `test_regras/.npmrc` também não é enfeite: `@firebase/rules-unit-testing@3`
 pede `firebase@^10` e aqui se usa o 13. As versões novas do npm recusam
 instalar por isso, então `npm install` falhava num computador limpo, embora os
-171 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
+191 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
 só com `npm install --legacy-peer-deps`.
 
 O mini-servidor dos avisos tem testes próprios, que não precisam de emulador
@@ -298,8 +298,9 @@ Nesta ordem, e **nada disso antes de testar o app num iPhone real**:
    gatilhos combinados ficam para depois, e agora são pequenos: escalado,
    lembrete da véspera e "novo pedido de entrada" para o líder são a mesma
    cifra e o mesmo leque de envio, com outro gatilho.
-3. **Reações e "visto por"** no chat.
-4. **Líder redefine senha de um membro.** Só com o Admin SDK, em Cloud
+3. **Rolagem sincronizada no culto** (Modo Culto ao vivo).
+4. **Reações e "visto por"** no chat.
+5. **Líder redefine senha de um membro.** Só com o Admin SDK, em Cloud
    Function — o Firebase não deixa um app trocar a senha de outra pessoa.
    Fica pequeno depois que as Functions existirem.
 
@@ -541,6 +542,145 @@ publicar está em `worker/LEIA-ME.md`.
   abuso são as três conferências acima; o limite só impede um script em laço
   queimar a cota de leitura do Firestore.
 
+### Instalar o app
+
+O cartão "Instale o LevitaSync no celular" fica no Início até estar instalado,
+e há uma linha em Perfil.
+
+- **Não existe mais "Agora não".** Existia, e guardava a escolha para sempre:
+  um toque sem pensar no primeiro dia e o convite nunca mais aparecia. Foi o
+  que aconteceu com o dono do app, que passou semanas sem o aplicativo
+  instalado sem entender por que os avisos não chegavam.
+- No iPhone o texto não é preferência, é requisito: **fora da tela de início o
+  Safari não tem Web Push nenhum**. O passo a passo usa os ícones do iOS
+  (Compartilhar → Adicionar à Tela de Início).
+
+### Dois toques para abrir o teclado (iPhone)
+
+Tocar na caixa de texto do chat não abria o teclado; o segundo toque abria.
+Não era o Flutter nem o Safari: era CSS **nosso**.
+
+- **Medido no DOM vivo do app publicado:** o motor do Flutter marca
+  `user-select: none` no `<body>` (para o canvas não virar texto selecionável),
+  e `user-select` **se herda**. O campo invisível que recebe o teclado mora
+  dentro do body, dentro de `<flt-text-editing-host>` — e nascia com
+  `user-select: none`. No WebKit do iPhone, um campo assim **ganha o foco e o
+  cursor mas não levanta o teclado**; o segundo toque, agora sobre um campo já
+  focado, levanta.
+- O conserto é uma linha no `web/index.html`, no mesmo bloco que já forçava
+  `font-size: 16px` nesse campo (contra o zoom automático do iOS):
+  `user-select: text` só para ele. **Medido: `none` → `text`.** O canvas
+  continua não selecionável, porque a regra não o alcança.
+- **Vale para todos os campos do app de uma vez**, porque é o mesmo elemento
+  que o motor usa para qualquer `TextField` — não há campo de fora.
+- O que foi descartado com evidência: não há `SelectionArea` no app (o gatilho
+  conhecido do mesmo sintoma no rastreador do Flutter), não há `touch-action`
+  em CSS nosso, os campos são `TextField` sem nada interceptando o toque, e o
+  renderizador é o CanvasKit (o defeito do renderizador HTML não se aplica).
+
+### Contas de robô
+
+A faxina do chat e o servidor dos avisos entram como líderes comuns, com
+e-mail e senha — este projeto não usa chave de administrador. O preço era
+aparecerem como gente.
+
+- **`UserModel.bot`.** Robô não entra em Membros, nem na contagem "3 líderes ·
+  5 membros", nem nas equipes, nem nas escalas, e não recebe aviso (ele não
+  usa o app, então não tem inscrição).
+- **E não conta na proteção do último líder.** Contava: dava para remover a
+  última pessoa de verdade porque o robô "ainda era líder", e o ministério
+  ficava com um robô como único líder — ninguém mais aprovaria cadastro.
+  `AuthService.adminCount()` agora filtra `bot` **no cliente**, não no
+  `where`: `where('bot','!=',true)` NÃO devolve documento sem o campo, e
+  deixaria de fora justamente os líderes humanos antigos.
+- **Marcar é só do líder**, com confirmação pelo nome, e a regra do banco
+  impede alguém se marcar: quem se marcasse robô sairia das escalas e não
+  entenderia por que deixou de ser chamado.
+- `bot` só é gravado quando é verdade, e **só `true` conta** — valor estranho
+  no console não esconde uma pessoa de verdade.
+- Os robôs ficam numa seção recolhida "Contas de robô", para o líder poder
+  desmarcar.
+
+### Várias funções por pessoa
+
+Era uma função só. No ministério é comum tocar duas — cantar e fazer violão,
+baixo e teclado.
+
+- **`UserModel.instruments`, e a PRIMEIRA é a principal.** `instrument` virou
+  um getter que devolve a primeira: foi isso que deixou a mudança caber sem
+  tocar em dezenas de chamadas, e é a principal que aparece onde só cabe uma
+  (chat, selo da escala). Em Membros aparecem todas, porque é lá que o líder
+  decide quem pode ser escalado em quê.
+- **A lista nunca é vazia.** `instrument` leria o primeiro item de uma lista
+  vazia e derrubaria a tela; documento torto no console não pode fazer isso.
+- **`instrument` continua gravado sozinho** além da lista: é o que uma versão
+  antiga do app lê, e é o que a regra já validava.
+- **A função é escolhida POR CULTO.** `ScaleLevita.instrument` já existia;
+  agora o diálogo de escalar mostra as funções de quem faz mais de uma, e o
+  líder diz "hoje ela canta". Trocar a função **não** apaga a confirmação de
+  presença de quem já confirmou.
+- **O modo de ver a música segue a função daquele culto**, não a escolha fixa
+  do perfil: `SongDetailScreen.funcaoNoCulto`. Nulo (música aberta pelo
+  repertório) mantém o comportamento antigo. A pessoa troca na hora pelo botão
+  de sempre, e a troca não mexe no perfil.
+- **A música do culto agora abre tocando nela.** Antes, para ver a cifra do
+  domingo, a pessoa saía do culto, ia em Músicas e procurava pelo nome.
+
+### Editar música
+
+O menu ⋮ só tinha "Colar cifra" e "Tirar do repertório": um nome digitado
+errado ficava errado para sempre, ou a música era cadastrada de novo e o
+histórico dos cultos se perdia.
+
+- **"Editar música" é do líder E de quem cadastrou.** A regra do banco abre
+  uma lista fechada de campos para quem cadastrou
+  (`name`, `artist`, `originalKey`, `links`, `observacoes`) — `archived` fica
+  de fora, então quem cadastrou não tira nada do repertório, e `lyrics`
+  também, porque trocar a letra é o que "Colar cifra" faz, e isso é do líder.
+- **O BPM vai para o ARRANJO**, não para a música: é de como esta igreja toca
+  (modelo de três camadas). O campo existia no modelo desde o começo e nunca
+  tinha onde ser editado.
+- **`SongModel.observacoes`** aparece acima da letra, não num menu: é
+  combinação que vale no momento de tocar ("entra sem bateria").
+- **O link do YouTube vira botão na música e no culto**, para ensaiar antes.
+  `SongModel.comVideo` troca só o link de vídeo e deixa o Cifra Club e o
+  Spotify onde estão.
+- **Link que não abre agora avisa.** `abrirLink` existe por causa de uma falha
+  silenciosa: o botão do YouTube chamava `canLaunchUrl` e, no "não", o toque
+  não fazia absolutamente nada — nem som, nem aviso. Agora ele TENTA abrir, e
+  só avisa se falhar, com o endereço e um "Copiar".
+
+### Colar cifra do Cifra Club
+
+Copiar a página cola o cabeçalho **sem as quebras de linha** que a tela
+mostrava. Dois casos reais: `Sou Grato Por Seu AmorGet de: Joshua Coleman` e
+`Tom: DAfinação: E A D G B E`.
+
+- **Grudado, o "Tom:" não era reconhecido** — a música ficava com o tom antigo
+  (G) e a cifra em outro (D). É o erro mais caro que isto podia dar: o levita
+  toca no tom errado no domingo.
+- **"Afinação: E A D G B E" é a pior linha para deixar passar**, porque é
+  feita de nomes de acorde: ela entrava na cifra como se fosse uma linha de
+  acordes de verdade.
+- **Um padrão de largura zero não perdoa folga.** A primeira versão do corte
+  permitia até seis letras antes do "de:", para pegar o "Get" que o botão do
+  site cola no texto — e a expressão passou a casar em toda posição dentro
+  dessas seis letras: "Amor" virou `m\no\nr`. O corte agora é exatamente
+  antes de um rótulo conhecido.
+- **E "de:/por:" não entra no corte por rótulo:** "Dificuldade: Fácil" tem
+  "de:" dentro, e a palavra era cortada no meio, com "Fácil" virando o
+  artista. O artista é separado à parte, por uma função que sabe ignorar linha
+  de rótulo.
+- **Toda heurística de cabeçalho vive nas 8 primeiras linhas.** Solta no texto
+  inteiro, ela comeria verso ("de: " aparece em letra de música) — e comer um
+  verso é pior que deixar um rótulo passar. Sem artista no cabeçalho, a
+  primeira linha NÃO é descartada.
+- **O tom detectado só troca o tom original com pergunta**, dizendo os dois
+  tons: "a cifra está em D, a música está em G". Vazio, preenche direto.
+- Título e artista detectados preenchem o cadastro **só em campo vazio**: a
+  pessoa está digitando, e sobrescrever é pior que não ajudar.
+- Os dois casos reais estão nos testes, com o texto do jeito que chegou.
+
 ### Quando a tela diz "vazio"
 
 Lista vazia e lista que não carregou são coisas diferentes, e a pessoa lê as
@@ -558,5 +698,6 @@ reinstalar o app essa lista é vazia, então uma falha de leitura teria virado
 
 Busca de música na internet, anexo de imagem no chat, PDF da escala, foto de
 perfil, transformar uma mensagem do chat em decisão da agenda, reações e
-"visto por" no chat, e aviso de escalado / lembrete da véspera / "novo pedido
-de entrada" (o mecanismo já existe; falta o gatilho).
+"visto por" no chat, rolagem sincronizada no culto, e aviso de escalado /
+lembrete da véspera / "novo pedido de entrada" (o mecanismo já existe; falta
+o gatilho).

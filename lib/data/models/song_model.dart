@@ -56,6 +56,14 @@ class SongModel {
   final String originalKey;
 
   final List<SongLink> links;
+
+  /// Recado do líder sobre a música: "entra sem bateria", "repete o refrão
+  /// três vezes", "subir meio tom no último".
+  ///
+  /// Fica na música, e não no arranjo, porque é combinação da igreja sobre a
+  /// obra — e aparece para quem canta e para quem toca igual.
+  final String observacoes;
+
   final bool isOfflineAvailable;
   final DateTime createdAt;
   final String? addedBy;
@@ -79,6 +87,7 @@ class SongModel {
     required this.lyrics,
     required this.originalKey,
     this.links = const [],
+    this.observacoes = '',
     this.isOfflineAvailable = false,
     required this.createdAt,
     this.addedBy,
@@ -86,6 +95,24 @@ class SongModel {
     this.archivedAt,
     this.archivedBy,
   });
+
+  /// A música com o link de vídeo trocado pelo que vem em [url].
+  ///
+  /// Mexe SÓ no link de vídeo: o Cifra Club, o Spotify e qualquer outro que a
+  /// música já tenha ficam como estão. Vazio ou nulo tira o vídeo.
+  ///
+  /// Mora aqui, e não na tela de editar, porque é regra sobre os dados — e
+  /// porque "trocar o YouTube sem derrubar os outros links" é exatamente o
+  /// tipo de coisa que um teste precisa alcançar.
+  SongModel comVideo(String? url) {
+    final limpo = (url ?? '').trim();
+    final outros = links.where((l) => !l.isVideo).toList();
+    return copyWith(
+      links: limpo.isEmpty
+          ? outros
+          : [SongLink(url: limpo, label: 'YouTube'), ...outros],
+    );
+  }
 
   /// First video link, for the "watch" button.
   String? get videoUrl {
@@ -102,6 +129,7 @@ class SongModel {
     String? lyrics,
     String? originalKey,
     List<SongLink>? links,
+    String? observacoes,
     bool? isOfflineAvailable,
     DateTime? createdAt,
     String? addedBy,
@@ -117,6 +145,7 @@ class SongModel {
       lyrics: lyrics ?? this.lyrics,
       originalKey: originalKey ?? this.originalKey,
       links: links ?? this.links,
+      observacoes: observacoes ?? this.observacoes,
       isOfflineAvailable: isOfflineAvailable ?? this.isOfflineAvailable,
       createdAt: createdAt ?? this.createdAt,
       addedBy: addedBy ?? this.addedBy,
@@ -136,6 +165,7 @@ class SongModel {
       'lyrics': lyrics,
       'originalKey': originalKey,
       'links': links.map((l) => l.toMap()).toList(),
+      'observacoes': observacoes,
       'isOfflineAvailable': isOfflineAvailable,
       'createdAt': Timestamp.fromDate(createdAt),
       'addedBy': addedBy,
@@ -153,6 +183,7 @@ class SongModel {
       lyrics: data['lyrics'] as String? ?? '',
       originalKey: data['originalKey'] as String? ?? 'C',
       links: _linksFrom(data),
+      observacoes: data['observacoes'] as String? ?? '',
       isOfflineAvailable: data['isOfflineAvailable'] as bool? ?? false,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       addedBy: data['addedBy'] as String?,
@@ -172,6 +203,7 @@ class SongModel {
       'lyrics': lyrics,
       'originalKey': originalKey,
       'links': links.map((l) => l.toMap()).toList(),
+      'observacoes': observacoes,
       'isOfflineAvailable': isOfflineAvailable,
       'createdAt': createdAt.toIso8601String(),
       'addedBy': addedBy,
@@ -190,6 +222,7 @@ class SongModel {
       lyrics: data['lyrics'] as String? ?? '',
       originalKey: data['originalKey'] as String? ?? 'C',
       links: _linksFrom(data),
+      observacoes: data['observacoes'] as String? ?? '',
       isOfflineAvailable: data['isOfflineAvailable'] as bool? ?? false,
       createdAt: DateTime.tryParse(data['createdAt'] as String? ?? '') ??
           DateTime.now(),

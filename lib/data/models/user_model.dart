@@ -103,7 +103,16 @@ class UserModel {
   /// Never shown to the user, who signs in with the name alone.
   final String email;
   final UserRole role;
-  final UserInstrument instrument;
+
+  /// Todas as funções da pessoa, e a PRIMEIRA é a principal.
+  ///
+  /// Era uma função só. Mas no ministério é comum tocar duas coisas — cantar
+  /// e fazer violão, baixo e teclado —, e com uma só o líder tinha de
+  /// escolher no cadastro qual delas "valia", o que decidia errado a escala e
+  /// o modo de ver a música para sempre.
+  ///
+  /// Nunca é vazia: sem função, a lista nasce com a principal dentro.
+  final List<UserInstrument> instruments;
   final String? photoUrl;
   final List<String> favoriteSongs;
   final DateTime createdAt;
@@ -119,19 +128,57 @@ class UserModel {
   /// sugere (ver [modoLeitura]).
   final ModoLeitura? leitura;
 
-  const UserModel({
+  /// Conta de robô: a faxina do chat e o mini-servidor dos avisos.
+  ///
+  /// Elas existem porque este projeto não usa chave de administrador — os
+  /// dois robôs entram como líderes comuns, com e-mail e senha. O efeito
+  /// colateral é que apareciam como gente: na lista de Membros, na contagem
+  /// "3 líderes · 5 membros", nas equipes e nas escalas. E, pior, contavam na
+  /// proteção do último líder: dava para remover a última pessoa de verdade
+  /// porque o robô "ainda era líder", e o ministério ficava só com ele.
+  ///
+  /// Robô não usa o app: não entra em lista, não é escalado, não recebe
+  /// aviso, e não conta como líder.
+  final bool bot;
+
+  /// A função principal: a que aparece onde só cabe uma (lista de membros,
+  /// chat, selo da escala).
+  UserInstrument get instrument => instruments.first;
+
+  /// Esta pessoa faz esta função?
+  bool fazFuncao(UserInstrument f) => instruments.contains(f);
+
+  bool get temVariasFuncoes => instruments.length > 1;
+
+  /// Limpa a lista de funções: sem repetição, nunca vazia.
+  ///
+  /// Documento antigo não tem `instruments`, e documento torto pode ter uma
+  /// lista vazia. Nos dois casos vale a função principal — uma lista vazia
+  /// faria `instrument` lançar e derrubar a tela inteira.
+  static List<UserInstrument> _funcoes(
+      List<UserInstrument>? lista, UserInstrument principal) {
+    final limpa = <UserInstrument>[];
+    for (final f in lista ?? const <UserInstrument>[]) {
+      if (!limpa.contains(f)) limpa.add(f);
+    }
+    return limpa.isEmpty ? [principal] : limpa;
+  }
+
+  UserModel({
     required this.id,
     required this.name,
     this.email = '',
     this.role = UserRole.levita,
-    this.instrument = UserInstrument.other,
+    UserInstrument instrument = UserInstrument.other,
+    List<UserInstrument>? instruments,
     this.photoUrl,
     this.favoriteSongs = const [],
     required this.createdAt,
     this.removedAt,
     this.removedBy,
     this.leitura,
-  });
+    this.bot = false,
+  }) : instruments = _funcoes(instruments, instrument);
 
   bool get isAdmin => role == UserRole.admin;
 
@@ -144,10 +191,29 @@ class UserModel {
 
   /// Cantor(a) que nunca escolheu lê como quem canta; o resto, como quem toca.
   ModoLeitura get modoLeitura =>
-      leitura ??
-      (instrument == UserInstrument.vocalist ? ModoLeitura.canto : ModoLeitura.toco);
+      leitura ?? leituraDaFuncao(instrument);
+
+  /// O modo que uma função pede, quando a pessoa não escolheu.
+  ///
+  /// Serve ao culto: lá vale a função daquela escala, não a principal — quem
+  /// canta num domingo e toca baixo no outro precisa ver coisas diferentes.
+  static ModoLeitura leituraDaFuncao(UserInstrument f) =>
+      f == UserInstrument.vocalist ? ModoLeitura.canto : ModoLeitura.toco;
 
   bool get canta => modoLeitura == ModoLeitura.canto;
+
+  /// Lê a lista de funções do banco, descartando o que não se reconhece.
+  ///
+  /// Nome escrito errado no console vira `other`, e não derruba a tela;
+  /// campo ausente devolve nulo, e aí vale a função principal.
+  static List<UserInstrument>? _lerFuncoes(Object? bruto) {
+    if (bruto is! List) return null;
+    final lista = bruto
+        .whereType<String>()
+        .map(UserInstrumentExtension.fromString)
+        .toList();
+    return lista.isEmpty ? null : lista;
+  }
 
   static ModoLeitura? _leituraDe(Object? v) =>
       ModoLeitura.values.where((m) => m.name == v).firstOrNull;
@@ -158,6 +224,7 @@ class UserModel {
     String? email,
     UserRole? role,
     UserInstrument? instrument,
+    List<UserInstrument>? instruments,
     String? photoUrl,
     List<String>? favoriteSongs,
     DateTime? createdAt,
@@ -165,13 +232,19 @@ class UserModel {
     String? removedBy,
     bool limparRemocao = false,
     ModoLeitura? leitura,
+    bool? bot,
   }) {
     return UserModel(
       id: id ?? this.id,
       name: name ?? this.name,
       email: email ?? this.email,
       role: role ?? this.role,
-      instrument: instrument ?? this.instrument,
+      // `instrument` aqui significa "passa a ser a principal", e as outras
+      // funções FICAM. Trocar a principal não é deixar de tocar o resto.
+      instruments: instruments ??
+          (instrument == null
+              ? this.instruments
+              : [instrument, ...this.instruments.where((f) => f != instrument)]),
       photoUrl: photoUrl ?? this.photoUrl,
       favoriteSongs: favoriteSongs ?? this.favoriteSongs,
       createdAt: createdAt ?? this.createdAt,
@@ -180,6 +253,7 @@ class UserModel {
       removedAt: limparRemocao ? null : (removedAt ?? this.removedAt),
       removedBy: limparRemocao ? null : (removedBy ?? this.removedBy),
       leitura: leitura ?? this.leitura,
+      bot: bot ?? this.bot,
     );
   }
 
@@ -235,13 +309,19 @@ class UserModel {
       'nameLower': nameLower,
       'email': email,
       'role': role.name,
+      // A principal continua em `instrument`, sozinha: é o que uma versão
+      // antiga do app lê, e é o que a regra do banco já validava.
       'instrument': instrument.name,
+      'instruments': instruments.map((f) => f.name).toList(),
       'photoUrl': photoUrl,
       'favoriteSongs': favoriteSongs,
       'createdAt': Timestamp.fromDate(createdAt),
       'removedAt': removedAt == null ? null : Timestamp.fromDate(removedAt!),
       'removedBy': removedBy,
       if (leitura != null) 'leitura': leitura!.name,
+      // Só grava quando é robô: cadastro de gente não ganha campo novo, e a
+      // regra do banco só precisa olhar o que mudou.
+      if (bot) 'bot': true,
     };
   }
 
@@ -253,13 +333,18 @@ class UserModel {
       // Campo ausente cai em pendente, não em levita: um cadastro sem
       // função não pode valer como cadastro aprovado.
       role: UserRoleExtension.fromString(data['role'] as String? ?? ''),
-      instrument: UserInstrumentExtension.fromString(data['instrument'] as String? ?? 'other'),
+      instrument: UserInstrumentExtension.fromString(
+          data['instrument'] as String? ?? 'other'),
+      instruments: _lerFuncoes(data['instruments']),
       photoUrl: data['photoUrl'] as String?,
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? []),
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       removedAt: (data['removedAt'] as Timestamp?)?.toDate(),
       removedBy: data['removedBy'] as String?,
       leitura: _leituraDe(data['leitura']),
+      // Qualquer coisa que não seja `true` é gente. Um valor estranho no
+      // console não pode esconder uma pessoa de verdade das listas.
+      bot: data['bot'] == true,
     );
   }
 
@@ -273,12 +358,14 @@ class UserModel {
       'name': name,
       'role': role.name,
       'instrument': instrument.name,
+      'instruments': instruments.map((f) => f.name).toList(),
       'photoUrl': photoUrl,
       'favoriteSongs': favoriteSongs,
       'createdAt': createdAt.toIso8601String(),
       'removedAt': removedAt?.toIso8601String(),
       'removedBy': removedBy,
       if (leitura != null) 'leitura': leitura!.name,
+      if (bot) 'bot': true,
     };
   }
 
@@ -289,8 +376,9 @@ class UserModel {
       // Campo ausente cai em pendente, não em levita: um cadastro sem
       // função não pode valer como cadastro aprovado.
       role: UserRoleExtension.fromString(data['role'] as String? ?? ''),
-      instrument:
-          UserInstrumentExtension.fromString(data['instrument'] as String? ?? 'other'),
+      instrument: UserInstrumentExtension.fromString(
+          data['instrument'] as String? ?? 'other'),
+      instruments: _lerFuncoes(data['instruments']),
       photoUrl: data['photoUrl'] as String?,
       favoriteSongs: List<String>.from(data['favoriteSongs'] ?? const []),
       createdAt:
@@ -298,6 +386,7 @@ class UserModel {
       removedAt: DateTime.tryParse(data['removedAt'] as String? ?? ''),
       removedBy: data['removedBy'] as String?,
       leitura: _leituraDe(data['leitura']),
+      bot: data['bot'] == true,
     );
   }
 }

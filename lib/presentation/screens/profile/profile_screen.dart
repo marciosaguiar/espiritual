@@ -21,6 +21,8 @@ import 'fixed_schedule_screen.dart';
 import 'members_screen.dart';
 import 'teams_screen.dart';
 import '../../widgets/common/glass.dart';
+import '../../widgets/common/install_banner.dart';
+import '../../widgets/common/selecao_de_funcoes.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -31,7 +33,7 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen> {
   bool _isEditing = false;
-  UserInstrument? _editInstrument;
+  List<UserInstrument>? _editFuncoes;
 
   void _showHelpSheet(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -437,8 +439,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 icon: Icon(_isEditing ? Icons.check_rounded : Icons.edit_rounded),
                 color: isDark ? Colors.white : AppColors.textPrimaryLight,
                 onPressed: () async {
-                  if (_isEditing && _editInstrument != null) {
-                    await auth.updateProfile(instrument: _editInstrument);
+                  if (_isEditing && _editFuncoes != null) {
+                    await auth.updateProfile(instruments: _editFuncoes);
                     if (mounted) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -450,7 +452,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   }
                   setState(() {
                     _isEditing = !_isEditing;
-                    _editInstrument = user.instrument;
+                    _editFuncoes = List.of(user.instruments);
                   });
                 },
               ),
@@ -485,40 +487,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                     ),
                     const SizedBox(height: 10),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: UserInstrument.values.map((inst) {
-                        final selected = _editInstrument == inst;
-                        return GestureDetector(
-                          onTap: () => setState(() => _editInstrument = inst),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: selected
-                                  ? AppColors.blue
-                                  : isDark
-                                      ? Colors.grey.shade800
-                                      : Colors.grey.shade100,
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(
-                              '${inst.emoji} ${inst.label}',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w500,
-                                color: selected
-                                    ? Colors.white
-                                    : isDark
-                                        ? AppColors.textPrimaryDark
-                                        : AppColors.textPrimaryLight,
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
+                    SelecaoDeFuncoes(
+                      funcoes: _editFuncoes ?? const [],
+                      isDark: isDark,
+                      aoMudar: (f) => setState(() => _editFuncoes = f),
                     ),
                     const SizedBox(height: 20),
                   ],
@@ -597,6 +569,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     onTap: () => theme.toggleTheme(),
                   ),
+                  // "Instalar o app" só aparece para quem ainda não
+                  // instalou — e no iPhone é o que destrava os avisos.
+                  if (caminhoDeInstalacao != InstallRoute.naoSeAplica) ...[
+                    const SizedBox(height: 8),
+                    _SettingRow(
+                      icon: Icons.add_to_home_screen_rounded,
+                      label: 'Instalar o app no celular',
+                      trailing: const Icon(Icons.chevron_right_rounded,
+                          color: AppColors.textSecondaryLight),
+                      onTap: () => mostrarComoInstalar(context),
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   const _AvisosDoChat(),
                   const SizedBox(height: 8),
