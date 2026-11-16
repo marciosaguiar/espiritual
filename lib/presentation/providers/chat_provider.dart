@@ -107,6 +107,8 @@ class ChatProvider extends ChangeNotifier {
     required String text,
     String? linkedSongId,
     String? linkedSongName,
+    MessageModel? respondendoA,
+    List<String> mencoes = const [],
   }) async {
     if (text.trim().isEmpty) return 'Escreva algo antes de enviar.';
 
@@ -116,6 +118,8 @@ class ChatProvider extends ChangeNotifier {
       text: text.trim(),
       linkedSongId: linkedSongId,
       linkedSongName: linkedSongName,
+      respondendoA: respondendoA,
+      mencoes: mencoes,
     );
 
     final result = await FirestoreService.sendMessage(message);

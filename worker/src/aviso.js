@@ -14,11 +14,18 @@ export const JANELA_DO_AVISO_MS = 2 * 60 * 1000;
 /// O título é só o nome porque é assim que o Android e o iPhone desenham:
 /// nome em negrito, recado embaixo. Lido em voz alta dá "Fulano: começo da
 /// mensagem", que é o que foi pedido.
-export function textoDoAviso(mensagem) {
+export function textoDoAviso(mensagem, { mencionou = false } = {}) {
   const nome = (mensagem?.userName ?? '').trim() || 'Alguém';
+  // Quem foi mencionado recebe um aviso DIFERENTE, e é por isso que o leque
+  // de envio sai em dois: o mesmo texto para os dois grupos não diria à
+  // pessoa por que ela foi acordada com o chat silenciado.
+  const marca = mencionou ? '📣 ' : '';
 
   if (mensagem?.audioId) {
-    return { titulo: nome, corpo: '🎤 Mensagem de voz' };
+    return {
+      titulo: nome,
+      corpo: `${marca}${mencionou ? 'mencionou você · ' : ''}🎤 Mensagem de voz`,
+    };
   }
 
   // Quebras de linha viram espaço: o aviso é uma linha só, e um recado
@@ -27,7 +34,7 @@ export function textoDoAviso(mensagem) {
   if (!texto) {
     // Não deveria acontecer — a regra do banco exige texto ou áudio —, mas
     // um aviso em branco é pior que um aviso genérico.
-    return { titulo: nome, corpo: 'Mandou uma mensagem' };
+    return { titulo: nome, corpo: `${marca}Mandou uma mensagem` };
   }
 
   const limite = 120;
@@ -35,21 +42,36 @@ export function textoDoAviso(mensagem) {
     ? `${texto.slice(0, limite - 1).trimEnd()}…`
     : texto;
 
+  const prefixo = mencionou ? `${marca}mencionou você: ` : '';
   if (mensagem?.linkedSongName) {
-    return { titulo: nome, corpo: `🎵 ${mensagem.linkedSongName} · ${corpo}` };
+    return {
+      titulo: nome,
+      corpo: `${prefixo}🎵 ${mensagem.linkedSongName} · ${corpo}`,
+    };
   }
-  return { titulo: nome, corpo };
+  return { titulo: nome, corpo: `${prefixo}${corpo}` };
 }
 
 /// Este aparelho deve receber o aviso desta mensagem?
 ///
 /// Um "não" aqui não é erro: é alguém que desligou os avisos, pediu silêncio
 /// ou é o próprio autor da mensagem.
-export function deveAvisar(inscricao, autorId, agoraMs) {
+export function deveAvisar(inscricao, autorId, agoraMs, mencionados = []) {
   if (!inscricao) return false;
   if (inscricao.userId === autorId) return false;
   if (!inscricao.endpoint || !inscricao.p256dh || !inscricao.auth) return false;
+
+  // AVISOS DESLIGADOS É DESLIGADO, inclusive para menção. Quem desligou fez
+  // uma escolha sobre o app todo; furá-la seria o app decidindo por cima da
+  // pessoa, e ela não teria como se proteger a não ser desinstalando.
   if (inscricao.avisosLigados === false) return false;
+
+  // "Silenciar até amanhã" é TEMPORÁRIO: é "não me acorde por bobagem", não
+  // "não me chame". Ser chamado pelo nome fura esse silêncio — é o caso de
+  // "@Ana, você consegue vir às 18h?" na véspera.
+  const mencionado = Array.isArray(mencionados) &&
+    mencionados.includes(inscricao.userId);
+  if (mencionado) return true;
 
   const ate = inscricao.silenciarAte;
   if (ate) {

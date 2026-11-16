@@ -178,16 +178,43 @@ export default {
         return json({ erro: 'mensagem antiga demais para avisar' }, 409, cabecalhos);
       }
 
+      // Quem foi mencionado recebe mesmo com o chat silenciado, e com um
+      // texto diferente — então o leque sai em dois grupos.
+      const mencionados = Array.isArray(mensagem.mencoes)
+        ? mensagem.mencoes.filter((x) => typeof x === 'string')
+        : [];
+
       const todas = await lerColecao(env, 'pushSubs');
-      const alvos = todas.filter((i) => deveAvisar(i, dono.uid));
+      const alvos = todas.filter(
+        (i) => deveAvisar(i, dono.uid, undefined, mencionados));
       if (!alvos.length) {
         return json({ enviados: 0, mortos: 0, falharam: 0, ninguem: true },
           200, cabecalhos);
       }
 
-      const resultado = await espalhar(
-        env, alvos, textoDoAviso(mensagem), await chaveVapid(env));
-      return json(resultado, 200, cabecalhos);
+      const chave = await chaveVapid(env);
+      const chamados = alvos.filter((i) => mencionados.includes(i.userId));
+      const demais = alvos.filter((i) => !mencionados.includes(i.userId));
+
+      const partes = [];
+      if (demais.length) {
+        partes.push(await espalhar(
+          env, demais, textoDoAviso(mensagem), chave));
+      }
+      if (chamados.length) {
+        partes.push(await espalhar(
+          env, chamados, textoDoAviso(mensagem, { mencionou: true }), chave));
+      }
+
+      const resultado = partes.reduce(
+        (a, b) => ({
+          enviados: a.enviados + b.enviados,
+          mortos: a.mortos + b.mortos,
+          falharam: a.falharam + b.falharam,
+        }),
+        { enviados: 0, mortos: 0, falharam: 0 });
+      return json({ ...resultado, mencionados: chamados.length },
+        200, cabecalhos);
     }
 
     // ── Testar nos próprios aparelhos ──────────────────────────────────────

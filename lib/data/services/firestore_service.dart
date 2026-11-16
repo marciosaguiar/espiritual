@@ -961,12 +961,35 @@ class FirestoreService {
     }
   }
 
+  /// Reage (ou tira a reação) numa mensagem. Devolve null quando dá certo.
+  ///
+  /// Grava SÓ a própria chave do mapa, com caminho de ponto: a regra do banco
+  /// confere que o diff do mapa afeta apenas o meu uid, então gravar o mapa
+  /// inteiro seria recusado — e seria certo recusar, porque apagaria a reação
+  /// de quem reagiu no mesmo segundo.
+  static Future<String?> reagir({
+    required String mensagemId,
+    required String meuId,
+    required String? emoji,
+  }) async {
+    try {
+      await _db.collection(_messages).doc(mensagemId).update({
+        'reacoes.$meuId': emoji ?? FieldValue.delete(),
+      });
+      return null;
+    } on FirebaseException catch (e) {
+      return _describe(e, 'reagir');
+    }
+  }
+
   static MessageModel createMessage({
     required String userId,
     required String userName,
     required String text,
     String? linkedSongId,
     String? linkedSongName,
+    MessageModel? respondendoA,
+    List<String> mencoes = const [],
   }) {
     final agora = DateTime.now();
     return MessageModel(
@@ -981,7 +1004,21 @@ class FirestoreService {
       // O prazo vai gravado na mensagem, e não calculado na hora de ler,
       // porque quem apaga é uma faxina que roda fora do app.
       expiraEm: agora.add(MessageModel.validade),
+      respondeA: respondendoA?.id,
+      respondeANome: respondendoA?.userName,
+      // O pedaço citado é COPIADO: a original some em 30 dias, e resolver
+      // por id custaria uma leitura por bolha na tela.
+      respondeATexto: respondendoA == null ? null : _pedacoCitado(respondendoA),
+      mencoes: mencoes,
     );
+  }
+
+  /// O pedaço da mensagem citada que cabe na bolha.
+  static String _pedacoCitado(MessageModel m) {
+    if (m.temAudio) return '🎤 Mensagem de voz';
+    final texto = m.text.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (texto.isEmpty) return 'Mensagem';
+    return texto.length > 160 ? '${texto.substring(0, 159)}…' : texto;
   }
 
   /// Marca ou desmarca uma conta como robô. Devolve null quando dá certo.

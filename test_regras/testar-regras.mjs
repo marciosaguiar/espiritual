@@ -10,7 +10,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc,
-  serverTimestamp, Bytes,
+  serverTimestamp, Bytes, deleteField,
 } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 
@@ -752,6 +752,164 @@ await teste('mensagem sem texto E sem áudio é recusada', () =>
     linkedSongId: null, linkedSongName: null, timestamp: new Date(),
     fixada: false, fixadaPor: null, expiraEm: new Date(Date.now() + 864e5),
   })));
+
+console.log('\n── reações ──');
+
+const mensagemBase = (dono, extra = {}) => ({
+  id: 'm-reagir', userId: dono, userName: dono === LIDER ? 'Marcio' : 'Ana',
+  text: 'quem leva o cabo?', type: 'text',
+  linkedSongId: null, linkedSongName: null, timestamp: new Date(),
+  fixada: false, fixadaPor: null,
+  expiraEm: new Date(Date.now() + 30 * 864e5),
+  ...extra,
+});
+
+await teste('aprovado reage na mensagem de outro', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'messages', 'm-reagir'),
+      mensagemBase(LIDER));
+  });
+  await assertSucceeds(updateDoc(doc(levita(), 'messages', 'm-reagir'), {
+    [`reacoes.${LEVITA}`]: '🙏',
+  }));
+});
+
+await teste('reagir em MENSAGEM ANTIGA, que não tem o campo', async () => {
+  // O caso que uma regra descuidada recusaria: ler `resource.data.reacoes`
+  // direto num documento sem o campo faz a regra dar erro, e aí ninguém
+  // reage em nada que foi escrito antes desta mudança.
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    const antiga = mensagemBase(LIDER);
+    delete antiga.reacoes;
+    await setDoc(doc(ctx.firestore(), 'messages', 'm-antiga'), antiga);
+  });
+  await assertSucceeds(updateDoc(doc(levita(), 'messages', 'm-antiga'), {
+    [`reacoes.${LEVITA}`]: '👍',
+  }));
+});
+
+await teste('tocar de novo tira a própria reação', () =>
+  assertSucceeds(updateDoc(doc(levita(), 'messages', 'm-reagir'), {
+    [`reacoes.${LEVITA}`]: deleteField(),
+  })));
+
+await teste('NÃO dá para reagir em nome de outra pessoa', () =>
+  assertFails(updateDoc(doc(levita(), 'messages', 'm-reagir'), {
+    [`reacoes.${LIDER}`]: '🔥',
+  })));
+
+await teste('NÃO dá para tirar a reação de outra pessoa', async () => {
+  await env.withSecurityRulesDisabled(async (ctx) => {
+    await setDoc(doc(ctx.firestore(), 'messages', 'm-reagir'),
+      mensagemBase(LIDER, { reacoes: { [LIDER]: '❤️' } }));
+  });
+  await assertFails(updateDoc(doc(levita(), 'messages', 'm-reagir'), {
+    [`reacoes.${LIDER}`]: deleteField(),
+  }));
+});
+
+await teste('emoji fora da lista é recusado', async () => {
+  for (const ruim of ['🤡', 'texto', '👍👍', '']) {
+    await assertFails(updateDoc(doc(levita(), 'messages', 'm-reagir'), {
+      [`reacoes.${LEVITA}`]: ruim,
+    }));
+  }
+});
+
+await teste('reagir não deixa mexer no texto de carona', () =>
+  assertFails(updateDoc(doc(levita(), 'messages', 'm-reagir'), {
+    [`reacoes.${LEVITA}`]: '👍', text: 'outro texto',
+  })));
+
+await teste('reagir não deixa fixar de carona', () =>
+  assertFails(updateDoc(doc(levita(), 'messages', 'm-reagir'), {
+    [`reacoes.${LEVITA}`]: '👍', fixada: true, expiraEm: null,
+  })));
+
+await teste('pendente não reage', () =>
+  assertFails(updateDoc(doc(novato(), 'messages', 'm-reagir'), {
+    [`reacoes.${OUTRO}`]: '👍',
+  })));
+
+await teste('o líder continua fixando, com as reações no documento', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'messages', 'm-reagir'), {
+    fixada: true, fixadaPor: LIDER, expiraEm: null,
+  })));
+
+await teste('mensagem não nasce com reações', () =>
+  assertFails(setDoc(doc(levita(), 'messages', 'm-nasce-reagida'),
+    mensagemBase(LEVITA, { id: 'm-nasce-reagida',
+      reacoes: { [LEVITA]: '👍' } }))));
+
+console.log('\n── responder citando, e menções ──');
+
+await teste('mensagem citando outra', () =>
+  assertSucceeds(setDoc(doc(levita(), 'messages', 'm-citando'),
+    mensagemBase(LEVITA, {
+      id: 'm-citando', text: 'eu levo',
+      respondeA: 'm-reagir', respondeANome: 'Marcio',
+      respondeATexto: 'quem leva o cabo?',
+    }))));
+
+await teste('citação gigante é recusada', () =>
+  assertFails(setDoc(doc(levita(), 'messages', 'm-citacao-grande'),
+    mensagemBase(LEVITA, {
+      id: 'm-citacao-grande', respondeA: 'm-reagir',
+      respondeATexto: 'x'.repeat(301),
+    }))));
+
+await teste('mensagem com menções', () =>
+  assertSucceeds(setDoc(doc(levita(), 'messages', 'm-mencao'),
+    mensagemBase(LEVITA, { id: 'm-mencao', mencoes: [LIDER] }))));
+
+await teste('menções que não são lista são recusadas', () =>
+  assertFails(setDoc(doc(levita(), 'messages', 'm-mencao-ruim'),
+    mensagemBase(LEVITA, { id: 'm-mencao-ruim', mencoes: LIDER }))));
+
+await teste('lista de menções longa demais é recusada', () =>
+  assertFails(setDoc(doc(levita(), 'messages', 'm-mencao-longa'),
+    mensagemBase(LEVITA, {
+      id: 'm-mencao-longa',
+      mencoes: Array.from({ length: 31 }, (_, i) => `u${i}`),
+    }))));
+
+console.log('\n── até onde cada um leu (visto por) ──');
+
+await teste('cada um marca a própria leitura', () =>
+  assertSucceeds(setDoc(doc(levita(), 'chatLeituras', LEVITA), {
+    userId: LEVITA, userName: 'Ana', lidoAte: serverTimestamp(),
+  })));
+
+await teste('a hora TEM de ser a do servidor', async () => {
+  // Senão bastaria adiantar o relógio para ganhar dois tiques azuis em
+  // mensagem que ninguém leu.
+  await assertFails(setDoc(doc(levita(), 'chatLeituras', LEVITA), {
+    userId: LEVITA, userName: 'Ana', lidoAte: new Date(2030, 0, 1),
+  }));
+});
+
+await teste('ninguém marca a leitura de outra pessoa', () =>
+  assertFails(setDoc(doc(levita(), 'chatLeituras', LIDER), {
+    userId: LIDER, userName: 'Marcio', lidoAte: serverTimestamp(),
+  })));
+
+await teste('o userId tem de ser o do documento', () =>
+  assertFails(setDoc(doc(levita(), 'chatLeituras', LEVITA), {
+    userId: LIDER, userName: 'Ana', lidoAte: serverTimestamp(),
+  })));
+
+await teste('aprovado lê as leituras — é o que acende os tiques', () =>
+  assertSucceeds(getDocs(collection(levita(), 'chatLeituras'))));
+
+await teste('pendente não lê nem escreve leitura', async () => {
+  await assertFails(getDocs(collection(novato(), 'chatLeituras')));
+  await assertFails(setDoc(doc(novato(), 'chatLeituras', OUTRO), {
+    userId: OUTRO, userName: 'Zé', lidoAte: serverTimestamp(),
+  }));
+});
+
+await teste('o próprio apaga o seu marcador ao sair', () =>
+  assertSucceeds(deleteDoc(doc(levita(), 'chatLeituras', LEVITA))));
 
 console.log('\n── modo culto ao vivo ──');
 

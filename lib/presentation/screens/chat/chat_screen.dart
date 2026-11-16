@@ -9,8 +9,12 @@ import '../../providers/songs_provider.dart';
 import '../../providers/scale_provider.dart';
 import '../../widgets/common/error_banner.dart';
 import '../../widgets/chat/voz.dart';
+import '../../../data/models/leitura_do_chat.dart';
+import '../../../data/models/user_model.dart';
+import '../../../data/services/auth_service.dart';
 import '../../../data/services/avisos_service.dart';
 import '../../../data/services/firestore_service.dart';
+import '../../../data/services/leituras_service.dart';
 import '../../../core/platform/voz.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/message_model.dart';
@@ -81,6 +85,30 @@ class _ChatScreenState extends State<ChatScreen> {
   AuthProvider? _auth;
   int _lastMessageCount = 0;
 
+  /// A mensagem que estou respondendo, ou nulo.
+  MessageModel? _respondendoA;
+
+  final _focoDaMensagem = FocusNode();
+
+  /// Até onde cada pessoa leu, e quem é o ministério.
+  ///
+  /// As duas escutas começam ao abrir o chat: ~15 documentos cada, e é delas
+  /// que saem os dois tiques azuis e a lista de quem mencionar. Sem a lista
+  /// de pessoas, "visto por" não teria contra quem comparar.
+  List<LeituraDoChat> _leituras = const [];
+  List<UserModel> _pessoas = const [];
+  StreamSubscription<List<LeituraDoChat>>? _escutaLeituras;
+  StreamSubscription<List<UserModel>>? _escutaPessoas;
+
+  /// Quem foi mencionado nesta mensagem que estou escrevendo: nome → uid.
+  ///
+  /// Guardado à parte do texto porque é o uid que o Worker usa. Ler o @nome
+  /// do texto no envio não serviria: nome se repete e muda.
+  final Map<String, String> _mencionados = {};
+
+  /// O pedaço depois do "@" que estou digitando, ou nulo.
+  String? _procurandoMencao;
+
   // "typing…" presence broadcast
   Timer? _typingStopTimer;
   bool _broadcasting = false;
@@ -97,6 +125,22 @@ class _ChatScreenState extends State<ChatScreen> {
     _messageCtrl.addListener(_handleTyping);
     // Re-filter results as the search query changes.
     _searchCtrl.addListener(_onSearchChanged);
+    // O "@" no texto abre a lista de quem mencionar.
+    _messageCtrl.addListener(_olharPorMencao);
+
+    _escutaLeituras = LeiturasService.escutar().listen((l) {
+      if (mounted) setState(() => _leituras = l);
+    }, onError: (_) {
+      // Sem as leituras, as bolhas ficam com um tique cinza. É o pior caso
+      // seguro: nunca dois tiques azuis adivinhados.
+    });
+    _escutaPessoas = AuthService.watchEscalaveis().listen((p) {
+      if (mounted) setState(() => _pessoas = p);
+    }, onError: (_) {});
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _marcarComoLido();
+    });
   }
 
   void _onMessagesChanged() {
@@ -104,7 +148,76 @@ class _ChatScreenState extends State<ChatScreen> {
     if (count != _lastMessageCount) {
       _lastMessageCount = count;
       _scrollToBottom();
+      // Mensagem nova com o chat aberto já conta como lida: a pessoa está
+      // olhando para ela.
+      _marcarComoLido();
     }
+  }
+
+  /// Marca o chat como lido até a mensagem mais recente.
+  ///
+  /// O serviço engole a chamada repetida (ele guarda até onde já marcou), por
+  /// isso aqui se pode chamar sem medo a cada mensagem que chega.
+  void _marcarComoLido() {
+    final eu = _auth?.user;
+    final mensagens = _chat?.messages ?? const <MessageModel>[];
+    if (eu == null || mensagens.isEmpty) return;
+    LeiturasService.marcarLido(
+      userId: eu.id,
+      userName: eu.name,
+      ultimaMensagem: mensagens.last.timestamp,
+    );
+  }
+
+  /// Vê se o texto tem um "@" sendo digitado, e abre a lista.
+  void _olharPorMencao() {
+    final texto = _messageCtrl.text;
+    final cursor = _messageCtrl.selection.baseOffset;
+    if (cursor <= 0 || cursor > texto.length) {
+      if (_procurandoMencao != null) setState(() => _procurandoMencao = null);
+      return;
+    }
+    final antes = texto.substring(0, cursor);
+    // O "@" tem de estar no começo ou depois de um espaço: um e-mail no meio
+    // do recado não abre a lista.
+    final casa = RegExp(r'(?:^|\s)@([\p{L} ]{0,20})$', unicode: true)
+        .firstMatch(antes);
+    final novo = casa?.group(1);
+    if (novo != _procurandoMencao) {
+      setState(() => _procurandoMencao = novo);
+    }
+  }
+
+  /// Põe o nome escolhido no texto e guarda o uid.
+  void _escolherMencao(UserModel pessoa) {
+    final texto = _messageCtrl.text;
+    final cursor = _messageCtrl.selection.baseOffset.clamp(0, texto.length);
+    final antes = texto.substring(0, cursor);
+    final casa = RegExp(r'@([\p{L} ]{0,20})$', unicode: true).firstMatch(antes);
+    if (casa == null) return;
+    final inicio = casa.start;
+    final novoTexto =
+        '${texto.substring(0, inicio)}@${pessoa.name} ${texto.substring(cursor)}';
+    _mencionados[pessoa.name] = pessoa.id;
+    _messageCtrl.value = TextEditingValue(
+      text: novoTexto,
+      selection: TextSelection.collapsed(
+          offset: inicio + pessoa.name.length + 2),
+    );
+    setState(() => _procurandoMencao = null);
+  }
+
+  /// Os uid mencionados que ainda estão escritos no texto.
+  ///
+  /// Conferir o texto é o que impede mandar menção de alguém cujo "@nome" a
+  /// pessoa apagou depois de escolher na lista.
+  List<String> _mencoesNoTexto() {
+    final texto = _messageCtrl.text;
+    final saida = <String>{};
+    _mencionados.forEach((nome, uid) {
+      if (texto.contains('@$nome')) saida.add(uid);
+    });
+    return saida.toList();
   }
 
   void _onSearchChanged() => setState(() {});
@@ -144,6 +257,10 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _chat?.removeListener(_onMessagesChanged);
     _messageCtrl.removeListener(_handleTyping);
+    _messageCtrl.removeListener(_olharPorMencao);
+    _escutaLeituras?.cancel();
+    _escutaPessoas?.cancel();
+    _focoDaMensagem.dispose();
     _searchCtrl.removeListener(_onSearchChanged);
     _typingStopTimer?.cancel();
     _stopTyping();
@@ -163,12 +280,16 @@ class _ChatScreenState extends State<ChatScreen> {
 
     if (auth.user == null) return;
 
+    final citada = _respondendoA;
+    final mencoes = _mencoesNoTexto();
     final error = await chat.sendMessage(
       userId: auth.user!.id,
       userName: auth.user!.name,
       text: text.isEmpty ? '🎵 Compartilhou uma música' : text,
       linkedSongId: linkedSongId,
       linkedSongName: linkedSongName,
+      respondendoA: citada,
+      mencoes: mencoes,
     );
 
     if (!mounted) return;
@@ -181,6 +302,13 @@ class _ChatScreenState extends State<ChatScreen> {
       );
       return;
     }
+    // A citação e as menções só se limpam quando a mensagem SAIU: tentar de
+    // novo sem o contexto não é tentar a mesma coisa.
+    setState(() {
+      _respondendoA = null;
+      _procurandoMencao = null;
+    });
+    _mencionados.clear();
 
     _messageCtrl.clear();
     _stopTyping();
@@ -535,6 +663,221 @@ class _ChatScreenState extends State<ChatScreen> {
 
   /// Fixar ou desafixar, pelo gesto de segurar a bolha. Só o líder chega
   /// aqui — e as regras do banco recusam qualquer outro, não só a tela.
+  // ── Reações, citação e "visto por" ──────────────────────────────────────
+
+  /// A folha que abre ao segurar a bolha: os cinco emojis e as ações.
+  ///
+  /// Uma folha só, e não um menu de emoji separado do menu de ações: segurar
+  /// a bolha é UM gesto, e quem segurou não sabe de antemão se quer reagir
+  /// ou responder.
+  Future<void> _abrirAcoesDaMensagem(MessageModel msg, bool isMe) async {
+    final auth = context.read<AuthProvider>();
+    final meuId = auth.user?.id ?? '';
+    final minha = msg.minhaReacao(meuId);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF171C23) : Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (folha) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(10, 14, 10, 6),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: MessageModel.emojisDeReacao.map((emoji) {
+                  final marcado = minha == emoji;
+                  return GestureDetector(
+                    onTap: () {
+                      Navigator.pop(folha);
+                      // Tocar no que já está marcado TIRA: é o mesmo gesto
+                      // para pôr e para desfazer.
+                      _reagir(msg, marcado ? null : emoji);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: marcado
+                            ? AppColors.blue.withValues(alpha: 0.22)
+                            : Colors.transparent,
+                      ),
+                      child: Text(emoji, style: const TextStyle(fontSize: 27)),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const Divider(height: 10),
+            ListTile(
+              leading: const Icon(Icons.reply_rounded),
+              title: const Text('Responder',
+                  style: TextStyle(fontFamily: 'Poppins', fontSize: 14)),
+              onTap: () {
+                Navigator.pop(folha);
+                _responderA(msg);
+              },
+            ),
+            if (isMe)
+              ListTile(
+                leading: const Icon(Icons.done_all_rounded),
+                title: const Text('Visto por',
+                    style: TextStyle(fontFamily: 'Poppins', fontSize: 14)),
+                onTap: () {
+                  Navigator.pop(folha);
+                  _mostrarQuemViu(msg);
+                },
+              ),
+            if (auth.isAdmin)
+              ListTile(
+                leading: Icon(msg.fixada
+                    ? Icons.push_pin_outlined
+                    : Icons.push_pin_rounded),
+                title: Text(msg.fixada ? 'Desafixar' : 'Fixar no topo',
+                    style: const TextStyle(
+                        fontFamily: 'Poppins', fontSize: 14)),
+                onTap: () {
+                  Navigator.pop(folha);
+                  _perguntarSobreFixar(msg);
+                },
+              ),
+            const SizedBox(height: 6),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _reagir(MessageModel msg, String? emoji) async {
+    final meuId = context.read<AuthProvider>().user?.id ?? '';
+    if (meuId.isEmpty) return;
+    final erro = await FirestoreService.reagir(
+        mensagemId: msg.id, meuId: meuId, emoji: emoji);
+    if (erro == null || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(erro), backgroundColor: AppColors.red),
+    );
+  }
+
+  void _responderA(MessageModel msg) {
+    setState(() => _respondendoA = msg);
+    _focoDaMensagem.requestFocus();
+  }
+
+  /// Quem reagiu com o quê. Nome e emoji, sem hora: a hora da reação não
+  /// interessa a ninguém, e guardá-la custaria um campo por reação.
+  Future<void> _mostrarQuemReagiu(MessageModel msg) async {
+    if (!msg.temReacoes) return;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final nomes = {for (final u in _pessoas) u.id: u.name};
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF171C23) : Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 16, 20, 8),
+              child: Text('Reações',
+                  style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600)),
+            ),
+            ...msg.reacoes.entries.map((e) => ListTile(
+                  dense: true,
+                  leading: Text(e.value, style: const TextStyle(fontSize: 20)),
+                  title: Text(nomes[e.key] ?? 'Alguém',
+                      style: const TextStyle(
+                          fontFamily: 'Poppins', fontSize: 14)),
+                )),
+            const SizedBox(height: 8),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// "Visto por" e "Ainda não viu", com a hora de quem viu.
+  Future<void> _mostrarQuemViu(MessageModel msg) async {
+    final r = quemViu(
+        mensagem: msg, leituras: _leituras, aprovados: _pessoas);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: isDark ? const Color(0xFF171C23) : Colors.white,
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => SafeArea(
+        child: ListView(
+          shrinkWrap: true,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 4),
+              child: Text(
+                r.viram.isEmpty
+                    ? 'Ninguém viu ainda'
+                    : 'Visto por ${r.viram.length} '
+                        '${r.viram.length == 1 ? 'pessoa' : 'pessoas'}',
+                style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600),
+              ),
+            ),
+            ...r.viram.map((v) => ListTile(
+                  dense: true,
+                  leading: const Icon(Icons.done_all_rounded,
+                      size: 18, color: Color(0xFF53BDEB)),
+                  title: Text(v.userName,
+                      style: const TextStyle(
+                          fontFamily: 'Poppins', fontSize: 14)),
+                  trailing: Text(
+                    DateFormat('HH:mm').format(v.lidoAte),
+                    style: const TextStyle(
+                        fontFamily: 'Poppins', fontSize: 12),
+                  ),
+                )),
+            if (r.naoViram.isNotEmpty) ...[
+              const Padding(
+                padding: EdgeInsets.fromLTRB(20, 12, 20, 4),
+                child: Text('Ainda não viu',
+                    style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
+              ),
+              ...r.naoViram.map((nome) => ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.done_rounded,
+                        size: 18, color: Colors.grey),
+                    title: Text(nome,
+                        style: const TextStyle(
+                            fontFamily: 'Poppins', fontSize: 14)),
+                  )),
+            ],
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool? _vistaPorTodos(MessageModel msg) {
+    // Nulo enquanto as leituras não chegaram: um tique cinza é mais honesto
+    // que dois azuis adivinhados.
+    if (_pessoas.isEmpty) return null;
+    return vistaPorTodos(
+        mensagem: msg, leituras: _leituras, aprovados: _pessoas);
+  }
+
   Future<void> _perguntarSobreFixar(MessageModel msg) async {
     final fixar = !msg.fixada;
     final chat = context.read<ChatProvider>();
@@ -651,11 +994,19 @@ class _ChatScreenState extends State<ChatScreen> {
         return Column(
           children: [
             if (showDate) _WaDateChip(date: msg.timestamp, isDark: isDark),
-            // Segurar a bolha é o gesto que o WhatsApp ensinou, e é só o que
-            // o líder precisa para fixar. Para quem não é líder, nada muda.
+            // Segurar a bolha abre as reações e as ações; arrastar para a
+            // direita responde citando. Os dois gestos são os do WhatsApp, e
+            // é o que esta equipe já sabe de cor.
             GestureDetector(
-              onLongPress:
-                  auth.isAdmin ? () => _perguntarSobreFixar(msg) : null,
+              onLongPress: () => _abrirAcoesDaMensagem(msg, isMe),
+              // Arrasto HORIZONTAL não briga com a rolagem vertical da lista.
+              onHorizontalDragEnd: (d) {
+                // Só para a direita, e só com empurrão de verdade: um
+                // arrasto curto é quase sempre tentativa de rolar.
+                if (d.primaryVelocity != null && d.primaryVelocity! > 250) {
+                  _responderA(msg);
+                }
+              },
               child: _WaMessageBubble(
                 message: msg,
                 isMe: isMe,
@@ -663,6 +1014,10 @@ class _ChatScreenState extends State<ChatScreen> {
                 showName: isFirstOfGroup && !isMe,
                 showTail: isFirstOfGroup,
                 showAvatar: isLastOfGroup && !isMe,
+                meuId: auth.user?.id ?? '',
+                vistaPorTodos: isMe ? _vistaPorTodos(msg) : null,
+                onVerReacoes: () => _mostrarQuemReagiu(msg),
+                onVerQuemViu: isMe ? () => _mostrarQuemViu(msg) : null,
                 onSongTap: msg.linkedSongId != null
                     ? () {
                         final song = songs.getSongById(msg.linkedSongId!);
@@ -682,7 +1037,132 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget _buildInputBar(bool isDark) {
     return SafeArea(
       top: false,
-      child: Padding(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_procurandoMencao != null) _listaDeMencoes(isDark),
+          if (_respondendoA != null) _faixaDaCitacao(isDark),
+          _barraDeDigitar(isDark),
+        ],
+      ),
+    );
+  }
+
+  /// Quem mencionar, enquanto se digita "@".
+  ///
+  /// A lista vem das pessoas aprovadas, não dos nomes do chat: quem nunca
+  /// escreveu também pode ser chamado.
+  Widget _listaDeMencoes(bool isDark) {
+    final procura = (_procurandoMencao ?? '').trim().toLowerCase();
+    final meuId = _auth?.user?.id ?? '';
+    final achados = _pessoas
+        .where((p) => p.id != meuId)
+        .where((p) => procura.isEmpty || p.name.toLowerCase().contains(procura))
+        .take(6)
+        .toList();
+    if (achados.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 200),
+      margin: const EdgeInsets.fromLTRB(7, 0, 7, 4),
+      decoration: BoxDecoration(
+        color: isDark ? _Wa.pillDark : Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.12),
+              blurRadius: 10,
+              offset: const Offset(0, -2)),
+        ],
+      ),
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        children: achados
+            .map((pessoa) => ListTile(
+                  dense: true,
+                  visualDensity: VisualDensity.compact,
+                  leading: CircleAvatar(
+                    radius: 14,
+                    backgroundColor:
+                        _Wa.nameColor(pessoa.name).withValues(alpha: 0.2),
+                    child: Text(
+                      pessoa.name.isEmpty ? '?' : pessoa.name[0].toUpperCase(),
+                      style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: _Wa.nameColor(pessoa.name)),
+                    ),
+                  ),
+                  title: Text(pessoa.name,
+                      style: const TextStyle(
+                          fontFamily: 'Poppins', fontSize: 13.5)),
+                  subtitle: Text(
+                    'avisa mesmo com o chat silenciado',
+                    style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 11,
+                        color: isDark ? _Wa.metaDark : _Wa.metaLight),
+                  ),
+                  onTap: () => _escolherMencao(pessoa),
+                ))
+            .toList(),
+      ),
+    );
+  }
+
+  /// A mensagem que estou respondendo, acima do campo.
+  Widget _faixaDaCitacao(bool isDark) {
+    final msg = _respondendoA!;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(7, 0, 7, 4),
+      padding: const EdgeInsets.fromLTRB(10, 7, 4, 7),
+      decoration: BoxDecoration(
+        color: isDark ? _Wa.pillDark : _Wa.pillLight,
+        borderRadius: BorderRadius.circular(12),
+        border:
+            Border(left: BorderSide(color: _Wa.nameColor(msg.userName), width: 3)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Respondendo a ${msg.userName}',
+                  style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w600,
+                      color: _Wa.nameColor(msg.userName)),
+                ),
+                Text(
+                  msg.temAudio ? '🎤 Mensagem de voz' : msg.text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 12.5,
+                      color: isDark ? _Wa.metaDark : _Wa.metaLight),
+                ),
+              ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Cancelar a resposta',
+            icon: Icon(Icons.close_rounded,
+                size: 18, color: isDark ? _Wa.metaDark : _Wa.metaLight),
+            onPressed: () => setState(() => _respondendoA = null),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _barraDeDigitar(bool isDark) {
+    return Padding(
         padding: const EdgeInsets.fromLTRB(7, 4, 7, 6),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
@@ -718,6 +1198,7 @@ class _ChatScreenState extends State<ChatScreen> {
                     Expanded(
                       child: TextField(
                         controller: _messageCtrl,
+                        focusNode: _focoDaMensagem,
                         maxLines: 5,
                         minLines: 1,
                         textCapitalization: TextCapitalization.sentences,
@@ -785,7 +1266,6 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ],
         ),
-      ),
     );
   }
 
@@ -1158,6 +1638,16 @@ class _WaMessageBubble extends StatelessWidget {
   final bool showAvatar;
   final VoidCallback? onSongTap;
 
+  /// Quem sou eu, para saber em qual emoji a minha reação está marcada.
+  final String meuId;
+
+  /// Todos os aprovados já viram? Só nas MINHAS mensagens, e nulo quando
+  /// ainda não se sabe (as leituras não chegaram).
+  final bool? vistaPorTodos;
+
+  final VoidCallback? onVerReacoes;
+  final VoidCallback? onVerQuemViu;
+
   const _WaMessageBubble({
     required this.message,
     required this.isMe,
@@ -1166,6 +1656,10 @@ class _WaMessageBubble extends StatelessWidget {
     required this.showTail,
     required this.showAvatar,
     this.onSongTap,
+    this.meuId = '',
+    this.vistaPorTodos,
+    this.onVerReacoes,
+    this.onVerQuemViu,
   });
 
   @override
@@ -1246,6 +1740,53 @@ class _WaMessageBubble extends StatelessWidget {
                             ),
                           ),
                         ),
+                      // O pedaço citado, quando é resposta a outra
+                      // mensagem. Fica ACIMA do texto, como no WhatsApp: é o
+                      // contexto, e lê-se antes da resposta.
+                      if (message.temCitacao)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 5),
+                          padding: const EdgeInsets.fromLTRB(8, 5, 8, 6),
+                          decoration: BoxDecoration(
+                            color: (isDark ? Colors.white : Colors.black)
+                                .withValues(alpha: 0.06),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border(
+                              left: BorderSide(
+                                color: _Wa.nameColor(
+                                    message.respondeANome ?? ''),
+                                width: 3,
+                              ),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                message.respondeANome ?? '',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: _Wa.nameColor(
+                                      message.respondeANome ?? ''),
+                                ),
+                              ),
+                              Text(
+                                message.respondeATexto ?? '',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 12.5,
+                                  height: 1.25,
+                                  color: metaColor,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                       // Mensagem de voz: o player no lugar do texto.
                       if (message.temAudio)
                         BolhaDeVoz(
@@ -1272,19 +1813,83 @@ class _WaMessageBubble extends StatelessWidget {
                             ),
                           Padding(
                             padding: const EdgeInsets.only(left: 8, top: 2),
-                            // Só a hora. O ✓✓ prometia confirmação de leitura,
-                            // que não existe: nada registra quem leu.
-                            child: Text(
-                              DateFormat('HH:mm').format(message.timestamp),
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                fontSize: 11,
-                                color: metaColor,
-                              ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  DateFormat('HH:mm').format(message.timestamp),
+                                  style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 11,
+                                    color: metaColor,
+                                  ),
+                                ),
+                                // Os tiques só nas MINHAS mensagens: nas dos
+                                // outros eles não querem dizer nada para mim.
+                                //
+                                // Um cinza = está no banco. Dois azuis = todos
+                                // os aprovados abriram o chat depois dela.
+                                // Antes havia um ✓✓ fixo, que prometia
+                                // confirmação de leitura sem nada registrar.
+                                if (isMe)
+                                  Padding(
+                                    padding: const EdgeInsets.only(left: 3),
+                                    child: Icon(
+                                      vistaPorTodos == true
+                                          ? Icons.done_all_rounded
+                                          : Icons.done_rounded,
+                                      size: 14,
+                                      color: vistaPorTodos == true
+                                          ? const Color(0xFF53BDEB)
+                                          : metaColor,
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                         ],
                       ),
+                      if (message.temReacoes)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 5),
+                          child: GestureDetector(
+                            onTap: onVerReacoes,
+                            child: Wrap(
+                              spacing: 4,
+                              runSpacing: 4,
+                              children: message.contagemDeReacoes.map((r) {
+                                final minha =
+                                    message.minhaReacao(meuId) == r.emoji;
+                                return Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 7, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: minha
+                                        ? AppColors.blue.withValues(alpha: 0.22)
+                                        : (isDark ? Colors.white : Colors.black)
+                                            .withValues(alpha: 0.07),
+                                    borderRadius: BorderRadius.circular(999),
+                                    border: minha
+                                        ? Border.all(
+                                            color: AppColors.blue
+                                                .withValues(alpha: 0.6))
+                                        : null,
+                                  ),
+                                  child: Text(
+                                    r.quantas > 1
+                                        ? '${r.emoji} ${r.quantas}'
+                                        : r.emoji,
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      height: 1.25,
+                                      color: textColor,
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                        ),
                       if (message.hasSong && message.linkedSongName != null)
                         Padding(
                           padding: const EdgeInsets.only(top: 6),

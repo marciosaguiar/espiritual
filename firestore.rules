@@ -432,22 +432,70 @@ service cloud.firestore {
             || request.resource.data.audioId is string)
         && texto('audioId', 64)
         && texto('audioTipo', 80)
-        && texto('userName', 60);
+        && texto('userName', 60)
+        // Responder citando: o pedaço do texto citado é COPIADO, porque a
+        // mensagem original some em 30 dias.
+        && texto('respondeA', 64)
+        && texto('respondeANome', 60)
+        && texto('respondeATexto', 300)
+        // Menções: lista de uid, não de nomes. Mapa de reações não entra na
+        // criação — ninguém nasce reagido.
+        && (!('mencoes' in request.resource.data)
+            || (request.resource.data.mencoes is list
+                && request.resource.data.mencoes.size() <= 30))
+        && !('reacoes' in request.resource.data);
 
       // Mensagem enviada não se reescreve: o texto é o que foi dito, e
-      // ninguém reescreve o que disse ontem. O líder só alcança os três
-      // campos de fixar, e nada mais.
-      allow update: if ehLider()
-        && mudou().hasOnly(['fixada', 'fixadaPor', 'expiraEm'])
-        && request.resource.data.fixada is bool
-        && texto('fixadaPor', 128)
-        && (request.resource.data.expiraEm == null
-            || request.resource.data.expiraEm is timestamp)
-        // Fixada não vence; não fixada tem prazo. Sem isto, fixar sem tirar
-        // o prazo deixaria a mensagem no topo até a faxina a apagar.
-        && (request.resource.data.fixada
-            ? request.resource.data.expiraEm == null
-            : request.resource.data.expiraEm != null);
+      // ninguém reescreve o que disse ontem.
+      //
+      // Duas exceções, e só duas: o líder alcança os três campos de fixar, e
+      // cada pessoa alcança a PRÓPRIA reação.
+      allow update: if
+        (
+          ehLider()
+          && mudou().hasOnly(['fixada', 'fixadaPor', 'expiraEm'])
+          && request.resource.data.fixada is bool
+          && texto('fixadaPor', 128)
+          && (request.resource.data.expiraEm == null
+              || request.resource.data.expiraEm is timestamp)
+          // Fixada não vence; não fixada tem prazo. Sem isto, fixar sem
+          // tirar o prazo deixaria a mensagem no topo até a faxina a apagar.
+          && (request.resource.data.fixada
+              ? request.resource.data.expiraEm == null
+              : request.resource.data.expiraEm != null)
+        )
+        || (
+          aprovado()
+          && mudou().hasOnly(['reacoes'])
+          && soMinhaReacao()
+          && reacaoValida()
+        );
+
+      // Reagir mexe SÓ na própria chave do mapa.
+      //
+      // `diff().affectedKeys()` é o que impede tirar a reação de outra
+      // pessoa, ou reagir em nome dela — sem isto, qualquer aprovado
+      // reescreveria o mapa inteiro.
+      //
+      // O `get('reacoes', {})` nos dois lados não é zelo: mensagem gravada
+      // antes desta mudança NÃO TEM o campo, e ler `resource.data.reacoes`
+      // direto faria a regra dar erro — recusando toda reação em toda
+      // mensagem antiga do chat.
+      function soMinhaReacao() {
+        return request.resource.data.get('reacoes', {})
+            .diff(resource.data.get('reacoes', {}))
+            .affectedKeys().hasOnly([eu()]);
+      }
+
+      // Emoji da lista fechada, e um mapa que não cresce sem limite.
+      //
+      // Minha chave AUSENTE é válido: é assim que se tira a reação.
+      function reacaoValida() {
+        return request.resource.data.get('reacoes', {}).size() <= 200
+          && (!(eu() in request.resource.data.get('reacoes', {}))
+              || request.resource.data.reacoes[eu()]
+                  in ['👍', '🙏', '❤️', '🔥', '😂']);
+      }
 
       // A conversa some depois de 30 dias, e quem apaga é uma faxina que
       // roda de madrugada entrando como líder. Não é exclusão de conteúdo
@@ -494,6 +542,29 @@ service cloud.firestore {
       // próprio. Ninguém apaga áudio alheio.
       allow delete: if ehLider()
         || (aprovado() && resource.data.userId == eu());
+    }
+
+    // ── Até onde cada um leu o chat ─────────────────────────────────────────
+    // UM documento por pessoa, não um carimbo por mensagem: marcar cada
+    // mensagem como lida por cada pessoa seriam 15 escritas por mensagem num
+    // ministério de 15, e a cota gratuita do Spark acabaria numa tarde.
+    //
+    // A leitura é de todo aprovado, porque é disso que saem os dois tiques
+    // azuis na bolha de quem enviou.
+    match /chatLeituras/{userId} {
+      allow read: if aprovado();
+
+      allow write: if souEu(userId)
+        && aprovado()
+        && tamanhoRazoavel()
+        && request.resource.data.userId == userId
+        && texto('userName', 60)
+        // A hora é do SERVIDOR. Com a hora do aparelho, bastaria adiantar o
+        // relógio para ganhar dois tiques azuis em mensagem que ninguém leu.
+        && request.resource.data.lidoAte == request.time;
+
+      // Ninguém apaga o marcador de outra pessoa; o próprio pode, ao sair.
+      allow delete: if souEu(userId) || ehLider();
     }
 
     // ── Avisos do chat ──────────────────────────────────────────────────────

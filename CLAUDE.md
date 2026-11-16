@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 288 testes
+flutter test                   # 309 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 205 testes
+cd test_regras && npm install && npm test    # 228 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -35,14 +35,14 @@ de dentro do `firebase-tools` — os dois comandos acima se contradiziam.
 O `test_regras/.npmrc` também não é enfeite: `@firebase/rules-unit-testing@3`
 pede `firebase@^10` e aqui se usa o 13. As versões novas do npm recusam
 instalar por isso, então `npm install` falhava num computador limpo, embora os
-205 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
+228 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
 só com `npm install --legacy-peer-deps`.
 
 O mini-servidor dos avisos tem testes próprios, que não precisam de emulador
 nem de Flutter:
 
 ```bash
-node --test worker/teste/*.mjs               # 30 testes
+node --test worker/teste/*.mjs               # 37 testes
 ```
 
 ## Estado atual
@@ -300,7 +300,8 @@ Nesta ordem, e **nada disso antes de testar o app num iPhone real**:
    cifra e o mesmo leque de envio, com outro gatilho.
 3. ~~**Rolagem sincronizada no culto**~~ — **feito** (ver "Modo Culto ao
    vivo").
-4. **Reações e "visto por"** no chat.
+4. ~~**Reações e "visto por"** no chat~~ — **feito**, com responder citando
+   e @menção (ver "Reações, citação e visto por").
 5. **Líder redefine senha de um membro.** Só com o Admin SDK, em Cloud
    Function — o Firebase não deixa um app trocar a senha de outra pessoa.
    Fica pequeno depois que as Functions existirem.
@@ -749,6 +750,83 @@ seu modo. Botão na tela do culto, acima da lista de músicas.
 - O tema do app NÃO vale aqui: preto de verdade, texto claro e fonte grande,
   porque é tela lida de longe, muitas vezes com refletor em cima.
 
+### Reações, citação e "visto por"
+
+O chat ganhou os quatro gestos que a equipe já sabe de cor do WhatsApp:
+segurar para reagir, arrastar para a direita para responder, "@" para chamar
+alguém, e os tiques de leitura.
+
+- **As reações são um MAPA na própria mensagem** (`reacoes: {uid: emoji}`),
+  não uma subcoleção. Por custo de leitura: o chat já escuta `messages`,
+  então as reações chegam de graça junto das bolhas; numa subcoleção, cada
+  bolha custaria uma escuta a mais — com 50 mensagens na tela, 50 escutas.
+- **Uma reação por pessoa**, porque a chave do mapa é a pessoa. Tocar no
+  emoji já marcado tira — o mesmo gesto põe e desfaz.
+- **A regra do banco deixa cada um mexer SÓ na própria chave**, por
+  `diff().affectedKeys().hasOnly([eu()])`. Sem isso, qualquer aprovado
+  reescreveria o mapa inteiro e apagaria a reação dos outros.
+- **E o `get('reacoes', {})` nos dois lados da regra não é zelo:** mensagem
+  gravada antes desta mudança NÃO TEM o campo, e ler `resource.data.reacoes`
+  direto faz a regra dar erro — recusando toda reação em toda mensagem antiga
+  do chat. Tem teste só para esse caso.
+- **Reagir não deixa mexer em mais nada de carona:** `mudou().hasOnly(...)`
+  separa a reação de fixar e do texto, e há teste para as duas tentativas.
+- **Emoji fora da lista é descartado na LEITURA também.** A regra recusa, mas
+  documento mexido no console não pode desenhar lixo na tela de todo mundo.
+- **A ordem das contagens é sempre a da lista oficial**, não por quantidade:
+  contagem que muda de lugar a cada reação faz a pessoa tocar no emoji
+  errado.
+
+**Visto por** é UM documento por pessoa (`chatLeituras/{uid}`), não um
+carimbo por mensagem:
+
+- Marcar cada mensagem como lida por cada pessoa seriam 15 escritas por
+  mensagem num ministério de 15 — a cota do Spark acabaria numa tarde de
+  conversa. Com um documento por pessoa, abrir o chat custa UMA escrita, e os
+  dois tiques saem de comparar horários.
+- **A hora é do SERVIDOR, e a regra exige.** Senão bastaria adiantar o
+  relógio do celular para ganhar dois tiques azuis em mensagem que ninguém
+  leu.
+- **O robô não entra na conta.** Com ele dentro, os dois tiques azuis seriam
+  impossíveis para sempre, porque robô não abre o chat — e ninguém entenderia
+  por quê.
+- **O autor não se conta**, e **ministério de uma pessoa só não acende**: dois
+  tiques azuis sem ninguém para ver significariam "todo mundo viu" quando não
+  houve ninguém.
+- **Um tique cinza enquanto as leituras não chegaram.** Nulo vira cinza, nunca
+  azul: é mais honesto que dois tiques adivinhados.
+- O serviço guarda até onde já marcou, então o chat pode chamar `marcarLido` a
+  cada mensagem que chega sem virar uma escrita por mensagem recebida.
+
+**Responder citando** copia um pedaço do texto na mensagem nova
+(`respondeA`, `respondeANome`, `respondeATexto`):
+
+- É o contrário da regra da escala, que guarda referência e nunca cópia — e de
+  propósito, por dois motivos: a mensagem original **some em 30 dias** (a
+  citação ficaria vazia, perdendo o sentido do que foi respondido), e resolver
+  por id custaria uma leitura por bolha na tela.
+- O arrasto é só para a DIREITA e com velocidade de verdade: arrasto curto é
+  quase sempre tentativa de rolar a conversa.
+
+**@menção** guarda a lista de uid, não os nomes (nome se repete e muda):
+
+- **A menção fura o "silenciar até amanhã", mas NÃO o "avisos desligados".**
+  O silêncio temporário é "não me acorde por bobagem", não "não me chame" — é
+  o caso de "@Ana, você consegue vir às 18h?" na véspera. Já quem desligou os
+  avisos fez uma escolha sobre o app todo, e furá-la seria o app decidindo por
+  cima da pessoa, que não teria como se proteger a não ser desinstalando.
+- Por isso **o leque de envio sai em dois grupos**, com textos diferentes:
+  quem foi mencionado recebe "📣 mencionou você: …", e sem isso a pessoa seria
+  acordada com o chat silenciado sem saber por quê.
+- No envio, só valem as menções cujo "@nome" ainda está escrito no texto:
+  escolher na lista e apagar o nome depois não manda aviso a ninguém.
+- **Reação NUNCA dispara aviso.** O Worker só é chamado depois de uma mensagem
+  ser CRIADA; reagir é um `update`, e nenhum caminho do app chama o aviso ali.
+
+**O que isto custou em leitura:** o chat passou a abrir duas escutas novas
+(~15 documentos cada): as leituras e a lista de pessoas — a segunda serve ao
+"visto por" e à lista de quem mencionar. São ~30 leituras por sessão, uma vez.
+
 ### Quando a tela diz "vazio"
 
 Lista vazia e lista que não carregou são coisas diferentes, e a pessoa lê as
@@ -765,6 +843,6 @@ reinstalar o app essa lista é vazia, então uma falha de leitura teria virado
 ## O que não existe (e o relatório de auditoria aponta)
 
 Busca de música na internet, anexo de imagem no chat, PDF da escala, foto de
-perfil, transformar uma mensagem do chat em decisão da agenda, reações e
-"visto por" no chat, e aviso de escalado / lembrete da véspera / "novo pedido
-de entrada" (o mecanismo já existe; falta o gatilho).
+perfil, transformar uma mensagem do chat em decisão da agenda, e aviso de
+escalado / lembrete da véspera / "novo pedido de entrada" (o mecanismo já
+existe; falta o gatilho).

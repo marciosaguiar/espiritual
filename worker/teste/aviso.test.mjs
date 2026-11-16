@@ -82,6 +82,65 @@ test('inscrição sem as chaves é descartada antes de tentar cifrar', () => {
   assert.equal(deveAvisar(null, 'u1'), false);
 });
 
+// ── Menção: fura o silêncio, mas não o desligado ────────────────────────────
+
+test('mencionado recebe mesmo com o chat silenciado até amanhã', () => {
+  // "Silenciar até amanhã" é "não me acorde por bobagem", não "não me
+  // chame" — o caso de "@Ana, você consegue vir às 18h?" na véspera.
+  const agora = Date.UTC(2026, 10, 16, 22, 0, 0);
+  const amanha = new Date(Date.UTC(2026, 10, 17, 10, 0, 0)).toISOString();
+  const i = inscricao({ silenciarAte: amanha });
+  assert.equal(deveAvisar(i, 'u1', agora), false);
+  assert.equal(deveAvisar(i, 'u1', agora, ['u2']), true);
+});
+
+test('avisos DESLIGADOS continuam desligados, mesmo mencionada', () => {
+  // Quem desligou fez uma escolha sobre o app todo; furá-la seria o app
+  // decidindo por cima da pessoa, e ela não teria como se proteger a não ser
+  // desinstalando.
+  const i = inscricao({ avisosLigados: false });
+  assert.equal(deveAvisar(i, 'u1', undefined, ['u2']), false);
+});
+
+test('menção de outra pessoa não libera o meu silêncio', () => {
+  const agora = Date.UTC(2026, 10, 16, 22, 0, 0);
+  const amanha = new Date(Date.UTC(2026, 10, 17, 10, 0, 0)).toISOString();
+  const i = inscricao({ silenciarAte: amanha });
+  assert.equal(deveAvisar(i, 'u1', agora, ['u9']), false);
+});
+
+test('o autor não recebe nem se mencionar a si mesmo', () => {
+  const i = inscricao({ userId: 'u1' });
+  assert.equal(deveAvisar(i, 'u1', undefined, ['u1']), false);
+});
+
+test('lista de menções estragada não derruba o envio', () => {
+  const i = inscricao();
+  for (const ruim of [null, 'u2', 42, {}]) {
+    assert.equal(deveAvisar(i, 'u1', undefined, ruim), true);
+  }
+});
+
+test('o texto de quem foi mencionado diz que foi', () => {
+  const m = { userName: 'Márcio', text: 'você consegue vir às 18h?' };
+  assert.deepEqual(textoDoAviso(m, { mencionou: true }), {
+    titulo: 'Márcio',
+    corpo: '📣 mencionou você: você consegue vir às 18h?',
+  });
+  // E o texto normal continua igual, para quem não foi mencionado.
+  assert.deepEqual(textoDoAviso(m), {
+    titulo: 'Márcio',
+    corpo: 'você consegue vir às 18h?',
+  });
+});
+
+test('menção em mensagem de voz também se anuncia', () => {
+  const r = textoDoAviso({ userName: 'Ana', audioId: 'a1' },
+    { mencionou: true });
+  assert.match(r.corpo, /mencionou você/);
+  assert.match(r.corpo, /🎤/);
+});
+
 // ── O limite por remetente ──────────────────────────────────────────────────
 
 test('trinta por minuto passam, o trinta e um não', () => {
