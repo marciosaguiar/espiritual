@@ -79,18 +79,38 @@ class ScaleProvider extends ChangeNotifier {
     }).toList();
   }
 
+  /// Por quanto tempo um culto continua sendo "o de agora" depois de começar.
+  ///
+  /// Quem abre o app no meio do culto quer ver o culto que está
+  /// acontecendo, não o da semana que vem. Duas horas cobrem um culto comum
+  /// com folga.
+  static const Duration duracaoDoCulto = Duration(hours: 2);
+
+  /// Este culto ainda interessa neste instante?
+  ///
+  /// Função pura, e separada, porque o erro que ela conserta não aparecia em
+  /// nenhum teste: a conta anterior comparava só a DATA, jogando a hora
+  /// fora. Domingo às 20h53, o culto das 8h daquele mesmo domingo ainda
+  /// contava como "próximo", e era ele que aparecia na tela inicial.
+  ///
+  /// `agora` entra como parâmetro para o teste poder escolher o instante —
+  /// inclusive a virada do dia, que é onde este tipo de conta costuma
+  /// quebrar.
+  static bool aindaVale(ScaleModel culto, DateTime agora) {
+    if (culto.canceled) return false;
+    return culto.date.isAfter(agora.subtract(duracaoDoCulto));
+  }
+
   /// Upcoming services, cancelled ones left out — they are kept in the
   /// database so the generator does not recreate them, but nobody needs to
   /// see a cancelled service as "the next one".
+  ///
+  /// A lista já vem do banco ordenada por data (`watchScales` usa
+  /// `orderBy('date')`), então o primeiro que passa no filtro é o próximo.
   List<ScaleModel> getUpcomingScales({int limit = 5}) {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
+    final agora = DateTime.now();
     return _scales
-        .where((s) {
-          if (s.canceled) return false;
-          final sDate = DateTime(s.date.year, s.date.month, s.date.day);
-          return !sDate.isBefore(today);
-        })
+        .where((s) => aindaVale(s, agora))
         .take(limit)
         .toList();
   }
