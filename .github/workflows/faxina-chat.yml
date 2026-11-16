@@ -1,0 +1,49 @@
+name: Faxina do chat (30 dias)
+
+# Apaga as mensagens que passaram dos 30 dias. As fixadas ficam.
+#
+# É isto, e não a política de TTL do Firestore, porque TTL exige faturamento
+# ativo (plano Blaze) e este projeto fica no Spark. Ver os comentários em
+# ferramentas/faxina-chat.mjs.
+#
+# Enquanto os segredos não existirem, a rotina roda, diz que não está
+# configurada e termina em verde — não enche a caixa de e-mail de falha.
+
+on:
+  schedule:
+    # 07:23 UTC = 04:23 em Brasília. Longe do horário de pico do GitHub, e de
+    # madrugada aqui: se algo der errado, ninguém está no meio de um culto.
+    - cron: '23 7 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: faxina-chat
+  cancel-in-progress: false
+
+jobs:
+  faxina:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Instalar o necessário
+        working-directory: ferramentas
+        run: npm install --no-audit --no-fund
+
+      - name: Apagar o que passou dos 30 dias
+        working-directory: ferramentas
+        env:
+          # Públicos: já estão no app, que é servido num site público.
+          FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
+          # A conta do robô: um líder comum, não chave de administrador.
+          FAXINA_EMAIL: ${{ secrets.FAXINA_EMAIL }}
+          FAXINA_SENHA: ${{ secrets.FAXINA_SENHA }}
+        run: node faxina-chat.mjs

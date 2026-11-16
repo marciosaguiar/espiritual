@@ -313,6 +313,15 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           ErrorBanner.maybe(chat.error, onRetry: chat.retry),
+          // As fixadas ficam à vista, fora da rolagem: foram fixadas
+          // justamente para não se perderem conversa acima.
+          if (!_searchMode && chat.fixadas.isNotEmpty)
+            _Fixadas(
+              mensagens: chat.fixadas,
+              isDark: isDark,
+              podeDesafixar: auth.isAdmin,
+              aoTocar: auth.isAdmin ? _perguntarSobreFixar : null,
+            ),
           if (_showSongSearch && !_searchMode)
             _buildSongSearchPanel(auth, songs, isDark),
           Expanded(
@@ -439,6 +448,49 @@ class _ChatScreenState extends State<ChatScreen> {
     );
   }
 
+  /// Fixar ou desafixar, pelo gesto de segurar a bolha. Só o líder chega
+  /// aqui — e as regras do banco recusam qualquer outro, não só a tela.
+  Future<void> _perguntarSobreFixar(MessageModel msg) async {
+    final fixar = !msg.fixada;
+    final chat = context.read<ChatProvider>();
+    final eu = context.read<AuthProvider>().user?.id ?? '';
+
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(fixar ? 'Fixar esta mensagem?' : 'Desafixar?'),
+        content: Text(
+          fixar
+              ? 'Ela vai para o topo do chat e NÃO some depois de 30 dias. '
+                  'É o jeito de guardar uma combinação importante.'
+              : 'Ela sai do topo e volta a sumir 30 dias depois de ter sido '
+                  'enviada.',
+          style: const TextStyle(fontFamily: 'Poppins', fontSize: 13.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: ElevatedButton.styleFrom(backgroundColor: AppColors.blue),
+            child: Text(fixar ? 'Fixar' : 'Desafixar'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+
+    final erro = await chat.fixar(msg, fixar, eu);
+    if (!mounted) return;
+    if (erro != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro), backgroundColor: AppColors.red),
+      );
+    }
+  }
+
   Widget _buildMessages(List<MessageModel> messages, AuthProvider auth,
       SongsProvider songs, bool isDark,
       {bool showNotice = true, bool searching = false}) {
@@ -514,21 +566,27 @@ class _ChatScreenState extends State<ChatScreen> {
         return Column(
           children: [
             if (showDate) _WaDateChip(date: msg.timestamp, isDark: isDark),
-            _WaMessageBubble(
-              message: msg,
-              isMe: isMe,
-              isDark: isDark,
-              showName: isFirstOfGroup && !isMe,
-              showTail: isFirstOfGroup,
-              showAvatar: isLastOfGroup && !isMe,
-              onSongTap: msg.linkedSongId != null
-                  ? () {
-                      final song = songs.getSongById(msg.linkedSongId!);
-                      if (song != null && auth.isAdmin) {
-                        _showInsertSongInScaleDialog(song);
+            // Segurar a bolha é o gesto que o WhatsApp ensinou, e é só o que
+            // o líder precisa para fixar. Para quem não é líder, nada muda.
+            GestureDetector(
+              onLongPress:
+                  auth.isAdmin ? () => _perguntarSobreFixar(msg) : null,
+              child: _WaMessageBubble(
+                message: msg,
+                isMe: isMe,
+                isDark: isDark,
+                showName: isFirstOfGroup && !isMe,
+                showTail: isFirstOfGroup,
+                showAvatar: isLastOfGroup && !isMe,
+                onSongTap: msg.linkedSongId != null
+                    ? () {
+                        final song = songs.getSongById(msg.linkedSongId!);
+                        if (song != null && auth.isAdmin) {
+                          _showInsertSongInScaleDialog(song);
+                        }
                       }
-                    }
-                  : null,
+                      : null,
+              ),
             ),
           ],
         );
@@ -770,6 +828,128 @@ class _ChatScreenState extends State<ChatScreen> {
 
 // ─── Encryption-style notice ───────────────────────────────────────────────
 
+/// A faixa das mensagens fixadas, no topo do chat.
+///
+/// Fora da rolagem de propósito: uma mensagem é fixada porque precisa ser
+/// vista, e dentro da lista ela voltaria a subir conversa acima em um dia.
+class _Fixadas extends StatelessWidget {
+  final List<MessageModel> mensagens;
+  final bool isDark;
+  final bool podeDesafixar;
+  final void Function(MessageModel)? aoTocar;
+
+  const _Fixadas({
+    required this.mensagens,
+    required this.isDark,
+    required this.podeDesafixar,
+    this.aoTocar,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final corTexto =
+        isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
+    final corFraca =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
+
+    return Container(
+      width: double.infinity,
+      constraints: const BoxConstraints(maxHeight: 112),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.white.withValues(alpha: 0.55),
+        border: Border(
+          bottom: BorderSide(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.08)
+                : Colors.black.withValues(alpha: 0.06),
+          ),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.push_pin_rounded, size: 13, color: corFraca),
+              const SizedBox(width: 5),
+              Text(
+                mensagens.length == 1
+                    ? 'Fixada'
+                    : '${mensagens.length} fixadas',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: corFraca,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Flexible(
+            child: ListView.builder(
+              shrinkWrap: true,
+              itemCount: mensagens.length,
+              itemBuilder: (_, i) {
+                final m = mensagens[i];
+                return InkWell(
+                  onTap: aoTocar == null ? null : () => aoTocar!(m),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 3),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: RichText(
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            text: TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: '${m.userName}: ',
+                                  style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: corTexto,
+                                  ),
+                                ),
+                                TextSpan(
+                                  text: m.text,
+                                  style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 12.5,
+                                    height: 1.35,
+                                    color: corTexto,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        if (podeDesafixar)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6, top: 1),
+                            child: Icon(Icons.close_rounded,
+                                size: 14, color: corFraca),
+                          ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EncryptionNotice extends StatelessWidget {
   const _EncryptionNotice();
 
@@ -787,12 +967,15 @@ class _EncryptionNotice extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.lock_outline_rounded,
+            Icon(Icons.auto_delete_outlined,
                 size: 13, color: isDark ? _Wa.metaDark : const Color(0xFF8A7B3D)),
             const SizedBox(width: 6),
             Flexible(
               child: Text(
-                'As mensagens ficam dentro do seu ministério.',
+                // A promessa precisa estar à vista: quem conta uma decisão
+                // importante no chat tem de saber que ela some.
+                'As mensagens somem depois de 30 dias. '
+                'Fixe o que for importante.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontFamily: 'Poppins',

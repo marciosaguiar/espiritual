@@ -304,8 +304,11 @@ await env.withSecurityRulesDisabled(async (ctx) =>
       timestamp: new Date() }));
 await teste('mensagem enviada não se edita', () =>
   assertFails(updateDoc(doc(levita(), 'messages', 'fixa'), { text: 'mudou' })));
-await teste('mensagem enviada não se apaga (nem pelo líder)', () =>
-  assertFails(deleteDoc(doc(lider(), 'messages', 'fixa'))));
+// Mudou de propósito: a conversa some depois de 30 dias, e quem apaga é uma
+// faxina que entra como líder. O que continua proibido é reescrever o texto,
+// que é o que estava em jogo aqui.
+await teste('levita não apaga mensagem enviada', () =>
+  assertFails(deleteDoc(doc(levita(), 'messages', 'fixa'))));
 
 console.log('\n── digitando ──');
 await teste('escrevo no meu próprio "digitando"', () =>
@@ -575,6 +578,74 @@ await teste('carimbo de saída com tipo errado é recusado', () =>
 await teste('conta apagada pelo app continua proibida', () =>
   assertFails(deleteDoc(doc(lider(), 'users', OUTRO))));
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Chat: fixar e a faxina dos 30 dias
+//
+// A conversa some depois de 30 dias; a fixada fica. Quem apaga é uma faxina
+// que entra como líder, então o líder precisa poder apagar mensagem — e só
+// ele. E nem ele reescreve o que alguém disse.
+// ─────────────────────────────────────────────────────────────────────────────
+console.log('\n── chat: fixar e apagar ──');
+
+await env.withSecurityRulesDisabled(async (ctx) => {
+  const db = ctx.firestore();
+  for (const id of ['m-lider', 'm-levita', 'm-apagar']) {
+    await setDoc(doc(db, 'messages', id), {
+      id, userId: LEVITA, userName: 'Ana', text: 'ensaio às 19h',
+      type: 'text', linkedSongId: null, linkedSongName: null,
+      timestamp: new Date(), fixada: false, fixadaPor: null,
+      expiraEm: new Date(Date.now() + 30 * 864e5),
+    });
+  }
+});
+
+await teste('levita não fixa mensagem', () =>
+  assertFails(updateDoc(doc(levita(), 'messages', 'm-levita'),
+    { fixada: true, fixadaPor: LEVITA, expiraEm: null })));
+
+await teste('pendente não fixa mensagem', () =>
+  assertFails(updateDoc(doc(pendente(), 'messages', 'm-levita'),
+    { fixada: true, fixadaPor: 'uid-pendente', expiraEm: null })));
+
+await teste('o líder fixa, e o prazo some junto', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'messages', 'm-lider'),
+    { fixada: true, fixadaPor: LIDER, expiraEm: null })));
+
+await teste('fixar sem tirar o prazo é recusado', () =>
+  assertFails(updateDoc(doc(lider(), 'messages', 'm-levita'),
+    { fixada: true, fixadaPor: LIDER, expiraEm: new Date() })));
+
+await teste('desafixar sem devolver o prazo é recusado', () =>
+  assertFails(updateDoc(doc(lider(), 'messages', 'm-lider'),
+    { fixada: false, fixadaPor: null, expiraEm: null })));
+
+await teste('o líder desafixa devolvendo o prazo', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'messages', 'm-lider'),
+    { fixada: false, fixadaPor: null, expiraEm: new Date(Date.now() + 864e5) })));
+
+await teste('NEM O LÍDER reescreve o texto de uma mensagem', () =>
+  assertFails(updateDoc(doc(lider(), 'messages', 'm-levita'),
+    { text: 'eu nunca disse isso' })));
+
+await teste('o autor também não reescreve o próprio texto', () =>
+  assertFails(updateDoc(doc(levita(), 'messages', 'm-levita'),
+    { text: 'na verdade era 20h' })));
+
+await teste('levita não apaga mensagem (nem a própria)', () =>
+  assertFails(deleteDoc(doc(levita(), 'messages', 'm-levita'))));
+
+await teste('removido não apaga mensagem', () =>
+  assertFails(deleteDoc(doc(removido(), 'messages', 'm-apagar'))));
+
+await teste('o líder apaga — é como a faxina dos 30 dias funciona', () =>
+  assertSucceeds(deleteDoc(doc(lider(), 'messages', 'm-apagar'))));
+
+await teste('pendente não lê o chat', () =>
+  assertFails(getDocs(collection(pendente(), 'messages'))));
+
+await teste('removido não lê o chat', () =>
+  assertFails(getDocs(collection(removido(), 'messages'))));
 
 console.log('\n── coleção desconhecida ──');
 await teste('coleção sem regra fica bloqueada', () =>

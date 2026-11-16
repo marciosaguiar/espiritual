@@ -14,7 +14,26 @@ class ChatProvider extends ChangeNotifier {
   StreamSubscription<List<MessageModel>>? _messagesSub;
   StreamSubscription<List<TypingUser>>? _typingSub;
 
-  List<MessageModel> get messages => _messages;
+  /// A conversa: o que ainda não venceu, fixadas incluídas.
+  ///
+  /// Esconder aqui faz a promessa "some depois de 30 dias" valer já na
+  /// próxima abertura do app, sem depender da faxina que apaga de verdade.
+  /// Se a faxina parar, a conversa continua sumindo da tela — o pior caso é
+  /// ocupar banco, não mostrar recado velho.
+  List<MessageModel> get messages {
+    final agora = DateTime.now();
+    return _messages.where((m) => !m.venceu(agora)).toList();
+  }
+
+  /// As fixadas, que vão no topo do chat e não vencem.
+  List<MessageModel> get fixadas =>
+      _messages.where((m) => m.fixada).toList();
+
+  /// Fixar/desafixar. Devolve null quando dá certo, ou o motivo.
+  Future<String?> fixar(MessageModel mensagem, bool fixar, String porQuemId) async {
+    final r = await FirestoreService.fixarMensagem(mensagem, fixar, porQuemId);
+    return r.error;
+  }
   bool get isLoading => _isLoading;
   String? get error => _error;
 

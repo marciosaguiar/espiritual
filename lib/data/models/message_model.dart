@@ -12,6 +12,21 @@ class MessageModel {
   final String? linkedSongName;
   final DateTime timestamp;
 
+  /// Fixada pelo líder: não expira e aparece no topo do chat.
+  ///
+  /// O chat é conversa de combinação — "quem leva o cabo?", "ensaio às 19h" —
+  /// e some depois de 30 dias de propósito. Fixar é como se diz "isto aqui
+  /// não é recado do dia, é decisão".
+  final bool fixada;
+  final String? fixadaPor;
+
+  /// Quando esta mensagem deixa de valer. Nulo em mensagem fixada.
+  ///
+  /// Guardado no documento, e não calculado na hora de ler, porque quem
+  /// apaga é uma faxina que roda fora do app: ela precisa saber o prazo sem
+  /// reimplementar a regra.
+  final DateTime? expiraEm;
+
   const MessageModel({
     required this.id,
     required this.userId,
@@ -21,7 +36,47 @@ class MessageModel {
     this.linkedSongId,
     this.linkedSongName,
     required this.timestamp,
+    this.fixada = false,
+    this.fixadaPor,
+    this.expiraEm,
   });
+
+  /// Quanto tempo uma conversa dura.
+  static const Duration validade = Duration(days: 30);
+
+  /// Já passou do prazo neste instante? Mensagem fixada nunca passa.
+  ///
+  /// Função pura: a tela esconde o que venceu já na próxima abertura, sem
+  /// esperar a faxina. Assim a promessa "some depois de 30 dias" vale desde
+  /// o primeiro dia, e a faxina cuida de apagar de verdade.
+  bool venceu(DateTime agora) {
+    if (fixada) return false;
+    final prazo = expiraEm ?? timestamp.add(validade);
+    return agora.isAfter(prazo);
+  }
+
+  MessageModel copyWith({
+    bool? fixada,
+    String? fixadaPor,
+    DateTime? expiraEm,
+    bool limparFixacao = false,
+  }) {
+    return MessageModel(
+      id: id,
+      userId: userId,
+      userName: userName,
+      text: text,
+      type: type,
+      linkedSongId: linkedSongId,
+      linkedSongName: linkedSongName,
+      timestamp: timestamp,
+      fixada: limparFixacao ? false : (fixada ?? this.fixada),
+      fixadaPor: limparFixacao ? null : (fixadaPor ?? this.fixadaPor),
+      expiraEm: limparFixacao
+          ? timestamp.add(validade)
+          : (expiraEm ?? this.expiraEm),
+    );
+  }
 
   bool get hasSong => linkedSongId != null;
 
@@ -35,6 +90,10 @@ class MessageModel {
       'linkedSongId': linkedSongId,
       'linkedSongName': linkedSongName,
       'timestamp': Timestamp.fromDate(timestamp),
+      'fixada': fixada,
+      'fixadaPor': fixadaPor,
+      // Nulo quando fixada: é o que a faxina lê para saber o que poupar.
+      'expiraEm': expiraEm == null ? null : Timestamp.fromDate(expiraEm!),
     };
   }
 
@@ -51,6 +110,11 @@ class MessageModel {
       linkedSongId: data['linkedSongId'] as String?,
       linkedSongName: data['linkedSongName'] as String?,
       timestamp: (data['timestamp'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      // Mensagem gravada antes desta mudança não tem os campos: não está
+      // fixada, e o prazo sai do próprio horário dela.
+      fixada: data['fixada'] as bool? ?? false,
+      fixadaPor: data['fixadaPor'] as String?,
+      expiraEm: (data['expiraEm'] as Timestamp?)?.toDate(),
     );
   }
 }

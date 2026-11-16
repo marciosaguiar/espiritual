@@ -966,6 +966,7 @@ class FirestoreService {
     String? linkedSongId,
     String? linkedSongName,
   }) {
+    final agora = DateTime.now();
     return MessageModel(
       id: CryptoUtils.generateId(),
       userId: userId,
@@ -974,8 +975,39 @@ class FirestoreService {
       type: linkedSongId != null ? MessageType.song : MessageType.text,
       linkedSongId: linkedSongId,
       linkedSongName: linkedSongName,
-      timestamp: DateTime.now(),
+      timestamp: agora,
+      // O prazo vai gravado na mensagem, e não calculado na hora de ler,
+      // porque quem apaga é uma faxina que roda fora do app.
+      expiraEm: agora.add(MessageModel.validade),
     );
+  }
+
+  /// Fixa ou desafixa uma mensagem. Só o líder — ver firestore.rules.
+  ///
+  /// Fixar apaga o prazo; desafixar devolve o prazo contado do horário
+  /// original, e não de agora: uma mensagem de dois meses atrás que sai do
+  /// topo não ganha mais 30 dias de vida.
+  static Future<({bool success, String? error})> fixarMensagem(
+    MessageModel mensagem,
+    bool fixar,
+    String porQuemId,
+  ) async {
+    try {
+      await _db.collection(_messages).doc(mensagem.id).update({
+        'fixada': fixar,
+        'fixadaPor': fixar ? porQuemId : null,
+        'expiraEm': fixar
+            ? null
+            : Timestamp.fromDate(
+                mensagem.timestamp.add(MessageModel.validade)),
+      });
+      return (success: true, error: null);
+    } on FirebaseException catch (e) {
+      return (
+        success: false,
+        error: _describe(e, fixar ? 'fixar a mensagem' : 'desafixar')
+      );
+    }
   }
 
   // ─── TYPING (presence) ──────────────────────────────────────────────────────

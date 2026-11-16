@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 177 testes
+flutter test                   # 187 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 121 testes
+cd test_regras && npm install && npm test    # 134 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -35,7 +35,7 @@ de dentro do `firebase-tools` — os dois comandos acima se contradiziam.
 O `test_regras/.npmrc` também não é enfeite: `@firebase/rules-unit-testing@3`
 pede `firebase@^10` e aqui se usa o 13. As versões novas do npm recusam
 instalar por isso, então `npm install` falhava num computador limpo, embora os
-121 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
+134 testes passem com as duas versões juntas. O `.npmrc` dá a licença; sem ele
 só com `npm install --legacy-peer-deps`.
 
 ## Estado atual
@@ -373,6 +373,42 @@ tradução.
 - A última tradução e o último capítulo ficam no aparelho
   (`LocalStorageService`), não no banco: é o marcador de quem lê, não há o
   que sincronizar, e no Firestore custaria uma leitura por abertura.
+
+### O chat some depois de 30 dias
+
+Conversa de combinação — "quem leva o cabo?", "ensaio às 19h" — não é
+arquivo. Some em 30 dias; o que for decisão, o líder fixa.
+
+- `MessageModel.venceu(agora)` é a regra, num lugar só, porque **três** coisas
+  dependem dela: a tela, que esconde; a faxina, que apaga; e a regra do
+  banco, que decide o que o líder pode mexer.
+- **A tela esconde o vencido já na próxima abertura**, sem esperar a faxina.
+  Assim a promessa vale desde o primeiro dia, e se a faxina parar o pior caso
+  é ocupar banco — não mostrar recado velho.
+- **`expiraEm` vai gravado na mensagem**, nulo quando fixada. Quem apaga roda
+  fora do app e precisa saber o prazo sem reimplementar a regra.
+- **Desafixar devolve o prazo contado do horário ORIGINAL.** Uma mensagem de
+  dois meses que sai do topo não ganha mais 30 dias de vida.
+- A regra do banco recusa fixada com prazo e não fixada sem prazo, para os
+  dois campos não se separarem.
+- **Ninguém reescreve o texto de uma mensagem**, nem o autor nem o líder. O
+  líder só alcança os três campos de fixar.
+
+**Por que a faxina é um job, e não a política de TTL do Firestore:** a
+documentação do Firebase lista "TTL deletes" entre os recursos **sem cota
+gratuita** — exige faturamento ativo, ou seja, Blaze. Este projeto fica no
+Spark. Então é `.github/workflows/faxina-chat.yml`, diário, com exclusões
+comuns (20 mil/dia na cota do Spark, muito acima do que um ministério gera).
+
+- Ela entra como **um líder comum, com e-mail e senha**, nunca com chave de
+  administrador: a chave ignora todas as regras e, se vazar, dá acesso a
+  tudo; a senha do robô se troca e acabou.
+- **Medido no emulador:** `where('expiraEm','<=',agora)` NÃO pega documento
+  com `expiraEm` nulo nem sem o campo — só o vencido. Mesmo assim o script
+  confere `fixada` antes de apagar, porque o estrago de um dia essa semântica
+  mudar seria apagar justamente o que pediram para guardar.
+- Sem os segredos configurados ela roda, diz que não está configurada e
+  termina em verde.
 
 ### Quando a tela diz "vazio"
 

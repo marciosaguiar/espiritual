@@ -1,0 +1,9 @@
+{
+  "name": "levitasync-ferramentas",
+  "private": true,
+  "type": "module",
+  "description": "Rotinas que rodam fora do app (faxina do chat).",
+  "dependencies": {
+    "firebase": "^13.3.0"
+  }
+}

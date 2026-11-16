@@ -323,8 +323,29 @@ service cloud.firestore {
         && request.resource.data.text.size() <= 2000
         && texto('userName', 60);
 
-      // Mensagem enviada não se altera nem some.
-      allow update, delete: if false;
+      // Mensagem enviada não se reescreve: o texto é o que foi dito, e
+      // ninguém reescreve o que disse ontem. O líder só alcança os três
+      // campos de fixar, e nada mais.
+      allow update: if ehLider()
+        && mudou().hasOnly(['fixada', 'fixadaPor', 'expiraEm'])
+        && request.resource.data.fixada is bool
+        && texto('fixadaPor', 128)
+        && (request.resource.data.expiraEm == null
+            || request.resource.data.expiraEm is timestamp)
+        // Fixada não vence; não fixada tem prazo. Sem isto, fixar sem tirar
+        // o prazo deixaria a mensagem no topo até a faxina a apagar.
+        && (request.resource.data.fixada
+            ? request.resource.data.expiraEm == null
+            : request.resource.data.expiraEm != null);
+
+      // A conversa some depois de 30 dias, e quem apaga é uma faxina que
+      // roda de madrugada entrando como líder. Não é exclusão de conteúdo
+      // alheio: é o combinado do chat, e a mensagem fixada fica de fora.
+      //
+      // Diferente de `songs`, onde apagar está fechado para todos: lá o
+      // repertório é património da igreja; aqui é recado de combinação, e o
+      // valor está em sumir.
+      allow delete: if ehLider();
     }
 
     // ── "Está digitando…" ───────────────────────────────────────────────────
