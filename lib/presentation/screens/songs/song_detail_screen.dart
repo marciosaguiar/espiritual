@@ -344,8 +344,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(isNowOffline
-              ? 'Música salva offline!'
-              : 'Música removida do offline'),
+              ? 'Música salva no celular. Abre sem internet.'
+              : 'Música tirada do celular'),
           backgroundColor:
               isNowOffline ? AppColors.success : AppColors.textSecondaryLight,
           duration: const Duration(seconds: 2),
@@ -452,12 +452,13 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                           else
                             widget.song.name,
                           '',
-                          'Ela sai da lista e da busca para todo mundo, com a '
-                              'cifra e as anotações.',
+                          'Ela sai da lista e da busca para todo mundo, com '
+                              'a cifra e as anotações da música.',
                           '',
-                          'Nada é apagado: os cultos em que ela já foi tocada '
-                              'continuam mostrando o nome, e você pode '
-                              'devolvê-la em Músicas → Arquivadas.',
+                          'DÁ PARA DESFAZER: nada é apagado. Os cultos em '
+                              'que ela já foi tocada continuam mostrando o '
+                              'nome, e você devolve a música em Músicas → '
+                              'Fora do repertório.',
                         ].join('\n'),
                         style: const TextStyle(
                             fontFamily: 'Poppins', fontSize: 13.5, height: 1.45),
@@ -527,7 +528,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                         Icon(Icons.archive_outlined,
                             color: AppColors.red, size: 18),
                         SizedBox(width: 8),
-                        Text('Tirar do repertório',
+                        Text('Tirar do repertório (dá para devolver)',
                             style: TextStyle(color: AppColors.red)),
                       ],
                     ),
@@ -701,7 +702,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     ),
                     // Offline
                     _ToggleChip(
-                      label: isOffline ? 'Remover offline' : 'Salvar offline',
+                      label: isOffline
+                          ? 'Tirar do celular'
+                          : 'Salvar no celular',
                       icon: isOffline
                           ? Icons.download_done_rounded
                           : Icons.download_rounded,

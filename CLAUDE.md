@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 364 testes
+flutter test                   # 400 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 248 testes
+cd test_regras && npm install && npm test    # 251 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -416,13 +416,14 @@ vez:
    gera os cultos").
 6. ~~**"3 de 7 confirmaram"**, com quem falta, e avisar o líder~~ —
    **feito** (ver "Quem já confirmou").
-7. **"Minhas próximas músicas"** no Início, com o tom do culto, a função e o
-   botão do YouTube.
-8. **Tom, se tem cifra e "tocada pela última vez em"** na hora de escolher as
-   músicas do culto.
-9. **Mensagem do chat vira observação do culto**, num toque (líder).
-10. **Um cartão de culto só no Início**; "Arquivadas" com nome que um leigo
-    entenda; deixar claro no menu o que tem volta e o que não tem.
+7. ~~**"Minhas próximas músicas"** no Início~~ — **feito** (ver "Minhas
+   próximas músicas").
+8. ~~**Tom, cifra e "tocada pela última vez"** ao escolher as músicas~~ —
+   **feito** (ver "Escolher as músicas do culto").
+9. ~~**Mensagem do chat vira observação do culto**~~ — **feito** (ver "Levar
+   um recado do chat para o culto").
+10. ~~**Limpeza de tela**~~ — **feito** (ver "Um cartão só, e as palavras
+    certas").
 
 ### Tirar música do repertório (nunca apagar)
 
@@ -1026,6 +1027,121 @@ carimbo por mensagem:
 **O que isto custou em leitura:** o chat passou a abrir duas escutas novas
 (~15 documentos cada): as leituras e a lista de pessoas — a segunda serve ao
 "visto por" e à lista de quem mencionar. São ~30 leituras por sessão, uma vez.
+
+### Minhas próximas músicas
+
+Para chegar à cifra do domingo, a pessoa saía do Início, ia na Escala, abria o
+culto, achava a música na lista e tocava nela: quatro telas para a única coisa
+que ela abre o app para fazer.
+
+- **O tom é o DAQUELE culto**, não o da música: é o primeiro dado que quem vai
+  tocar procura, e muda de culto para culto (`SongsProvider.keyOf`).
+- **A função também é a daquele culto**, e é ela que decide se a música abre em
+  cifra ou só com a letra — quem canta num domingo e toca baixo no outro
+  precisa de coisas diferentes em cada um.
+- **Não aparece para quem não está escalado.** Cartão vazio dizendo "nenhuma
+  música" ocupa o lugar de algo útil e ensina a passar o olho por cima.
+- **O botão do YouTube só aparece quando há link**: botão que não faz nada é
+  pior que botão nenhum (a mesma regra do `abrirLink`).
+- `ScaleProvider.minhasProximasMusicas` é pura e recebe `agora`, como
+  `aindaVale`: é conta de data, e conta de data quebra na virada do dia. A
+  janela é a mesma do "próximo culto" — o culto que começou há menos de duas
+  horas ainda conta, porque é quem abre o app no meio do culto.
+
+### Escolher as músicas do culto
+
+A lista de seleção era nome e "artista • tom", na ordem em que o banco
+devolvia. Montar um culto era lembrar de cabeça o que já tinha sido tocado nas
+últimas semanas e quais músicas a equipe já sabe.
+
+- **"Tocada em 12/10" — e NUNCA "nunca tocada".** A resposta sai dos cultos que
+  o app tem em memória, e a janela de leitura vai só até 60 dias atrás: a
+  ausência de registro significa "não nesse período". Uma música do ano passado
+  apareceria como nunca tocada, e o líder montaria o culto com base nisso. O
+  texto é "não tocada nos últimos 2 meses", derivado da própria janela
+  (`textoDaUltimaVez`).
+- **Culto futuro e culto cancelado não contam** em `ultimaVezTocada`: a
+  pergunta é o que já foi tocado, não o que está marcado, e ninguém tocou num
+  culto cancelado.
+- **A ordem padrão é "menos tocadas primeiro"**, porque é a pergunta que o
+  líder faz: "o que a gente não canta há um tempo?". Repetir o mesmo
+  repertório é o jeito mais comum de um ministério cansar a igreja sem
+  perceber. Música sem registro vem primeiro — é a nova e a esquecida. Duas sem
+  registro saem por nome, para a lista não dançar a cada abertura.
+- **A busca ignora acento** (`core/utils/texto.dart`): quem procura "coracao"
+  quer achar "Coração", e ninguém digita acento no celular com pressa. Vale
+  para nome e artista.
+- **"Tem cifra" custa uma leitura por música**, porque a cifra mora no arranjo
+  — e é isso que impede o app de baixar o repertório inteiro de cifras só para
+  abrir a lista. Então a pergunta é feita **uma vez por sessão e só quando o
+  líder abre este diálogo** (`SongsProvider.conferirCifras`): ~40 leituras de
+  50 mil por dia, numa tela que se abre de propósito.
+  **Um campo `temCifra` na música foi descartado** por causa dos dados que já
+  existem: música com cifra cadastrada antes do campo apareceria como "sem
+  cifra", que é o contrário do que o ícone promete. E enquanto a resposta não
+  chega, **nenhum ícone é desenhado** — ausência não pode parecer "sem cifra".
+- **A ordem do culto é preservada ao salvar**: as músicas novas entram no fim,
+  em vez de o repertório ser reordenado por causa de uma inclusão.
+
+### Levar um recado do chat para o culto
+
+O combinado nascia no chat — "domingo entra sem bateria", "a Ana leva o cabo" —
+e morria lá: em 30 dias a mensagem some, e quem abre o culto no domingo não vê
+nada. Copiar à mão era o que o líder fazia, quando lembrava.
+
+- **Segurar a bolha → "Levar para o culto"**, só para o líder: chat é conversa,
+  observação do culto é o combinado oficial que todo mundo escalado lê.
+- **O culto padrão é o próximo**, mas a escolha existe: combinação de ensaio e
+  de culto grande vêm na mesma conversa.
+- **A assinatura vai no TEXTO**, não em campos (`— Márcio, 16/11: …`).
+  Observação é combinação lida por gente; um histórico estruturado aqui seria
+  uma coleção nova para resolver o que uma linha resolve.
+- **Vai por transação**, e aqui isso importa mais que de costume: o valor novo
+  DEPENDE do que já está gravado. Ler na tela, juntar e gravar apagaria a
+  observação que outro líder escreveu nesse meio tempo — o caso de dois líderes
+  montando o mesmo culto.
+- **O teto de 5000 da regra existe também no app**
+  (`ScaleModel.limiteDasObservacoes`), para a tela avisar ANTES de tentar:
+  estourar no banco devolveria erro de permissão, que não explica nada.
+- **As observações saíram do fim da tela para o TOPO**, visíveis a todos os
+  escalados — um combinado que ninguém lê é um combinado que não existe. Para
+  quem não é líder o campo de edição **desapareceu**: ele aparecia como uma
+  caixa de texto que não aceitava texto, o que parece defeito.
+- **No Modo Culto ao vivo elas entram recolhidas**, numa linha que se abre no
+  toque: ali a música é que não pode perder espaço.
+
+### Um cartão só, e as palavras certas
+
+- **Um cartão de culto no Início.** Eram dois, com a mesma data e o mesmo
+  culto: "Meu próximo compromisso" no topo e "Próximo culto" no fim, com a tela
+  inteira entre eles. Quem estava escalado lia a mesma informação duas vezes;
+  quem não estava via um cartão vermelho sumir e outro aparecer sem entender a
+  diferença. Agora é um: escalado, ele fala com a pessoa
+  (**"Você toca domingo, 19h, no baixo"**) e traz o botão de confirmar; não
+  escalado, mostra o próximo culto do ministério. O toque abre o culto nos dois
+  casos.
+- **`UserInstrumentExtension.naFrase`** existe porque "Você toca domingo no
+  Cantor(a)" é o que sai ao colar o rótulo numa frase — e quem canta não
+  "toca": a frase inteira muda.
+- **"Arquivadas" virou "Fora do repertório"**, e a ação, "Tirar do repertório"
+  / "Devolver ao repertório". "Arquivar" é palavra de escritório.
+- **O menu diz o que tem volta:** "Cancelar culto (dá para reativar)", "Tirar
+  do repertório (dá para devolver)", e as duas confirmações explicam o que
+  NÃO se perde. Antes as duas opções vermelhas pareciam irreversíveis.
+- **As duas "observações" ganharam nomes diferentes:** "Observações do culto"
+  (daquele domingo) e "Anotações da música" (da música em qualquer culto). A
+  terceira, "Minha anotação", já era pessoal e continua.
+- **"Offline" saiu da tela.** Virou "Salvar no celular" / "Tirar do celular" /
+  "No celular", e "Sem conexão. Modo offline ativo." virou "Sem internet. O app
+  está mostrando o que já baixou." Para quem "só sabe usar WhatsApp", offline é
+  palavra de técnico — e é justamente o recurso que serve ao culto sem
+  internet.
+- **Maiúscula no meio da frase saiu** de 19 textos ("Próximo Culto", "Confirmar
+  Presença", "Tons Salvos"…): em português isso se lê como tradução mal feita.
+  "Modo Culto" ficou, porque é nome de recurso.
+- **"Adicionar Músicas" virou "Músicas do culto"** e **"Definir Levitas" virou
+  "Quem toca neste culto"**: dizem o que a tela faz, em vez de nomear a
+  operação.
 
 ### Quem já confirmou
 

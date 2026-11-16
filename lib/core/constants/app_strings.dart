@@ -5,11 +5,11 @@ class AppStrings {
 
   // Auth
   static const String login = 'Entrar';
-  static const String register = 'Criar Conta';
+  static const String register = 'Criar conta';
   static const String logout = 'Sair';
   static const String name = 'Nome';
   static const String password = 'Senha';
-  static const String confirmPassword = 'Confirmar Senha';
+  static const String confirmPassword = 'Confirmar senha';
   static const String namePlaceholder = 'Seu nome no ministério';
   /// A tela de login aceita os dois: o nome, como sempre, e o e-mail, para
   /// quem cadastrou um de verdade para poder recuperar a senha.
@@ -30,38 +30,38 @@ class AppStrings {
 
   // Home
   static const String verseOfTheDay = 'Versículo do Dia';
-  static const String nextService = 'Próximo Culto';
-  static const String quickActions = 'Acesso Rápido';
-  static const String searchSong = 'Buscar Música';
-  static const String viewScale = 'Ver Escala';
-  static const String suggestRepertoire = 'Sugerir Repertório';
-  static const String noNextService = 'Nenhum culto agendado';
+  static const String nextService = 'Próximo culto';
+  static const String quickActions = 'Acesso rápido';
+  static const String searchSong = 'Buscar música';
+  static const String viewScale = 'Ver escala';
+  static const String suggestRepertoire = 'Sugerir repertório';
+  static const String noNextService = 'Nenhum culto marcado';
 
   // Songs
   static const String allSongs = 'Todas';
   static const String favorites = 'Favoritas';
-  static const String offline = 'Offline';
+  static const String offline = 'No celular';
   static const String searchSongs = 'Buscar músicas...';
-  static const String addSong = 'Adicionar Música';
+  static const String addSong = 'Adicionar música';
   static const String noSongsFound = 'Nenhuma música encontrada';
   static const String lyrics = 'Letra';
   static const String chords = 'Cifra';
   static const String originalKey = 'Tom original';
   static const String transpose = 'Transpor';
   static const String saveKey = 'Salvar tom';
-  static const String saveOffline = 'Salvar offline';
+  static const String saveOffline = 'Salvar no celular';
   static const String openYoutube = 'Abrir no YouTube';
   static const String worshipMode = 'Modo Culto';
-  static const String showChords = 'Mostrar Cifra';
-  static const String hideChords = 'Ocultar Cifra';
+  static const String showChords = 'Mostrar cifra';
+  static const String hideChords = 'Ocultar cifra';
 
   // Scale
-  static const String addService = 'Novo Culto';
+  static const String addService = 'Novo culto';
   static const String serviceDetails = 'Detalhes do Culto';
-  static const String addMusics = 'Adicionar Músicas';
-  static const String addLevitas = 'Definir Levitas';
+  static const String addMusics = 'Músicas do culto';
+  static const String addLevitas = 'Quem toca neste culto';
   static const String observations = 'Observações';
-  static const String confirmPresence = 'Confirmar Presença';
+  static const String confirmPresence = 'Confirmar presença';
   static const String confirmed = 'Confirmado';
   static const String notConfirmed = 'Não confirmado';
   static const String noServices = 'Nenhum culto neste dia';
@@ -74,12 +74,12 @@ class AppStrings {
   static const String noMessages = 'Nenhuma mensagem ainda. Diga olá!';
 
   // Profile
-  static const String myProfile = 'Meu Perfil';
-  static const String editProfile = 'Editar Perfil';
+  static const String myProfile = 'Meu perfil';
+  static const String editProfile = 'Editar perfil';
   static const String function = 'Função';
   static const String instrument = 'Instrumento';
-  static const String savedTones = 'Tons Salvos';
-  static const String myFavorites = 'Minhas Favoritas';
+  static const String savedTones = 'Tons salvos';
+  static const String myFavorites = 'Minhas favoritas';
   static const String servicesCount = 'Cultos';
   static const String songsCount = 'Músicas';
 
@@ -109,7 +109,7 @@ class AppStrings {
   static const String errorPasswordsNotMatch = 'Senhas não coincidem';
   static const String errorInvalidCredentials = 'Nome ou senha incorretos';
   static const String errorGeneric = 'Ocorreu um erro. Tente novamente.';
-  static const String errorNoInternet = 'Sem conexão. Modo offline ativo.';
+  static const String errorNoInternet = 'Sem internet. O app está mostrando o que já baixou.';
 
   // Success
   static const String successLogin = 'Bem-vindo ao $appName!';

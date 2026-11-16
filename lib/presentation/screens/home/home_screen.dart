@@ -16,6 +16,7 @@ import '../biblia/biblia_screen.dart';
 import '../../widgets/common/glass.dart';
 import '../../widgets/common/recuperacao_por_email.dart';
 import '../../widgets/common/minhas_proximas_musicas.dart';
+import '../../../data/models/user_model.dart';
 
 class HomeScreen extends StatefulWidget {
   /// Leva para a aba Perfil. A foto no canto parecia um botão e não era:
@@ -150,10 +151,19 @@ class _HomeScreenState extends State<HomeScreen> {
                   // tela sozinho assim que a pessoa cadastra.
                   const _CartaoRecuperarSenha(),
 
-                  // Primeira coisa da tela: a pergunta que o ministério mais
-                  // faz. O modelo já sabia responder (isUserInScale,
-                  // hasUserConfirmed) e nada chamava esses métodos.
-                  _MyNextCallCard(scale: nextScale),
+                  // UM CARTÃO SÓ DE CULTO.
+                  //
+                  // Eram dois, com a mesma data e o mesmo culto: "Meu próximo
+                  // compromisso" no topo e "Próximo culto" no fim da tela,
+                  // com o Início inteiro entre eles. Quem estava escalado lia
+                  // a mesma informação duas vezes e tinha de descobrir que
+                  // eram o mesmo culto; quem não estava via um cartão vermelho
+                  // some e o outro aparecer, sem entender a diferença.
+                  //
+                  // Agora é um: se eu estou escalado, ele fala comigo e traz o
+                  // botão de confirmar; se não, mostra o próximo culto do
+                  // ministério. Nos dois casos, o toque abre o culto.
+                  _CartaoDoCulto(scale: nextScale, songs: songs),
 
                   // Logo depois do "você toca domingo": é a pergunta
                   // seguinte, e era a razão de a pessoa abrir o app. Para
@@ -168,21 +178,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   // A Bíblia fica logo abaixo do versículo do dia, que é
                   // onde a pessoa já está com a cabeça no texto.
                   const _AtalhoBiblia(),
-                  const SizedBox(height: 20),
-
-                  // Next Service Card
-                  GestureDetector(
-                    onTap: nextScale == null
-                        ? null
-                        : () => Navigator.push(
-                              context,
-                              GlassPageRoute(
-                                builder: (_) =>
-                                    ScaleDetailScreen(scale: nextScale),
-                              ),
-                            ),
-                    child: _NextServiceCard(scale: nextScale, songs: songs),
-                  ),
                   const SizedBox(height: 20),
 
                   // Suggested repertoire
@@ -432,11 +427,67 @@ class _VerseCard extends StatelessWidget {
   }
 }
 
+/// O cartão do culto no Início: um só.
+///
+/// Eram dois, com a mesma data e o mesmo culto — "Meu próximo compromisso" no
+/// topo e "Próximo culto" no fim, com a tela inteira entre eles. Quem estava
+/// escalado lia a mesma informação duas vezes; quem não estava via um cartão
+/// vermelho sumir e outro aparecer, sem entender a diferença.
+class _CartaoDoCulto extends StatelessWidget {
+  final ScaleModel? scale;
+  final SongsProvider songs;
+
+  const _CartaoDoCulto({this.scale, required this.songs});
+
+  @override
+  Widget build(BuildContext context) {
+    final eu = context.watch<AuthProvider>().user;
+    final culto = scale;
+    final euEstouEscalado =
+        culto != null && eu != null && culto.isUserInScale(eu.id);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 20),
+      child: GestureDetector(
+        onTap: culto == null
+            ? null
+            : () => Navigator.push(
+                  context,
+                  GlassPageRoute(
+                    builder: (_) => ScaleDetailScreen(scale: culto),
+                  ),
+                ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Column(
+            children: [
+              if (euEstouEscalado) _MyNextCallCard(scale: culto),
+              _NextServiceCard(
+                scale: culto,
+                songs: songs,
+                comFaixaEmCima: euEstouEscalado,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _NextServiceCard extends StatelessWidget {
   final ScaleModel? scale;
   final SongsProvider songs;
 
-  const _NextServiceCard({this.scale, required this.songs});
+  /// Há uma faixa pessoal em cima? Então este corpo não desenha canto nem
+  /// borda próprios: os dois são um cartão só.
+  final bool comFaixaEmCima;
+
+  const _NextServiceCard({
+    this.scale,
+    required this.songs,
+    this.comFaixaEmCima = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -450,10 +501,13 @@ class _NextServiceCard extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: isDark ? AppColors.cardDark : AppColors.cardLight,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
-        ),
+        borderRadius:
+            comFaixaEmCima ? BorderRadius.zero : BorderRadius.circular(20),
+        border: comFaixaEmCima
+            ? null
+            : Border.all(
+                color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+              ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -471,7 +525,10 @@ class _NextServiceCard extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Text(
-                AppStrings.nextService,
+                // Com a faixa em cima já dizendo "Você toca domingo", repetir
+                // "Próximo culto" aqui seria dizer duas vezes a mesma coisa
+                // dentro do mesmo cartão.
+                comFaixaEmCima ? 'Neste culto' : AppStrings.nextService,
                 style: TextStyle(
                   fontFamily: 'Poppins',
                   fontSize: 16,
@@ -865,12 +922,35 @@ class _MyNextCallCardState extends State<_MyNextCallCard> {
     }) ?? scale;
 
     final confirmed = live.hasUserConfirmed(user.id);
-    final quando =
-        DateFormat("EEEE', às' HH:mm", 'pt_BR').format(live.date);
+    // "domingo, 19h" — sem os minutos quando são zero, que é o caso de quase
+    // todo culto, e sem o "às", que a frase não precisa.
+    final hora = live.date.minute == 0
+        ? '${DateFormat('HH', 'pt_BR').format(live.date)}h'
+        : DateFormat('HH:mm', 'pt_BR').format(live.date);
+    final quando = '${DateFormat('EEEE', 'pt_BR').format(live.date)}, $hora';
     final faltam = _faltam(live.date);
 
+    // A FUNÇÃO ENTRA NA FRASE: "Você toca domingo, 19h, no baixo".
+    //
+    // Sem ela a pessoa lia "você toca domingo" e abria o culto só para
+    // descobrir em quê — e quem canta não "toca", então a frase inteira muda.
+    final minha = UserInstrumentExtension.fromString(
+      live.levitas
+          .firstWhere((l) => l.userId == user.id,
+              orElse: () => const ScaleLevita(
+                  userId: '', userName: '', instrument: 'other'))
+          .instrument,
+    );
+    final frase = minha == UserInstrument.vocalist
+        ? 'Você canta $quando'
+        : (minha.naFrase.isEmpty
+            ? 'Você toca $quando'
+            : 'Você toca $quando, ${minha.naFrase}');
+
+    // Sem canto arredondado e sem margem: esta faixa é o TOPO do cartão
+    // único do culto, e quem arredonda é o `ClipRRect` de fora.
     return Padding(
-      padding: const EdgeInsets.only(bottom: 20),
+      padding: EdgeInsets.zero,
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
@@ -879,7 +959,6 @@ class _MyNextCallCardState extends State<_MyNextCallCard> {
                 ? [const Color(0xFF13694F), const Color(0xFF1B8A68)]
                 : [const Color(0xFF8E0000), const Color(0xFFB3261E)],
           ),
-          borderRadius: BorderRadius.circular(16),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -896,7 +975,7 @@ class _MyNextCallCardState extends State<_MyNextCallCard> {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Você toca $quando',
+                    frase,
                     style: const TextStyle(
                       fontFamily: 'Poppins',
                       fontSize: 16,

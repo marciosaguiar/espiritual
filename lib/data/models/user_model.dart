@@ -71,6 +71,27 @@ extension UserInstrumentExtension on UserInstrument {
     }
   }
 
+  /// Como a função entra numa frase: "Você toca domingo, 19h, **no baixo**".
+  ///
+  /// Existe porque "Você toca domingo no Cantor(a)" é o que sai ao colar o
+  /// rótulo numa frase — e quem canta não "toca": a frase inteira muda.
+  String get naFrase {
+    switch (this) {
+      case UserInstrument.vocalist:
+        return 'cantando';
+      case UserInstrument.guitar:
+        return 'no violão';
+      case UserInstrument.bass:
+        return 'no baixo';
+      case UserInstrument.drums:
+        return 'na bateria';
+      case UserInstrument.keyboard:
+        return 'no teclado';
+      case UserInstrument.other:
+        return '';
+    }
+  }
+
   String get emoji {
     switch (this) {
       case UserInstrument.vocalist:

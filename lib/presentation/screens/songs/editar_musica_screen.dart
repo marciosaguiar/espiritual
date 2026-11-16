@@ -161,8 +161,12 @@ class _EditarMusicaScreenState extends State<EditarMusicaScreen> {
               ),
             ),
             const SizedBox(height: 16),
+            // "Anotações da música", e não "Observações": o CULTO tem as
+            // "Observações do culto", e as duas apareciam com o mesmo nome em
+            // telas diferentes — uma é da música em qualquer culto, a outra é
+            // daquele domingo.
             AppTextField(
-              label: 'Observações (opcional)',
+              label: 'Anotações da música (opcional)',
               hint: 'Ex: entra sem bateria; repete o refrão três vezes',
               controller: _observacoes,
               maxLines: 4,

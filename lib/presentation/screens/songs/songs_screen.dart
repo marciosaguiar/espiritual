@@ -141,7 +141,10 @@ class _SongsScreenState extends State<SongsScreen>
                     if (context.watch<AuthProvider>().isAdmin) ...[
                       const SizedBox(width: 8),
                       _FilterChip(
-                        label: 'Arquivadas',
+                        // "Arquivadas" é palavra de escritório. A lista é
+                        // das músicas que saíram do repertório, e é isso que
+                        // o nome diz agora.
+                        label: 'Fora do repertório',
                         isSelected:
                             songsProvider.filter == SongsFilter.arquivadas,
                         onTap: () =>
@@ -229,14 +232,14 @@ class _ListaVazia extends StatelessWidget {
       detalhe = 'Toque no coração de uma música para ela aparecer aqui.';
     } else if (songs.filter == SongsFilter.arquivadas) {
       icone = Icons.archive_outlined;
-      titulo = 'Nenhuma música arquivada';
+      titulo = 'Nenhuma música fora do repertório';
       detalhe = 'As músicas que você tirar do repertório ficam guardadas '
           'aqui, e podem voltar quando quiser.';
     } else if (songs.filter == SongsFilter.offline) {
       icone = Icons.cloud_off_rounded;
-      titulo = 'Nenhuma música salva no aparelho';
-      detalhe = 'Abra uma música e toque em "Salvar offline" para poder '
-          'tocá-la sem internet.';
+      titulo = 'Nenhuma música salva no celular';
+      detalhe = 'Abra uma música e toque em "Salvar no celular" para poder '
+          'abri-la sem internet, no meio do culto.';
     } else {
       icone = Icons.music_off_rounded;
       titulo = 'O repertório está vazio';
@@ -338,7 +341,7 @@ class _BotaoDevolverState extends State<_BotaoDevolver> {
         visualDensity: VisualDensity.compact,
         textStyle: const TextStyle(fontFamily: 'Poppins', fontSize: 12.5),
       ),
-      child: const Text('Devolver'),
+      child: const Text('Devolver ao repertório'),
     );
   }
 }

@@ -114,7 +114,9 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
           content: const Text(
             'Ele deixa de aparecer como próximo culto e ninguém é cobrado '
             'para confirmar presença. A agenda fixa continua igual: só este '
-            'dia é cancelado.',
+            'dia é cancelado.\n\nDÁ PARA DESFAZER: o culto não é apagado, e '
+            '"Reativar culto" no mesmo menu traz tudo de volta, inclusive '
+            'quem já tinha confirmado.',
             style: TextStyle(fontFamily: 'Poppins', fontSize: 13, height: 1.5),
           ),
           actions: [
@@ -456,8 +458,13 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                             : AppColors.red,
                       ),
                       const SizedBox(width: 8),
+                      // O menu DIZ que dá para voltar. Antes, as duas opções
+                      // vermelhas pareciam irreversíveis, e cancelar um culto
+                      // por engano assustava quem não sabia que havia volta.
                       Text(
-                        _scale.canceled ? 'Reativar culto' : 'Cancelar culto',
+                        _scale.canceled
+                            ? 'Reativar culto'
+                            : 'Cancelar culto (dá para reativar)',
                         style: TextStyle(
                           color: _scale.canceled
                               ? AppColors.success
