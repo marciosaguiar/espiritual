@@ -5,6 +5,7 @@ import '../../providers/songs_provider.dart';
 import '../../widgets/common/app_button.dart';
 import '../../widgets/common/app_text_field.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/constants/hinarios.dart';
 import '../../../data/models/song_model.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../../core/utils/chord_transposer.dart';
@@ -12,7 +13,16 @@ import '../../../core/utils/cifra_colada.dart';
 import '../../widgets/songs/colar_cifra.dart';
 
 class AddSongScreen extends StatefulWidget {
-  const AddSongScreen({super.key});
+  /// Quando o cadastro começou pelo teclado numérico de hinos, o hinário e o
+  /// número vêm preenchidos daqui.
+  ///
+  /// Nulos significam "música comum", que é o caminho de sempre. O hino não
+  /// é um tipo diferente de música: é a mesma música com dois campos a mais,
+  /// e foi isso que deixou o hinário caber sem uma tela de cadastro própria.
+  final Hinario? hinario;
+  final int? numero;
+
+  const AddSongScreen({super.key, this.hinario, this.numero});
 
   @override
   State<AddSongScreen> createState() => _AddSongScreenState();
@@ -27,6 +37,17 @@ class _AddSongScreenState extends State<AddSongScreen> {
   final _youtubeCtrl = TextEditingController();
   String _selectedKey = 'C';
   bool _isSaving = false;
+
+  /// É cadastro de hino com número? Exige os DOIS, como o modelo exige.
+  bool get _ehHino => widget.hinario != null && widget.numero != null;
+
+  @override
+  void initState() {
+    super.initState();
+    // O artista de um hino é o hinário. Preenchido, e não fixo, porque o
+    // líder pode querer pôr o autor de verdade do hino no lugar.
+    if (_ehHino) _artistCtrl.text = widget.hinario!.nome;
+  }
 
   @override
   void dispose() {
@@ -48,13 +69,22 @@ class _AddSongScreenState extends State<AddSongScreen> {
     // vira o arranjo da igreja. Sem acordes, o texto entra só como letra.
     final colado = CifraColada.analisar(_cifraCtrl.text);
     final link = _youtubeCtrl.text.trim();
+    // A sigla e o número entram NO TÍTULO ("HC 15 · Sou Grato"), gerados num
+    // lugar só. É isso que faz o hino se reconhecer na escala, no chat e no
+    // lembrete da véspera sem que nenhuma dessas telas saiba o que é um
+    // hinário. Quem ACHA o hino pelo número usa os campos, nunca o título.
+    final nome = _ehHino
+        ? widget.hinario!.tituloDe(widget.numero!, _nameCtrl.text)
+        : _nameCtrl.text.trim();
     final song = FirestoreService.createSongModel(
-      name: _nameCtrl.text.trim(),
+      name: nome,
       artist: _artistCtrl.text.trim(),
       lyrics: colado.letra,
       originalKey: _selectedKey,
       links: link.isEmpty ? const [] : [SongLink(url: link)],
       addedBy: auth.user?.id,
+      hinario: _ehHino ? widget.hinario!.id : '',
+      numero: _ehHino ? widget.numero : null,
     );
 
     var error = await songs.addSong(song);
@@ -96,7 +126,9 @@ class _AddSongScreenState extends State<AddSongScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Nova Música'),
+        title: Text(_ehHino
+            ? 'Hino ${widget.numero} · ${widget.hinario!.sigla}'
+            : 'Nova Música'),
       ),
       body: Form(
         key: _formKey,
@@ -105,9 +137,17 @@ class _AddSongScreenState extends State<AddSongScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              if (_ehHino) ...[
+                _FichaDoHino(
+                  hinario: widget.hinario!,
+                  numero: widget.numero!,
+                  isDark: isDark,
+                ),
+                const SizedBox(height: 16),
+              ],
               AppTextField(
-                label: 'Nome da Música',
-                hint: 'Ex: Digno és',
+                label: _ehHino ? 'Nome do hino' : 'Nome da Música',
+                hint: _ehHino ? 'Ex: Sou grato por seu amor' : 'Ex: Digno és',
                 controller: _nameCtrl,
                 textInputAction: TextInputAction.next,
                 validator: (v) {
@@ -223,6 +263,62 @@ class _AddSongScreenState extends State<AddSongScreen> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// A ficha do hino no alto do cadastro: diz de qual hinário e qual número é.
+///
+/// Não é editável de propósito. Quem chegou aqui pelo teclado numérico já
+/// disse o número; oferecer o campo de novo só criaria a chance de cadastrar
+/// o 15 como 150 e nunca mais achá-lo.
+class _FichaDoHino extends StatelessWidget {
+  final Hinario hinario;
+  final int numero;
+  final bool isDark;
+
+  const _FichaDoHino({
+    required this.hinario,
+    required this.numero,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.blue.withOpacity(isDark ? 0.18 : 0.08),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          Text(
+            '${hinario.sigla} $numero',
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 20,
+              fontWeight: FontWeight.w700,
+              color: AppColors.blue,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Hino $numero da ${hinario.nome}. Cole a cifra do hinário da '
+              'igreja abaixo.',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 12.5,
+                height: 1.4,
+                color: isDark
+                    ? AppColors.textSecondaryDark
+                    : AppColors.textSecondaryLight,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

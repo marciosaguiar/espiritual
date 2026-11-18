@@ -125,6 +125,8 @@ class FirestoreService {
     required String originalKey,
     List<SongLink> links = const [],
     String? addedBy,
+    String hinario = '',
+    int? numero,
   }) {
     return SongModel(
       id: CryptoUtils.generateId(),
@@ -135,6 +137,8 @@ class FirestoreService {
       links: links,
       addedBy: addedBy,
       createdAt: DateTime.now(),
+      hinario: hinario,
+      numero: numero,
     );
   }
 

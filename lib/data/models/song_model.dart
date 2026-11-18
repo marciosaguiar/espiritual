@@ -68,6 +68,20 @@ class SongModel {
   final DateTime createdAt;
   final String? addedBy;
 
+  /// De qual hinário impresso este hino é: `harpa`, `cantor`. Vazio na música
+  /// que não é hino, que é a maioria.
+  ///
+  /// Guardar o id, e não o nome, é o que permite trocar "Harpa Cristã" por
+  /// outro rótulo na tela sem reescrever o repertório. Ver
+  /// `core/constants/hinarios.dart`.
+  final String hinario;
+
+  /// O número do hino naquele hinário. Nulo na música que não é hino.
+  ///
+  /// Nulo e não zero: zero é um número, e um dia alguém o leria como "hino
+  /// zero". Ausência tem de parecer ausência.
+  final int? numero;
+
   /// Tirada do repertório, mas NÃO apagada.
   ///
   /// Mesma decisão que já valia para os cultos — "cancelar é um campo, nunca
@@ -91,6 +105,8 @@ class SongModel {
     this.isOfflineAvailable = false,
     required this.createdAt,
     this.addedBy,
+    this.hinario = '',
+    this.numero,
     this.archived = false,
     this.archivedAt,
     this.archivedBy,
@@ -113,6 +129,14 @@ class SongModel {
           : [SongLink(url: limpo, label: 'YouTube'), ...outros],
     );
   }
+
+  /// É um hino de hinário impresso?
+  ///
+  /// Exige os DOIS campos. Um sem o outro é documento pela metade — hinário
+  /// sem número não dá para abrir, número sem hinário não dá para saber de
+  /// onde é —, e nos dois casos é melhor tratar como música comum que como
+  /// hino quebrado.
+  bool get ehHino => hinario.isNotEmpty && numero != null;
 
   /// First video link, for the "watch" button.
   String? get videoUrl {
@@ -137,6 +161,8 @@ class SongModel {
     DateTime? archivedAt,
     String? archivedBy,
     bool limparArquivamento = false,
+    String? hinario,
+    int? numero,
   }) {
     return SongModel(
       id: id ?? this.id,
@@ -154,6 +180,8 @@ class SongModel {
       // repertório precisa exatamente disso.
       archivedAt: limparArquivamento ? null : (archivedAt ?? this.archivedAt),
       archivedBy: limparArquivamento ? null : (archivedBy ?? this.archivedBy),
+      hinario: hinario ?? this.hinario,
+      numero: numero ?? this.numero,
     );
   }
 
@@ -172,6 +200,8 @@ class SongModel {
       'archived': archived,
       'archivedAt': archivedAt == null ? null : Timestamp.fromDate(archivedAt!),
       'archivedBy': archivedBy,
+      'hinario': hinario,
+      'numero': numero,
     };
   }
 
@@ -192,6 +222,8 @@ class SongModel {
       archived: data['archived'] as bool? ?? false,
       archivedAt: (data['archivedAt'] as Timestamp?)?.toDate(),
       archivedBy: data['archivedBy'] as String?,
+      hinario: data['hinario'] as String? ?? '',
+      numero: _numeroDe(data['numero']),
     );
   }
 
@@ -211,6 +243,8 @@ class SongModel {
       // Timestamp não vira JSON — ver CLAUDE.md.
       'archivedAt': archivedAt?.toIso8601String(),
       'archivedBy': archivedBy,
+      'hinario': hinario,
+      'numero': numero,
     };
   }
 
@@ -230,7 +264,22 @@ class SongModel {
       archived: data['archived'] as bool? ?? false,
       archivedAt: DateTime.tryParse(data['archivedAt'] as String? ?? ''),
       archivedBy: data['archivedBy'] as String?,
+      hinario: data['hinario'] as String? ?? '',
+      numero: _numeroDe(data['numero']),
     );
+  }
+
+  /// O número do hino, vindo do banco ou do aparelho.
+  ///
+  /// O Firestore devolve inteiro, mas o mesmo campo sai como `num` no JSON
+  /// guardado no celular — e um documento mexido no console pode trazer
+  /// texto. Qualquer coisa que não seja um número inteiro de verdade vira
+  /// nulo, que o resto do app já sabe tratar como "não é hino".
+  static int? _numeroDe(Object? bruto) {
+    if (bruto is int) return bruto;
+    if (bruto is num) return bruto.toInt();
+    if (bruto is String) return int.tryParse(bruto.trim());
+    return null;
   }
 
   /// Reads the link list, accepting the single `youtubeUrl` field that songs

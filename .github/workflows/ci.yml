@@ -83,6 +83,11 @@ jobs:
         # BASE é o tamanho do `main.dart.js` antes da Bíblia, e vale para a
         # versão fixada acima — trocar de versão exige medir de novo. A folga
         # de 100 KB é o que a tela da Bíblia em si pode custar.
+        #
+        # Onde a folga está hoje: em 18/11/2026, com o Flutter 3.50.0 e estas
+        # flags, o `main.dart.js` mediu 3.668.988 bytes — 43 KB abaixo do
+        # limite. Quem for gastar mais que isso de uma vez precisa medir
+        # antes, com ESTA versão, não no navegador nem em outro contêiner.
         run: |
           flutter build web --release --base-href "/espiritual/" \
             --pwa-strategy=none --no-web-resources-cdn

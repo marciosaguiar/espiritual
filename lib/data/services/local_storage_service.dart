@@ -171,6 +171,59 @@ class LocalStorageService {
 
   static double get fonteBiblia => prefs.getDouble(_bibliaFonteKey) ?? 17;
 
+  // ─── Hinos pelo número ────────────────────────────────────────────────────
+
+  static const String _hinarioKey = 'hinario_escolhido';
+  static const String _hinosAbertosKey = 'hinos_abertos';
+  static const int _maxHinosAbertos = 8;
+
+  /// O hinário que esta pessoa usa neste aparelho.
+  ///
+  /// Uma igreja canta de um hinário quase sempre; fazer a pessoa escolher
+  /// "Harpa" toda vez que abre a tela seria um toque a mais no meio do culto,
+  /// que é exatamente onde ela não tem tempo.
+  static Future<void> salvarHinario(String id) async {
+    await prefs.setString(_hinarioKey, id);
+  }
+
+  static String? get ultimoHinario {
+    final v = prefs.getString(_hinarioKey);
+    return (v == null || v.isEmpty) ? null : v;
+  }
+
+  /// Guarda que este hino foi aberto, do mais recente para o mais antigo.
+  ///
+  /// Fica no aparelho, como o marcador da Bíblia: é o histórico de quem está
+  /// com o celular na mão, não há o que sincronizar, e no Firestore custaria
+  /// uma escrita por hino aberto.
+  static Future<void> salvarHinoAberto(String hinario, int numero) async {
+    final chave = '\$hinario|\$numero';
+    final lista = prefs.getStringList(_hinosAbertosKey) ?? <String>[];
+    // Tira antes de pôr na frente: abrir o mesmo hino duas vezes não pode
+    // encher a lista de repetições e empurrar os outros para fora.
+    lista.remove(chave);
+    lista.insert(0, chave);
+    await prefs.setStringList(
+        _hinosAbertosKey, lista.take(_maxHinosAbertos).toList());
+  }
+
+  /// Os últimos hinos abertos neste aparelho.
+  ///
+  /// Entrada torta é descartada em silêncio, não derruba a tela: é leitura
+  /// com valor padrão seguro, e o pior caso é a lista vir mais curta.
+  static List<({String hinario, int numero})> get hinosAbertos {
+    final lista = prefs.getStringList(_hinosAbertosKey) ?? const <String>[];
+    final saida = <({String hinario, int numero})>[];
+    for (final bruto in lista) {
+      final p = bruto.split('|');
+      if (p.length != 2 || p[0].isEmpty) continue;
+      final n = int.tryParse(p[1]);
+      if (n == null) continue;
+      saida.add((hinario: p[0], numero: n));
+    }
+    return saida;
+  }
+
   static bool isSongOffline(String songId) =>
       _offlineCache.containsKey(songId);
 

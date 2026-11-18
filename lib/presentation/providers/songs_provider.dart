@@ -5,6 +5,7 @@ import '../../data/models/scale_model.dart';
 import '../../data/models/song_model.dart';
 import '../../data/services/firestore_service.dart';
 import '../../data/services/local_storage_service.dart';
+import '../../core/utils/texto.dart';
 
 enum SongsFilter { all, favorites, offline, arquivadas }
 
@@ -248,6 +249,61 @@ class SongsProvider extends ChangeNotifier {
       _conferindo = null;
     }
   }
+
+  // ─── Hino pelo número ─────────────────────────────────────────────────────
+  //
+  // O caso principal do hinário: o dirigente anuncia "hino 15 da Harpa" e
+  // quem vai tocar precisa chegar à cifra em segundos, sem procurar pelo
+  // nome. As duas primeiras funções são PURAS e recebem a lista, como
+  // `ScaleProvider.aindaVale` recebe `agora`: é conta sobre dados, e conta
+  // sobre dados tem de dar para testar sem Flutter em volta.
+
+  /// O hino com este número nesta lista, ou nulo.
+  ///
+  /// Procura pelos CAMPOS `hinario` e `numero`, nunca pelo texto do título.
+  /// O título traz a sigla ("HC 15 · …") para quem lê a tela; se a busca
+  /// dependesse dele, um líder corrigindo o nome quebraria o teclado numérico
+  /// sem ter como saber por quê.
+  static SongModel? acharHino(
+      List<SongModel> musicas, String hinario, int numero) {
+    for (final m in musicas) {
+      if (m.hinario == hinario && m.numero == numero) return m;
+    }
+    return null;
+  }
+
+  /// Os hinos daquele hinário que combinam com a busca, em ordem de número.
+  ///
+  /// A busca ignora acento e alcança o número, o nome, o artista e a LETRA —
+  /// é o "lembro do trecho mas não do número", que é como a maioria das
+  /// pessoas procura hino.
+  static List<SongModel> hinosFiltrados(
+      List<SongModel> musicas, String hinario, String busca) {
+    final achados = musicas
+        .where((m) => m.hinario == hinario && m.numero != null)
+        .where((m) =>
+            combina(busca, [m.name, m.artist, m.lyrics, '${m.numero}']))
+        .toList();
+    achados.sort((a, b) => a.numero!.compareTo(b.numero!));
+    return achados;
+  }
+
+  /// O hino do repertório de hoje, ou nulo.
+  SongModel? hinoPorNumero(String hinario, int numero) =>
+      acharHino(repertorio, hinario, numero);
+
+  /// O hino mesmo que esteja FORA do repertório.
+  ///
+  /// Existe para a tela poder dizer "está fora do repertório" em vez de
+  /// "ainda não está cadastrado". São coisas diferentes, e confundi-las faria
+  /// o líder cadastrar de novo um hino que já existe — criando duplicata e
+  /// perdendo a cifra que alguém já tinha colado.
+  SongModel? hinoCadastrado(String hinario, int numero) =>
+      acharHino(allSongs, hinario, numero);
+
+  /// Os hinos daquele hinário no repertório de hoje.
+  List<SongModel> hinosDe(String hinario, {String busca = ''}) =>
+      hinosFiltrados(repertorio, hinario, busca);
 
   SongModel? getSongById(String id) {
     try {

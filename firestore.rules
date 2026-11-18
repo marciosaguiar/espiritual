@@ -270,7 +270,41 @@ service cloud.firestore {
           && texto('lyrics', 20000)
           && texto('originalKey', 10)
           && texto('observacoes', 2000)
-          && arquivamentoValido();
+          && arquivamentoValido()
+          && _hinoValido();
+      }
+
+      // ── Hino de hinário impresso ──────────────────────────────────────────
+      //
+      // `hinario` + `numero` são o que faz "o hino 15" abrir em segundos, pelo
+      // teclado numérico. A regra existe por dois motivos.
+      //
+      // Primeiro: os dois campos ANDAM JUNTOS. Hinário sem número não dá para
+      // abrir; número sem hinário não dá para saber de onde é. Documento pela
+      // metade é o jeito mais silencioso de o teclado parar de achar o hino,
+      // sem nada na tela explicando.
+      //
+      // Segundo: a lista de hinários é FECHADA. Um id escrito errado no
+      // console viraria um hino que nenhuma tela do app oferece — e, como em
+      // `funcaoValida()`, nome desconhecido tem de significar MENOS, nunca o
+      // comportamento normal.
+      //
+      // O teto do número aqui é LARGO de propósito (9999). O teto de verdade
+      // é 640 na Harpa e 581 no Cantor, e ele mora no app
+      // (`Hinario.ultimo`), onde se troca sem deploy de regra. Repetir o
+      // número exato aqui criaria a mesma armadilha da trava de tamanho que
+      // reprovou todo deploy por dias: um número que pode mudar, guardado no
+      // lugar mais difícil de mudar. A regra impede lixo; quem diz "não
+      // existe o hino 700" é a tela.
+      function _hinoValido() {
+        let d = request.resource.data;
+        let temHinario = 'hinario' in d && d.hinario != null && d.hinario != '';
+        let temNumero = 'numero' in d && d.numero != null;
+        return temHinario == temNumero
+          && (!temHinario
+              || (d.hinario is string && d.hinario in ['harpa', 'cantor']))
+          && (!temNumero
+              || (d.numero is int && d.numero >= 1 && d.numero <= 9999));
       }
 
       // NINGUÉM apaga música pelo app, nem o líder.

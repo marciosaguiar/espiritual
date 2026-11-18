@@ -239,6 +239,138 @@ await teste('carimbo de arquivamento com tipo errado é recusado', () =>
   assertFails(updateDoc(doc(lider(), 'songs', 's-lider'),
     { archived: true, archivedAt: 'ontem', archivedBy: LIDER })));
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Hino de hinário impresso: `hinario` + `numero`
+//
+// É o que faz "o hino 15" abrir pelo teclado numérico. A regra guarda duas
+// coisas que erram em silêncio: os dois campos andarem SEMPRE juntos, e a
+// lista de hinários ser fechada. Documento pela metade, ou com um id de
+// hinário que o app não conhece, não dá erro nenhum — o hino simplesmente
+// não aparece quando alguém digita o número, no meio do culto.
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log('\n── hino pelo número ──');
+
+// O documento EXATO que o app grava ao cadastrar um hino (createSongModel com
+// hinario e numero). Sem este teste, uma validação nova recusaria o cadastro e
+// só se descobriria na tentativa de um líder no domingo.
+await teste('o líder cadastra o hino como o app o grava', () =>
+  assertSucceeds(setDoc(doc(lider(), 'songs', 'hc-15'),
+    { id: 'hc-15', name: 'HC 15 · Sou Grato', artist: 'Harpa Cristã',
+      lyrics: 'Sou grato', originalKey: 'G', links: [],
+      observacoes: '', isOfflineAvailable: false, createdAt: new Date(),
+      addedBy: LIDER, archived: false, archivedAt: null, archivedBy: null,
+      hinario: 'harpa', numero: 15 })));
+
+await teste('cadastra hino do Cantor Cristão', () =>
+  assertSucceeds(setDoc(doc(lider(), 'songs', 'cc-125'),
+    { id: 'cc-125', name: 'CC 125 · Firme nas Promessas',
+      artist: 'Cantor Cristão', lyrics: '', originalKey: 'C', links: [],
+      createdAt: new Date(), addedBy: LIDER, hinario: 'cantor',
+      numero: 125 })));
+
+await teste('música comum, sem nenhum dos dois campos, continua valendo', () =>
+  assertSucceeds(setDoc(doc(lider(), 'songs', 'comum-1'),
+    { id: 'comum-1', name: 'Digno És', artist: 'Hillsong', lyrics: '',
+      originalKey: 'C', links: [], createdAt: new Date(), addedBy: LIDER })));
+
+// ── os dois campos andam juntos ──
+await teste('hinário SEM número é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'songs', 'meio-1'),
+    { id: 'meio-1', name: 'Hino', artist: '', lyrics: '', originalKey: 'C',
+      links: [], createdAt: new Date(), addedBy: LIDER,
+      hinario: 'harpa' })));
+
+await teste('número SEM hinário é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'songs', 'meio-2'),
+    { id: 'meio-2', name: 'Hino', artist: '', lyrics: '', originalKey: 'C',
+      links: [], createdAt: new Date(), addedBy: LIDER, numero: 15 })));
+
+await teste('hinário vazio com número é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'songs', 'meio-3'),
+    { id: 'meio-3', name: 'Hino', artist: '', lyrics: '', originalKey: 'C',
+      links: [], createdAt: new Date(), addedBy: LIDER, hinario: '',
+      numero: 15 })));
+
+// Nulo nos DOIS é o que o app grava para música comum, e tem de passar: é
+// `null is string` sendo falso outra vez — a armadilha que já recusou criar
+// conta, editar perfil e promover membro neste projeto.
+await teste('hinario e numero nulos passam (é a música comum do app)', () =>
+  assertSucceeds(setDoc(doc(lider(), 'songs', 'comum-2'),
+    { id: 'comum-2', name: 'Digno És', artist: '', lyrics: '',
+      originalKey: 'C', links: [], createdAt: new Date(), addedBy: LIDER,
+      hinario: '', numero: null })));
+
+// ── a lista de hinários é fechada ──
+await teste('hinário que o app não conhece é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'songs', 'ruim-1'),
+    { id: 'ruim-1', name: 'Hino', artist: '', lyrics: '', originalKey: 'C',
+      links: [], createdAt: new Date(), addedBy: LIDER,
+      hinario: 'hinario-que-nao-existe', numero: 15 })));
+
+await teste('o id do hinário é sensível a maiúscula', () =>
+  assertFails(setDoc(doc(lider(), 'songs', 'ruim-2'),
+    { id: 'ruim-2', name: 'Hino', artist: '', lyrics: '', originalKey: 'C',
+      links: [], createdAt: new Date(), addedBy: LIDER,
+      hinario: 'Harpa', numero: 15 })));
+
+// ── o número é inteiro, e numa faixa de gente ──
+await teste('número zero é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'songs', 'ruim-3'),
+    { id: 'ruim-3', name: 'Hino', artist: '', lyrics: '', originalKey: 'C',
+      links: [], createdAt: new Date(), addedBy: LIDER, hinario: 'harpa',
+      numero: 0 })));
+
+await teste('número negativo é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'songs', 'ruim-4'),
+    { id: 'ruim-4', name: 'Hino', artist: '', lyrics: '', originalKey: 'C',
+      links: [], createdAt: new Date(), addedBy: LIDER, hinario: 'harpa',
+      numero: -15 })));
+
+await teste('número absurdo é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'songs', 'ruim-5'),
+    { id: 'ruim-5', name: 'Hino', artist: '', lyrics: '', originalKey: 'C',
+      links: [], createdAt: new Date(), addedBy: LIDER, hinario: 'harpa',
+      numero: 10000 })));
+
+await teste('número como TEXTO é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'songs', 'ruim-6'),
+    { id: 'ruim-6', name: 'Hino', artist: '', lyrics: '', originalKey: 'C',
+      links: [], createdAt: new Date(), addedBy: LIDER, hinario: 'harpa',
+      numero: '15' })));
+
+// ── mexer no número é do líder ──
+//
+// `hinario` e `numero` ficam FORA da lista fechada de quem cadastrou a
+// música. Trocar o número de um hino é decisão de repertório: feito de
+// carona, criaria dois hinos com o mesmo número e o teclado abriria qualquer
+// um dos dois.
+await teste('o líder corrige o número do hino', () =>
+  assertSucceeds(updateDoc(doc(lider(), 'songs', 'hc-15'), { numero: 16 })));
+
+await env.withSecurityRulesDisabled(async (ctx) =>
+  setDoc(doc(ctx.firestore(), 'songs', 'hc-do-levita'), {
+    id: 'hc-do-levita', name: 'HC 20 · Hino', artist: 'Harpa Cristã',
+    lyrics: '', originalKey: 'C', links: [], observacoes: '',
+    createdAt: new Date(), addedBy: LEVITA, archived: false,
+    hinario: 'harpa', numero: 20,
+  }));
+
+await teste('quem cadastrou NÃO troca o número de carona', () =>
+  assertFails(updateDoc(doc(levita(), 'songs', 'hc-do-levita'),
+    { numero: 21 })));
+
+await teste('quem cadastrou NÃO troca o hinário de carona', () =>
+  assertFails(updateDoc(doc(levita(), 'songs', 'hc-do-levita'),
+    { hinario: 'cantor' })));
+
+// Gravar o MESMO valor não conta como mudança para `affectedKeys()` — já
+// custou um teste que passava sozinho neste projeto. Então o valor aqui é
+// diferente do que está gravado, e a correção do nome continua permitida.
+await teste('quem cadastrou ainda corrige o nome do hino', () =>
+  assertSucceeds(updateDoc(doc(levita(), 'songs', 'hc-do-levita'),
+    { name: 'HC 20 · Nome Certo' })));
+
 console.log('\n── apagar música não existe mais ──');
 
 await teste('NEM O LÍDER apaga música', () =>

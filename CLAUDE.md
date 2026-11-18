@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 400 testes
+flutter test                   # 428 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 251 testes
+cd test_regras && npm install && npm test    # 268 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -566,6 +566,109 @@ tradução.
 - A última tradução e o último capítulo ficam no aparelho
   (`LocalStorageService`), não no banco: é o marcador de quem lê, não há o
   que sincronizar, e no Firestore custaria uma leitura por abertura.
+
+### Hino pelo número (Harpa Cristã e Cantor Cristão)
+
+Na igreja o dirigente anuncia "hino 15 da Harpa" sem avisar antes. Antes
+disto, quem ia tocar saía do culto, ia em Músicas, tentava lembrar o nome do
+hino e procurava — com a igreja já de pé. Agora: Início → "Hino pelo número",
+ou o ícone de teclado na aba Músicas, digitar 15.
+
+**O TEXTO DOS HINOS NÃO ESTÁ NO APP, e isso é decisão de licença.** Vale a
+regra deste projeto — nada protegido por direito autoral embarcado:
+
+- **Harpa Cristã: não dá, e não é dúvida.** A CPAD é dona do hinário desde
+  1941 e diz, no texto do app dela mesma (© 2017 CPAD), que "tem publicado,
+  **revisado, ampliado** e divulgado a Harpa Cristã". **246 dos 640 hinos** são
+  tradução ou adaptação de Paulo Leivas Macalão, morto em **26/08/1982** —
+  protegida até **31/12/2052** pelo art. 41 da Lei 9.610/98. E o art. 14 fecha
+  o argumento do "hino antigo é livre": *"É titular de direitos de autor quem
+  adapta, traduz, arranja ou orquestra obra caída no domínio público"*. Ainda:
+  a numeração atual (os 524 antigos + 116 acrescentados nos anos 1990) é a
+  seleção e organização da CPAD, protegida por si (art. 7º, XIII), e houve
+  condenação no TJ-RJ por reprodução não autorizada da obra.
+- **Cantor Cristão: mais perto, mas ainda não.** Os dois maiores tradutores
+  estão em domínio público — **Salomão Ginsburg (1867–1927)**, 104 hinos, e
+  **William Edwin Entzminger (1859–1930)**, 72 hinos — e a numeração está
+  estável em 578 desde a 18ª edição (1924), indo a 580 em 1964 e 581 em 1971.
+  O que falta são **duas coisas concretas**: (1) não existe digitalização de
+  uma edição anterior a 1955 em lugar nenhum que eu tenha achado — a única
+  transcrição é a do Wikisource, que declara como fonte a **37ª edição, 2007,
+  da JUERP/Geo-Gráfica**, está marcada "Verificação pendente, 0%" e não tem
+  selo de domínio público (o rodapé CC BY-SA é a licença do site para as
+  contribuições, não um parecer sobre o hinário); (2) não existe lista de
+  tradutor por hino em forma usável — o índice do hymnary.org (CC1971) só traz
+  tradutor na página de cada hino, uma por uma, e o próprio site marca o
+  hinário como *"has not been proofed"*. Os nomes conhecidos cobrem 228 dos
+  581; o resto é "diversos".
+  **O que destravaria:** uma cópia ou scan da 18ª (1924) ou da 30ª (1956) —
+  Biblioteca Nacional Digital, acervo de seminário batista, Convenção Batista
+  Brasileira. Com ela, o compilador (Ginsburg, †1927) está em domínio público
+  e a numeração bate com a de hoje nos hinos 1 a 578.
+
+Então o app sabe **numerar e achar** hinos; o texto de cada um entra pelo
+cadastro do ministério, do hinário que a igreja comprou, com o "Colar cifra"
+que já existia. "Ainda não está no repertório" é um estado NORMAL da tela, com
+caminho para resolver — não um erro.
+
+**Como foi feito:**
+
+- **`hinario` + `numero` na música, não `numeroHarpa`.** Um campo com o nome
+  de um hinário resolveria a Harpa e deixaria o Cantor de fora, e um hinário
+  novo obrigaria a mexer em modelo, regra e tela. Agora é uma linha em
+  `core/constants/hinarios.dart`.
+- **Os dois campos andam SEMPRE juntos**, no modelo (`SongModel.ehHino`) e na
+  regra. Hinário sem número não dá para abrir; número sem hinário não dá para
+  saber de onde é — e documento pela metade é o jeito mais silencioso de o
+  teclado parar de achar o hino, sem nada na tela.
+- **A sigla vai gravada no TÍTULO** ("HC 15 · Sou Grato", `Hinario.tituloDe`),
+  e é o contrário da regra da escala, que guarda referência e nunca cópia. De
+  propósito: assim o hino se reconhece na escala, no chat e no lembrete da
+  véspera sem que nenhuma dessas telas saiba o que é um hinário. **Mas quem
+  ACHA o hino pelo número usa os CAMPOS, nunca o título** — se dependesse do
+  texto, um líder corrigindo o nome quebraria o teclado sem ter como saber
+  por quê.
+- **O teto do número é generoso de propósito.** A Harpa "Revisada e Ampliada"
+  tem 640, mas há edição sem os quatro hinos pátrios, com 636. Errar para
+  MAIS é inofensivo: um número que a igreja não tenha cai em "ainda não está
+  no repertório", que é verdade. Errar para MENOS diria "não existe" sobre um
+  hino que existe — mentira no meio do culto.
+- **O teto na REGRA é largo (1 a 9999), e isso é a lição da trava de
+  tamanho.** O teto de verdade (640 e 581) mora no app, onde se troca sem
+  deploy de regra. Repetir o número exato na regra seria pôr um número que
+  pode mudar no lugar mais difícil de mudar — foi assim que a trava de tamanho
+  reprovou todo deploy por dias. A regra impede lixo; quem diz "não existe o
+  hino 700" é a tela.
+- **Abrir sem confirmar, sem chutar.** `Hinario.podeCrescer` decide: quando
+  nenhum número maior é possível ("65" na Harpa, porque 650 passa de 640), a
+  abertura é imediata; quando ainda pode crescer ("15" pode virar 150), o app
+  espera 600 ms. Sem espera, digitar "150" abriria o hino 1 no primeiro toque.
+- **"Fora do repertório" não é "não cadastrado".** `hinoCadastrado` olha
+  também as arquivadas, porque confundir os dois faria o líder cadastrar de
+  novo um hino que já existe — perdendo a cifra que alguém já colou.
+- **"Cadastrar agora" só aparece para o líder**, porque só o líder cria música
+  no banco. Para um levita o botão falharia com erro de permissão, que não
+  explica nada; a frase diz para pedir ao líder.
+- **A lista de hinários é fechada na regra**, e um teste em Dart lê o
+  `firestore.rules` e falha se um hinário novo for acrescentado ao app e
+  esquecido lá — mesmo tipo de contrato do `agenda_contrato.json`. Sem ele, o
+  cadastro seria recusado com erro de permissão, que não explica nada.
+- **Mexer em `hinario`/`numero` é só do líder:** os dois ficam FORA da lista
+  fechada de campos que quem cadastrou pode corrigir. Trocar o número de
+  carona criaria dois hinos com o mesmo número.
+- **Último hinário e últimos 8 hinos abertos ficam no APARELHO**, como o
+  marcador da Bíblia: é o histórico de quem está com o celular na mão, não há
+  o que sincronizar, e no Firestore custaria uma escrita por hino aberto.
+- A busca por nome, artista, **trecho da letra** e número ignora acento
+  (`core/utils/texto.dart`) — "lembro do trecho, não do número" é como a
+  maioria procura hino.
+- **Nada no Firestore além dos hinos que o ministério cadastrar**, e zero
+  ativo novo: não há arquivo de hinário para baixar, então não há pedido na
+  abertura do app nem peso no pacote inicial.
+
+**O que ainda falta (próxima entrega):** o atalho dentro do Modo Culto ao
+vivo, com o hino entrando como música extra daquele culto, e "adicionar hino
+pelo número" no diálogo de escolher as músicas do culto.
 
 ### Recuperar a senha
 

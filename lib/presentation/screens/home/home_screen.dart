@@ -13,6 +13,7 @@ import '../../../data/models/scale_model.dart';
 import '../scale/scale_detail_screen.dart';
 import '../songs/song_detail_screen.dart';
 import '../biblia/biblia_screen.dart';
+import '../songs/hino_por_numero_screen.dart';
 import '../../widgets/common/glass.dart';
 import '../../widgets/common/recuperacao_por_email.dart';
 import '../../widgets/common/minhas_proximas_musicas.dart';
@@ -171,6 +172,13 @@ class _HomeScreenState extends State<HomeScreen> {
                   // Escala, abria o culto, achava a música e tocava nela.
                   const MinhasProximasMusicas(),
 
+                  // O hino pelo número fica ALTO na tela, acima do versículo
+                  // e da Bíblia, porque é o atalho com pressa: o dirigente
+                  // anuncia "hino 15" e a igreja já está de pé. Os outros
+                  // dois se abrem com calma.
+                  const _AtalhoHino(),
+                  const SizedBox(height: 12),
+
                   // Verse of the Day Card
                   _VerseCard(verse: AppStrings.verses[_verseIndex]),
                   const SizedBox(height: 12),
@@ -252,6 +260,85 @@ class _AtalhoBiblia extends StatelessWidget {
                   ),
                   Text(
                     'Ler offline, no aparelho',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 12.5,
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondaryLight,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textSecondaryLight),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Atalho para abrir um hino pelo número.
+///
+/// Mesma forma do atalho da Bíblia de propósito: são os dois atalhos para
+/// fora do repertório, e dar formas diferentes a coisas do mesmo tipo faz a
+/// tela parecer remendada.
+class _AtalhoHino extends StatelessWidget {
+  const _AtalhoHino();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        GlassPageRoute(builder: (_) => const HinoPorNumeroScreen()),
+      ),
+      child: Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: isDark
+              ? Colors.white.withValues(alpha: 0.06)
+              : Colors.white.withValues(alpha: 0.55),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(
+            color: isDark
+                ? Colors.white.withValues(alpha: 0.10)
+                : Colors.white.withValues(alpha: 0.7),
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                gradient: AppColors.primaryGradient,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.dialpad_rounded,
+                  color: Colors.white, size: 21),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Hino pelo número',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight,
+                    ),
+                  ),
+                  Text(
+                    'Harpa Cristã e Cantor Cristão',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       fontSize: 12.5,

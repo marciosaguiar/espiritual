@@ -9,6 +9,7 @@ import '../../../core/constants/app_strings.dart';
 import '../../../data/models/song_model.dart';
 import 'song_detail_screen.dart';
 import 'add_song_screen.dart';
+import 'hino_por_numero_screen.dart';
 import '../../widgets/common/glass.dart';
 
 class SongsScreen extends StatefulWidget {
@@ -56,6 +57,18 @@ class _SongsScreenState extends State<SongsScreen>
         ),
         title: const Text(AppStrings.songs),
         actions: [
+          // Para TODOS, não só para o líder: quem precisa abrir o hino 15 no
+          // meio do culto é quem vai tocar.
+          IconButton(
+            icon: const Icon(Icons.dialpad_rounded),
+            tooltip: 'Hino pelo número',
+            onPressed: () {
+              Navigator.push(
+                context,
+                GlassPageRoute(builder: (_) => const HinoPorNumeroScreen()),
+              );
+            },
+          ),
           if (auth.isAdmin)
             IconButton(
               icon: const Icon(Icons.add_rounded),
