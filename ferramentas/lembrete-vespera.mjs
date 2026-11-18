@@ -26,6 +26,7 @@
 // em verde — não enche a caixa de e-mail de falha.
 
 import { readFileSync } from 'node:fs';
+import { explicarFalha } from './diagnostico.mjs';
 
 const API_KEY = process.env.FIREBASE_API_KEY ?? '';
 const EMAIL = process.env.FAXINA_EMAIL ?? '';
@@ -72,8 +73,12 @@ const entrada = await fetch(
 );
 if (!entrada.ok) {
   // O corpo da resposta diz se o e-mail existe; fica fora do log.
-  console.error(`O robô não conseguiu entrar (${entrada.status}). `
-    + 'Confira FAXINA_EMAIL e FAXINA_SENHA.');
+  console.error(`O robô não conseguiu entrar (${entrada.status}).`);
+  console.error('');
+  console.error('CAUSA PROVÁVEL: e-mail ou senha do robô errados nos '
+    + 'segredos do GitHub (FAXINA_EMAIL, FAXINA_SENHA), ou a conta dele não '
+    + 'existe mais no Firebase Authentication. São os MESMOS segredos da '
+    + 'faxina do chat: se aquela rotina está passando, não é isto.');
   process.exit(1);
 }
 const { idToken } = await entrada.json();
@@ -90,7 +95,9 @@ const resposta = await fetch(`${worker}/vespera`, {
 const texto = await resposta.text();
 
 if (!resposta.ok) {
-  console.error(`O Worker respondeu ${resposta.status}: ${texto}`);
+  // Status não é diagnóstico: cada número tem uma causa e um conserto
+  // diferentes, nenhum deles no código do app.
+  await explicarFalha(worker, resposta.status, texto);
   process.exit(1);
 }
 

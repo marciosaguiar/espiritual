@@ -30,6 +30,18 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # A VERSÃO É FIXA, e isto não é zelo.
+          #
+          # Com `channel: stable` sozinho, a ação baixa o último estável NO
+          # MOMENTO DA EXECUÇÃO. O mesmo commit passa a gerar tamanhos
+          # diferentes em dias diferentes, e o número medido fora da CI não
+          # serve para comparar com o dela: foi assim que a trava do pacote
+          # passou a recusar TODO deploy — a base tinha sido medida com uma
+          # versão e a CI construía com outra, ~200 KB mais gorda.
+          #
+          # Trocar de versão aqui é decisão de quem lê o tamanho depois: suba
+          # a versão e meça a base de novo, no mesmo movimento.
+          flutter-version: '3.50.0'
 
       - name: Flutter version
         run: flutter --version
@@ -49,6 +61,12 @@ jobs:
         # leva à tela errada, ou um aviso apaga o outro e um pedido de
         # entrada se perde.
         run: node --test web/teste/*.mjs
+
+      - name: Testar as rotinas diárias
+        # O diagnóstico que a rotina imprime quando o Worker recusa: cada
+        # status tem de levar ao conserto certo, senão o log volta a dizer
+        # só um número.
+        run: node --test ferramentas/teste/*.mjs
 
       - name: Build web
         # --pwa-strategy=none: o service worker que o Flutter gera hoje só se

@@ -21,6 +21,23 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          # A VERSÃO É FIXA, e isto não é zelo.
+          #
+          # Com `channel: stable` sozinho, a ação baixa o último estável NO
+          # MOMENTO DA EXECUÇÃO. O mesmo commit passa a gerar tamanhos
+          # diferentes em dias diferentes, e o número medido fora da CI não
+          # serve para comparar com o dela: foi assim que a trava do pacote
+          # passou a recusar TODO deploy — a base tinha sido medida com uma
+          # versão e a CI construía com outra, ~200 KB mais gorda.
+          #
+          # Trocar de versão aqui é decisão de quem lê o tamanho depois: suba
+          # a versão e meça a base de novo, no mesmo movimento.
+          flutter-version: '3.50.0'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
 
       - name: Install dependencies
         run: flutter pub get
@@ -33,3 +50,50 @@ jobs:
 
       - name: Testes
         run: flutter test
+
+      # OS TESTES DE FORA DO FLUTTER TAMBÉM RODAM AQUI.
+      #
+      # Eles existiam só no workflow de publicação, junto da trava do
+      # tamanho — e pelo mesmo motivo: quem olha o verde olha o CI. Um teste
+      # do Worker quebrado passava sem ninguém ver.
+      #
+      # A publicação continua rodando os seus, porque lá eles são portão: o
+      # que estiver quebrado não vai para o ar.
+      - name: Testes do mini-servidor dos avisos
+        run: node --test worker/teste/*.mjs
+
+      - name: Testes do service worker
+        run: node --test web/teste/*.mjs
+
+      - name: Testes das rotinas diárias
+        run: node --test ferramentas/teste/*.mjs
+
+      - name: Tamanho do pacote inicial
+        # A TRAVA DO TAMANHO MORA AQUI, e não só no deploy.
+        #
+        # Ela existia apenas no workflow de publicação, que ninguém abre — e o
+        # CI, que é onde se olha, ficava verde enquanto TODO deploy falhava.
+        # O app no ar ficou parado por dias sem nada vermelho aparecer no
+        # lugar certo.
+        #
+        # As flags são as MESMAS da publicação, senão o número não é
+        # comparável. (Medido: as flags mudam 73 bytes; o que muda 200 KB é a
+        # versão do Flutter, fixada acima.)
+        #
+        # BASE é o tamanho do `main.dart.js` antes da Bíblia, e vale para a
+        # versão fixada acima — trocar de versão exige medir de novo. A folga
+        # de 100 KB é o que a tela da Bíblia em si pode custar.
+        run: |
+          flutter build web --release --base-href "/espiritual/" \
+            --pwa-strategy=none --no-web-resources-cdn
+          BASE=3610328
+          FOLGA=102400
+          TAMANHO=$(wc -c < build/web/main.dart.js)
+          LIMITE=$((BASE + FOLGA))
+          echo "main.dart.js: $TAMANHO bytes (limite $LIMITE, folga $((LIMITE - TAMANHO)))"
+          if [ "$TAMANHO" -gt "$LIMITE" ]; then
+            echo "::error::o pacote inicial passou de $LIMITE bytes ($TAMANHO)."
+            echo "::error::Ou algo que devia ser ativo virou código, ou a"
+            echo "::error::versão do Flutter mudou. O número acima é o oficial."
+            exit 1
+          fi

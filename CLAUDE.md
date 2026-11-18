@@ -44,7 +44,12 @@ nem de Flutter:
 ```bash
 node --test worker/teste/*.mjs               # 83 testes
 node --test web/teste/*.mjs                  # 11 testes do service worker
+node --test ferramentas/teste/*.mjs          # 8 testes das rotinas diárias
 ```
+
+**A versão do Flutter é fixa** (`flutter-version: '3.50.0'` nos dois
+workflows), e medir o pacote com outra versão não vale: ver "A trava do
+tamanho reprovou todo deploy por dias".
 
 O segundo roda o `web/sw.js` de verdade, com o `self` do navegador simulado:
 é ele que decide qual etiqueta cada aviso usa e para onde vai quem toca, e
@@ -351,6 +356,36 @@ servidor tudo o que as quatro escutas de `main_screen` alcançam — e **leitura
   que já estava no documento. Para a regra, `songs` não mudou. Todo teste de
   "não pode mexer em X de carona" precisa gravar em X um valor DIFERENTE do
   que está lá.
+- **A trava do tamanho reprovou TODO deploy por dias, e o CI ficou verde.**
+  O app no ar ficou parado numa versão antiga enquanto entrega após entrega
+  era aplicada e nada chegava ao celular de ninguém. Três erros se somaram, e
+  os três eram meus:
+  1. **A base foi medida fora da CI.** `BASE=3610328` saiu do site no ar, mas
+     eu conferia o tamanho no meu contêiner, com outra versão do Flutter.
+     **Medido: as flags do build mudam 73 bytes; a versão muda ~200 KB.** Eu
+     reportei "folga de 59 KB" com um número que não era comparável ao da CI,
+     onde o mesmo commit dava 3.720.932 e depois 3.852.078.
+  2. **`channel: stable` sem versão fixa deriva no tempo.** A ação baixa o
+     último estável no momento da execução: o mesmo commit passa a gerar
+     tamanhos diferentes em dias diferentes, e um lançamento do Flutter
+     estoura o orçamento sem ninguém ter mexido em código. Agora a versão é
+     fixa nos dois workflows, e trocá-la exige medir a base de novo no mesmo
+     movimento.
+  3. **A trava morava só no workflow de publicação, que ninguém abre.** O CI
+     — que é onde se olha — nem construía o pacote web. Agora a trava está no
+     CI, com as mesmas flags da publicação, e **os testes do Worker, do
+     service worker e das rotinas diárias também**: eles tinham o mesmo
+     defeito, rodavam só na publicação.
+  A lição que vale além deste caso: **número medido em ambiente diferente do
+  que decide não é medida, é palpite** — e toda trava precisa falhar onde a
+  pessoa olha, não onde o robô olha.
+- **Status não é diagnóstico.** A rotina diária falhou duas noites seguidas
+  dizendo só "O Worker respondeu 403: {...}". Cada status tem causa e conserto
+  diferentes, e nenhum deles está no código do app: estão na Cloudflare, no
+  console do Firebase ou no cadastro do robô. Agora
+  `ferramentas/diagnostico.mjs` traduz o status para a causa provável e o
+  conserto, e o job ainda pergunta à raiz do Worker se ele está configurado —
+  então o caso mais comum (segredo faltando) se resolve lendo o próprio log.
 - **Diagnóstico errado que custou tempo:** quando o instrumento continuou
   aparecendo em inglês depois de corrigido, eu disse que era cache do service
   worker. Não era: não havia service worker nenhum. **Antes de culpar o
