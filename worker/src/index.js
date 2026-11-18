@@ -17,6 +17,7 @@
 // AS ROTAS
 //
 //   GET  /            diz se está de pé e o que falta configurar
+//   GET  /saude        diz se o ROBÔ dele entra e está aprovado
 //   POST /avisar      { mensagemId } + ID token → avisa o ministério
 //   POST /testar      ID token → avisa só os aparelhos de quem pediu
 //
@@ -24,7 +25,7 @@
 
 import {
   conferirToken, lerDoc, lerColecao, apagarDoc, consultarPorData, gravarDoc,
-  criarDocSeNaoExiste,
+  criarDocSeNaoExiste, uidDoRobo, RoboSemAcesso,
 } from './firebase.js';
 import {
   cultosFaltando, agoraEmBrasilia, instanteDe, somarDias,
@@ -37,6 +38,63 @@ import {
 } from './aviso.js';
 
 const FUNCOES_APROVADAS = ['levita', 'admin'];
+
+/// O diagnóstico do robô, guardado por 5 minutos (ver a rota `/saude`).
+let saudeEmCache = null; // { em: ms, dados }
+
+/// Só para o teste: a saúde fica guardada 5 minutos, e cada caso precisa
+/// começar do zero.
+export function limparCacheDaSaude() {
+  saudeEmCache = null;
+}
+
+async function saudeDoRobo(env) {
+  const falta = faltaConfigurar(env);
+  const agora = Date.now();
+  if (saudeEmCache && agora - saudeEmCache.em < 5 * 60 * 1000) {
+    return { ...saudeEmCache.dados, deCache: true };
+  }
+
+  const dados = { configurado: falta.length === 0, falta, entra: false };
+  if (falta.length) {
+    dados.robo = 'não dá para conferir sem os segredos';
+    dados.conserto = `faltam na Cloudflare: ${falta.join(', ')}`;
+  } else {
+    try {
+      const uid = await uidDoRobo(env);
+      dados.entra = true;
+      const cadastro = await lerDoc(env, `users/${uid}`);
+      if (!cadastro) {
+        // Entra no Authentication e não existe no banco: é o que acontece com
+        // uma conta criada direto no console. Ela não aparece em Membros, e
+        // por isso ninguém consegue aprová-la pelo app.
+        dados.robo = 'entra, mas NÃO TEM cadastro em users';
+        dados.conserto = 'o robô precisa se cadastrar pelo app (uma vez) e '
+          + 'ser aprovado como líder em Membros.';
+      } else if (cadastro.role !== 'admin') {
+        dados.robo = `entra, e o cadastro dele está "${cadastro.role}"`;
+        dados.conserto = 'as rotas de escala e agenda são só de líder: '
+          + 'promova o robô a líder em Membros.';
+      } else {
+        dados.robo = 'entra e está líder';
+      }
+    } catch (e) {
+      // `entra` não é recalculado aqui: ele só vira true depois do login, e é
+      // justamente a diferença entre "não entra" e "entra e não lê".
+      if (e instanceof RoboSemAcesso) {
+        dados.robo = e.message;
+        dados.conserto = e.conserto;
+      } else {
+        console.error('[avisos] /saude:', e?.stack ?? String(e));
+        dados.robo = 'não deu para conferir';
+        dados.conserto = 'o motivo está no log do Worker: '
+          + 'cd worker && npx wrangler tail';
+      }
+    }
+  }
+  saudeEmCache = { em: agora, dados };
+  return dados;
+}
 
 function cors(env, pedido) {
   const permitidas = String(env.ORIGENS ?? '').split(',').map((o) => o.trim())
@@ -85,7 +143,18 @@ async function quemPediu(pedido, env) {
   }
 
   const cadastro = await lerDoc(env, `users/${dono.uid}`);
-  if (!cadastro || !FUNCOES_APROVADAS.includes(cadastro.role)) {
+  // Documento ausente NÃO é falta de aprovação, e dizer que é manda a pessoa
+  // procurar o líder por um problema que nenhum líder resolve: é conta do
+  // Authentication sem cadastro no banco — o caso de uma conta criada direto
+  // no console do Firebase, que nunca passou pelo cadastro do app, e que por
+  // isso também não aparece em Membros.
+  if (!cadastro) {
+    return {
+      erro: 'Esta conta não tem cadastro no ministério.',
+      status: 403,
+    };
+  }
+  if (!FUNCOES_APROVADAS.includes(cadastro.role)) {
     return { erro: 'Sua entrada ainda não foi aprovada por um líder.', status: 403 };
   }
   return {
@@ -132,7 +201,10 @@ async function chaveVapid(env) {
   };
 }
 
-export default {
+// As rotas. O `export default` no fim do arquivo é só a casca que pega o que
+// escapar daqui: sem ela, um erro aqui dentro virava página de erro da
+// Cloudflare, e o log do job dizia "500" sem dizer de quê.
+const rotas = {
   async fetch(pedido, env) {
     const cabecalhos = cors(env, pedido);
     const url = new URL(pedido.url);
@@ -148,6 +220,24 @@ export default {
         configurado: falta.length === 0,
         falta,
       }, 200, cabecalhos);
+    }
+
+    // ── /saude ────────────────────────────────────────────────────────────
+    //
+    // A raiz diz se os SEGREDOS estão lá; isto diz se eles FUNCIONAM. A
+    // diferença custou duas noites: a raiz respondia
+    // `{"configurado":true,"falta":[]}` enquanto toda chamada era recusada,
+    // porque ter ROBO_EMAIL preenchido não é o mesmo que o robô conseguir
+    // entrar, e conseguir entrar não é o mesmo que o cadastro dele estar
+    // aprovado no banco.
+    //
+    // Sem login, porque quem precisa dela é um job às 3 da manhã e um leigo
+    // abrindo um endereço no celular. Não devolve nada sigiloso: se o robô
+    // entra, e a função do cadastro DELE. O que ela custa — um login e uma
+    // leitura — fica guardado por 5 minutos, senão um laço contra um endereço
+    // público queimaria a cota de leitura do dia.
+    if (url.pathname === '/saude' && pedido.method === 'GET') {
+      return json(await saudeDoRobo(env), 200, cabecalhos);
     }
 
     const falta = faltaConfigurar(env);
@@ -619,5 +709,26 @@ export default {
     }
 
     return json({ erro: 'não existe' }, 404, cabecalhos);
+  },
+};
+
+export default {
+  async fetch(pedido, env) {
+    try {
+      return await rotas.fetch(pedido, env);
+    } catch (e) {
+      const cabecalhos = cors(env, pedido);
+      if (e instanceof RoboSemAcesso) {
+        // 503, e não 403: o problema é do servidor de avisos, não de quem
+        // pediu. Devolver 403 aqui é o que fazia o líder ler que ele não
+        // estava aprovado.
+        console.error('[avisos]', e.message, '| CONSERTO:', e.conserto);
+        return json({ erro: e.message, conserto: e.conserto }, 503, cabecalhos);
+      }
+      // O motivo exato fica no log do Worker; a resposta não o repete, porque
+      // ela aparece na tela de quem tocou em "Testar aviso".
+      console.error('[avisos] erro não tratado:', e?.stack ?? String(e));
+      return json({ erro: 'Erro no servidor de avisos.' }, 500, cabecalhos);
+    }
   },
 };

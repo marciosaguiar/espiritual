@@ -29,15 +29,55 @@ troca e acabou.
 
 ```
 GET  /            diz se está de pé e o que falta configurar
+GET  /saude       diz se o ROBÔ DELE entra e está aprovado
 POST /avisar      mensagem nova no chat (chamado pelo app)
-POST /escalado    "você foi escalado" (chamado pelo app, só líder)
-POST /vespera     lembrete da véspera (chamado pelo job do GitHub, só líder)
+POST /pedido      "novo pedido de entrada" (app, por quem está pendente)
+POST /escalado    "você foi escalado" (app, só líder)
+POST /confirmou   "alguém confirmou ou desmarcou" (app, avisa os líderes)
+POST /vespera     lembrete da véspera (job do GitHub, só líder)
+POST /agenda      cria os cultos da agenda fixa (job do GitHub, só líder)
 POST /testar      avisa só os aparelhos de quem pediu
 ```
 
-Nenhuma delas aceita nada sem o ID token do Firebase verificado. `/escalado`
-e `/vespera` exigem que a pessoa seja **líder** — e o robô da véspera é líder,
-como o da faxina.
+Nenhuma delas aceita nada sem o ID token do Firebase verificado, com uma
+exceção explicada no código: `/pedido` atende quem ainda está `pendente`,
+porque é justamente desse cadastro que o líder precisa saber. `/escalado`,
+`/vespera`, `/agenda` e `/confirmou` exigem que a pessoa seja **líder** — e os
+robôs são líderes comuns.
+
+## Quando algo não funciona, abra `/saude`
+
+A raiz (`/`) diz se os segredos estão **preenchidos**. `/saude` diz se eles
+**funcionam**, e a diferença custou duas noites de rotina falhando: a raiz
+respondia `{"configurado":true,"falta":[]}` enquanto toda chamada era
+recusada, porque ter `ROBO_EMAIL` preenchido não é o mesmo que o robô
+conseguir entrar, e conseguir entrar não é o mesmo que o cadastro dele estar
+aprovado no banco.
+
+Abra `https://<seu-worker>.workers.dev/saude` no navegador. Não precisa de
+login, e não devolve nada sigiloso — só se o robô entra e qual é a função do
+cadastro **dele**:
+
+| O que vem | O que fazer |
+| --- | --- |
+| `"robo":"entra e está líder"` | nada; o problema é outro |
+| `"entra":false` | `ROBO_EMAIL` / `ROBO_SENHA` na Cloudflare |
+| `não tem acesso ao banco` | o cadastro do robô não está aprovado, ou `FIREBASE_API_KEY` e `FIREBASE_PROJECT_ID` são de projetos diferentes |
+| `NÃO TEM cadastro em users` | a conta foi criada direto no console do Firebase e nunca passou pelo cadastro do app — ela não aparece em Membros, então ninguém consegue aprová-la |
+| `o cadastro dele está "levita"` | promova o robô a líder em Membros |
+
+## SÃO DUAS CONTAS DE ROBÔ, e isso engana
+
+- **`ROBO_EMAIL` / `ROBO_SENHA`, na Cloudflare:** com quem o **Worker** fala
+  com o banco. Toda leitura que ele faz é com esta conta — inclusive a
+  leitura do cadastro de *quem chamou*. Se esta conta não estiver aprovada
+  como líder, **tudo** é recusado, mesmo que quem chamou seja líder.
+- **`FAXINA_EMAIL` / `FAXINA_SENHA`, nos segredos do GitHub:** com quem os
+  **jobs** (faxina do chat, lembrete da véspera, agenda) se identificam.
+
+Podem ser a mesma conta, e é mais simples que sejam. Quando são diferentes, o
+engano é cruel: a tela mostra 👑 Líder para a conta que você aprovou, e o
+Worker é recusado por causa da outra.
 
 **O lembrete da véspera não precisa de segredo novo.** O job do GitHub entra
 com a conta do robô (`FAXINA_EMAIL` / `FAXINA_SENHA`, que já existem) e manda

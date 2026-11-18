@@ -11,9 +11,28 @@
 // Um job que falha sem dizer o que fazer é a mesma falha silenciosa que este
 // projeto combate dentro do app: ninguém abre log de Worker por esporte.
 
+/// O conserto que o PRÓPRIO Worker mandou, se mandou.
+///
+/// Ele sabe mais que a tabela abaixo, que adivinha pelo número: a resposta
+/// vem de dentro, com o nome do segredo ou do cadastro que está errado.
+function consertoDoCorpo(texto) {
+  try {
+    const d = JSON.parse(texto);
+    if (!d || !d.conserto) return '';
+    return `${d.erro ?? 'O Worker recusou.'} CONSERTO: ${d.conserto}`;
+  } catch (_) {
+    // Corpo que não é JSON (página de erro da Cloudflare, por exemplo): a
+    // tabela por status resolve.
+    return '';
+  }
+}
+
 /// A causa provável e o conserto, a partir do status e do corpo.
 export function porQueRecusou(status, corpo) {
   const texto = String(corpo ?? '');
+
+  const doWorker = consertoDoCorpo(texto);
+  if (doWorker) return doWorker;
 
   if (status === 404) {
     return 'A ROTA NÃO EXISTE no Worker publicado. O código no repositório '
@@ -31,15 +50,22 @@ export function porQueRecusou(status, corpo) {
       + 'Firebase e o Worker espera outro: confira se FIREBASE_PROJECT_ID na '
       + 'Cloudflare é o mesmo projeto do app.';
   }
+  if (status === 403 && /não tem cadastro/i.test(texto)) {
+    return 'A CONTA DO JOB EXISTE NO AUTHENTICATION, MAS NÃO NO BANCO. É o '
+      + 'que acontece com conta criada direto no console do Firebase: ela não '
+      + 'aparece em Membros e ninguém consegue aprová-la. O robô precisa se '
+      + 'cadastrar pelo app, uma vez, e ser aprovado como líder.';
+  }
   if (status === 403 && /aprovad/i.test(texto)) {
-    return 'O CADASTRO DO ROBÔ NÃO ESTÁ APROVADO. Ele entra como gente, e '
-      + 'nasce "pendente" como todo mundo: aprove-o em Membros, ou no '
-      + 'console (Firestore → users → o documento dele → role: admin).';
+    return 'O CADASTRO DE QUEM O JOB USA NÃO ESTÁ APROVADO. Atenção: a conta '
+      + 'do job é FAXINA_EMAIL (segredo do GitHub), que pode NÃO ser a conta '
+      + 'que você vê aprovada em Membros. Confira /saude: se o robô da '
+      + 'Cloudflare estiver bom, o engano está no segredo do GitHub.';
   }
   if (status === 403) {
-    return 'O ROBÔ NÃO É LÍDER. Esta rota é só de líder, e o cadastro dele '
-      + 'está como levita: no console, Firestore → users → o documento dele '
-      + '→ role: admin.';
+    return 'A CONTA DO JOB ESTÁ APROVADA, MAS NÃO É LÍDER. Esta rota é só de '
+      + 'líder: promova em Membros a conta de FAXINA_EMAIL (segredo do '
+      + 'GitHub), que é a que o job usa.';
   }
   if (status === 429) {
     return 'Limite por minuto. Espere um minuto e rode de novo; se repetir '
@@ -61,6 +87,31 @@ export function porQueRecusou(status, corpo) {
 /// ninguém abrir painel nenhum.
 export async function comoEstaOWorker(worker) {
   try {
+    const r = await fetch(`${worker}/saude`);
+    // Worker publicado antes desta rota existir.
+    if (r.status === 404) {
+      return (await comoEstaARaiz(worker)) + ' — e o Worker no ar é anterior '
+        + 'à rota /saude, que diria se o robô dele entra e está aprovado: '
+        + '`cd worker && npx wrangler deploy`';
+    }
+    const t = await r.text();
+    if (!r.ok) return `/saude respondeu ${r.status}`;
+    const d = JSON.parse(t);
+    if (!d.configurado) {
+      return `está no ar, mas FALTAM os segredos: ${(d.falta ?? []).join(', ')}`;
+    }
+    const partes = [`está no ar, com os segredos, e o robô ${d.robo}`];
+    if (d.conserto) partes.push(`CONSERTO: ${d.conserto}`);
+    return partes.join(' — ');
+  } catch (e) {
+    return `não respondeu (${String(e).slice(0, 80)}) — o endereço em `
+      + 'avisos_config.dart aponta para o Worker certo?';
+  }
+}
+
+/// A raiz, que só diz se os segredos estão preenchidos.
+async function comoEstaARaiz(worker) {
+  try {
     const r = await fetch(`${worker}/`);
     const t = await r.text();
     if (!r.ok) return `a raiz do Worker respondeu ${r.status}`;
@@ -68,8 +119,7 @@ export async function comoEstaOWorker(worker) {
     if (d.configurado) return 'está no ar e com todos os segredos';
     return `está no ar, mas FALTAM os segredos: ${(d.falta ?? []).join(', ')}`;
   } catch (e) {
-    return `não respondeu (${String(e).slice(0, 80)}) — o endereço em `
-      + 'avisos_config.dart aponta para o Worker certo?';
+    return `não respondeu (${String(e).slice(0, 80)})`;
   }
 }
 

@@ -384,8 +384,39 @@ servidor tudo o que as quatro escutas de `main_screen` alcançam — e **leitura
   diferentes, e nenhum deles está no código do app: estão na Cloudflare, no
   console do Firebase ou no cadastro do robô. Agora
   `ferramentas/diagnostico.mjs` traduz o status para a causa provável e o
-  conserto, e o job ainda pergunta à raiz do Worker se ele está configurado —
-  então o caso mais comum (segredo faltando) se resolve lendo o próprio log.
+  conserto, e o job ainda pergunta ao Worker como ele está — então o caso mais
+  comum (segredo faltando) se resolve lendo o próprio log.
+- **E a raiz do Worker dizia "configurado" enquanto nada funcionava.** Ela
+  conferia se os segredos estão **preenchidos**, que não é o que importa:
+  `ROBO_EMAIL` preenchido não é o robô conseguir entrar, e conseguir entrar
+  não é o cadastro dele estar aprovado no banco. Daí `GET /saude`, que tenta
+  de verdade — entra, lê o próprio cadastro e diz a função — sem login,
+  porque quem precisa dela é um job de madrugada e um leigo abrindo um
+  endereço no celular. Guardada por 5 minutos: é endereço público, e um laço
+  contra ela custaria uma leitura por chamada.
+- **`null` que significa duas coisas acusa a pessoa errada.** `lerDoc`
+  devolvia `null` tanto para 404 ("não existe") quanto para 403 ("o Firestore
+  RECUSOU"), e quem chamava traduzia o `null` para *"Sua entrada ainda não foi
+  aprovada por um líder"*. O 403 do banco nunca é sobre quem pediu: **o Worker
+  lê o cadastro de quem chamou usando o token do ROBÔ dele**, e a regra de
+  `users` é `souEu(userId) || aprovado()`. Então um robô não aprovado — ou um
+  `FIREBASE_API_KEY` de um projeto com `FIREBASE_PROJECT_ID` de outro — faz o
+  líder ler que ele não está aprovado, com a tela mostrando 👑 Líder ao lado.
+  Agora 403 do banco virou `RoboSemAcesso`, que sai como **503 com o conserto
+  dentro** (é falha do servidor, não de quem pediu), e "não existe cadastro"
+  deixou de ser "não aprovado" — são consertos em lugares diferentes, e um
+  deles não se resolve em Membros nenhum, porque a conta não aparece lá.
+- **São DUAS contas de robô, e é fácil olhar a errada.** `ROBO_EMAIL` (na
+  Cloudflare) é com quem o Worker fala com o banco; `FAXINA_EMAIL` (nos
+  segredos do GitHub) é com quem os jobs se identificam. Podem ser a mesma, e
+  é mais simples que sejam. Quando não são, o engano é cruel: a tela mostra
+  aprovada a conta que você aprovou, e a recusa vem por causa da outra.
+- **Nenhuma rota do Worker tinha teste, e `firebase.js` era o único arquivo
+  dele sem nenhum** — justamente o que fala com o banco. Agora `rotas.test.mjs`
+  assina um ID token de verdade (par de chaves gerado no teste, `fetch`
+  respondendo pelo Google e pelo Firestore) e mede o que o log do job lê: o
+  status e a frase. **Medido:** com o defeito de volta, 2 dos 12 falham; sem a
+  casca que pega o que escapa, outros 2.
 - **Diagnóstico errado que custou tempo:** quando o instrumento continuou
   aparecendo em inglês depois de corrigido, eu disse que era cache do service
   worker. Não era: não havia service worker nenhum. **Antes de culpar o

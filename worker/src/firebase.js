@@ -113,7 +113,50 @@ export async function conferirToken(token, projeto, { agoraMs, buscar } = {}) {
 
 // ── 2. Ler o banco como o robô ──────────────────────────────────────────────
 
-let sessaoDoRobo = null; // { token, vence: ms }
+/// Falha que é do ROBÔ do Worker, não de quem pediu.
+///
+/// Esta classe existe por causa de um defeito que custou duas noites de log
+/// dizendo nada: `lerDoc` devolvia `null` tanto para "o documento não existe"
+/// quanto para "o Firestore RECUSOU a leitura", e quem chamava traduzia o
+/// `null` para "Sua entrada ainda não foi aprovada por um líder" — uma frase
+/// sobre QUEM PEDIU, para um problema que é do cadastro do robô na
+/// Cloudflare. O líder lia que não estava aprovado enquanto a tela dele
+/// mostrava 👑 Líder.
+///
+/// Ler `users` exige `souEu(userId) || aprovado()` nas regras, e o Worker lê
+/// o cadastro de QUEM CHAMOU usando o token do ROBÔ. Então um robô sem
+/// aprovação, sem documento em `users`, ou com FIREBASE_API_KEY e
+/// FIREBASE_PROJECT_ID de projetos diferentes, recebe 403 em tudo o que
+/// tenta — e esse 403 não diz nada sobre quem pediu.
+export class RoboSemAcesso extends Error {
+  constructor(mensagem, conserto) {
+    super(mensagem);
+    this.name = 'RoboSemAcesso';
+    // Onde ir mexer. Viaja na resposta porque quem lê isto é o log de um job
+    // às 3 da manhã, não alguém com o código aberto ao lado.
+    this.conserto = conserto;
+  }
+}
+
+const CONSERTO_DO_BANCO = 'o cadastro do robô (ROBO_EMAIL, na Cloudflare) '
+  + 'precisa aparecer aprovado como líder em Membros, e FIREBASE_API_KEY e '
+  + 'FIREBASE_PROJECT_ID precisam ser do MESMO projeto do app.';
+
+/// Levanta o erro certo quando o Firestore recusa.
+///
+/// 403 nunca é sobre quem pediu: com o banco, o Worker fala sempre com o
+/// token do robô.
+function conferirFirestore(r, oque) {
+  if (r.status === 403) {
+    throw new RoboSemAcesso(
+      'O robô do servidor de avisos não tem acesso ao banco.',
+      CONSERTO_DO_BANCO,
+    );
+  }
+  if (!r.ok) throw new Error(`Firestore ${r.status} ${oque}`);
+}
+
+let sessaoDoRobo = null; // { token, uid, vence: ms }
 
 async function tokenDoRobo(env, agoraMs) {
   const agora = agoraMs ?? Date.now();
@@ -135,14 +178,34 @@ async function tokenDoRobo(env, agoraMs) {
     const erro = await resposta.text();
     // Nunca devolver isto ao app: a resposta do Google diz se o e-mail
     // existe. Fica no log do Worker, que só o Márcio vê.
-    throw new Error(`robô não entrou: ${resposta.status} ${erro.slice(0, 200)}`);
+    console.error(
+      `[avisos] robô não entrou: ${resposta.status} ${erro.slice(0, 200)}`);
+    throw new RoboSemAcesso(
+      'O robô do servidor de avisos não conseguiu entrar na conta dele.',
+      'ROBO_EMAIL e ROBO_SENHA na Cloudflare, ou a conta do robô no Firebase '
+      + 'Authentication — ela ainda existe?',
+    );
   }
-  const { idToken, expiresIn } = await resposta.json();
+  // O `localId` é o uid do robô. Guardar custa nada e é o que permite ao
+  // Worker conferir o PRÓPRIO cadastro em `/saude`: sem isso ele não tem como
+  // responder "eu entro, mas o meu cadastro está pendente", que é exatamente
+  // o que faltava saber quando a rotina falhava.
+  const { idToken, expiresIn, localId } = await resposta.json();
   const segundos = Number(expiresIn ?? 3600);
   // Renova 5 minutos antes de vencer: um token que expira no meio do leque
   // de envio deixaria metade do ministério sem aviso.
-  sessaoDoRobo = { token: idToken, vence: agora + (segundos - 300) * 1000 };
+  sessaoDoRobo = {
+    token: idToken,
+    uid: localId ?? '',
+    vence: agora + (segundos - 300) * 1000,
+  };
   return idToken;
+}
+
+/// O uid da conta do robô.
+export async function uidDoRobo(env) {
+  await tokenDoRobo(env);
+  return sessaoDoRobo?.uid ?? '';
 }
 
 function raiz(env) {
@@ -185,8 +248,11 @@ export async function lerDoc(env, caminho) {
   const r = await fetch(`${raiz(env)}/${caminho}`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  if (r.status === 404 || r.status === 403) return null;
-  if (!r.ok) throw new Error(`Firestore ${r.status} em ${caminho}`);
+  // 404 é ausência de verdade, e vale `null`. 403 NÃO: é recusa, e devolver
+  // `null` aqui é o que fazia quem chama dizer "não está aprovado" sobre a
+  // pessoa errada.
+  if (r.status === 404) return null;
+  conferirFirestore(r, `ao ler ${caminho}`);
   return simplificar(await r.json());
 }
 
@@ -199,7 +265,7 @@ export async function lerColecao(env, colecao, maximo = 2000) {
     const url = `${raiz(env)}/${colecao}?pageSize=300` +
       (pagina ? `&pageToken=${encodeURIComponent(pagina)}` : '');
     const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
-    if (!r.ok) throw new Error(`Firestore ${r.status} ao listar ${colecao}`);
+    conferirFirestore(r, `ao listar ${colecao}`);
     const dados = await r.json();
     for (const doc of dados.documents ?? []) saida.push(simplificar(doc));
     pagina = dados.nextPageToken ?? '';
@@ -249,9 +315,7 @@ export async function consultarPorData(env, colecao, campo, de, ate) {
       },
     }),
   });
-  if (!r.ok) {
-    throw new Error(`Firestore ${r.status} ao consultar ${colecao}`);
-  }
+  conferirFirestore(r, `ao consultar ${colecao}`);
   const linhas = await r.json();
   // A resposta vem como uma lista de resultados, e as linhas sem `document`
   // são só o aviso de "nada aqui" — jogar fora é o normal.
@@ -274,9 +338,7 @@ export async function gravarDoc(env, caminho, campos) {
     },
     body: JSON.stringify({ fields: paraFirestore(campos) }),
   });
-  if (!r.ok) {
-    throw new Error(`Firestore ${r.status} ao gravar ${caminho}`);
-  }
+  conferirFirestore(r, `ao gravar ${caminho}`);
   return true;
 }
 
@@ -342,9 +404,7 @@ export async function criarDocSeNaoExiste(env, caminho, campos) {
     },
   );
   if (r.status === 409) return false;
-  if (!r.ok) {
-    throw new Error(`Firestore ${r.status} ao criar ${caminho}`);
-  }
+  conferirFirestore(r, `ao criar ${caminho}`);
   return true;
 }
 
@@ -355,7 +415,11 @@ export async function apagarDoc(env, caminho) {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
-  return r.ok || r.status === 404;
+  // Já não estar lá é o resultado desejado. Recusa, não: um robô sem acesso
+  // devolvia `false` aqui e ninguém via.
+  if (r.status === 404) return true;
+  conferirFirestore(r, `ao apagar ${caminho}`);
+  return true;
 }
 
 /// Só para o teste: esquece o que está em cache entre casos.

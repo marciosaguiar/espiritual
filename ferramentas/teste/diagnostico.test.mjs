@@ -59,3 +59,42 @@ test('todo status conhecido devolve texto útil, nunca vazio', () => {
     assert.ok(r.length > 40, `status ${s} devolveu "${r}"`);
   }
 });
+
+test('o conserto que o Worker mandou vence a tabela por status', () => {
+  // O Worker sabe mais que a tabela: ele acabou de tentar. A tabela adivinha
+  // pelo número, e para 503 ela adivinha "faltam segredos" — que é a resposta
+  // errada quando os segredos estão lá e é o robô que não entra.
+  const r = porQueRecusou(503, JSON.stringify({
+    erro: 'O robô do servidor de avisos não tem acesso ao banco.',
+    conserto: 'o cadastro do robô (ROBO_EMAIL, na Cloudflare) precisa '
+      + 'aparecer aprovado como líder em Membros.',
+  }));
+  assert.match(r, /aprovado como líder em Membros/);
+  assert.doesNotMatch(r, /SEM SEGREDOS/);
+});
+
+test('corpo sem conserto continua caindo na tabela', () => {
+  // Worker antigo, ou página de erro da Cloudflare: a tabela é o que sobra.
+  assert.match(porQueRecusou(503, '{"erro":"Os avisos ainda não foram '
+    + 'configurados."}'), /SEM SEGREDOS/);
+  assert.match(porQueRecusou(503, '<html>erro</html>'), /SEM SEGREDOS/);
+});
+
+test('conta sem cadastro no banco não é conta esperando aprovação', () => {
+  // Duas causas, dois lugares: uma se resolve em Membros, a outra não se
+  // resolve em Membros nenhum, porque a conta não aparece lá.
+  const semCadastro = porQueRecusou(403,
+    '{"erro":"Esta conta não tem cadastro no ministério."}');
+  const naoAprovado = porQueRecusou(403,
+    '{"erro":"Sua entrada ainda não foi aprovada por um líder."}');
+  assert.match(semCadastro, /criada direto no console/);
+  assert.match(naoAprovado, /FAXINA_EMAIL/);
+  assert.notEqual(semCadastro, naoAprovado);
+});
+
+test('o 403 de "não é líder" diz QUAL conta promover', () => {
+  // A conta do job é a do segredo do GitHub, que pode não ser a que está na
+  // tela. Dizer "promova o robô" sem dizer qual foi o que custou a noite.
+  assert.match(porQueRecusou(403, '{"erro":"Só o líder dispara o lembrete."}'),
+    /FAXINA_EMAIL/);
+});
