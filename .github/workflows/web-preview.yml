@@ -133,10 +133,13 @@ jobs:
           #    um import que puxa o texto), isto aqui fica vermelho em vez de
           #    o app ficar lento para todo mundo.
           #
-          #    BASE é o tamanho medido no site no ar em 15/11/2026, antes da
-          #    Bíblia. A folga de 100 KB é o que a tela da Bíblia em si pode
-          #    custar.
-          BASE=3610328
+          #    BASE é o tamanho medido NA PRÓPRIA CI em 18/11/2026 (60f377c).
+          #    A base antiga (3610328, medida no site em 15/11) ficou para trás:
+          #    o Flutter estável da CI gera ~200 KB a mais que a máquina de
+          #    desenvolvimento, e a trava passou a barrar toda publicação desde
+          #    3251e74 sem que nenhum ativo tivesse virado código. Medir sempre
+          #    aqui, nunca fora da CI.
+          BASE=3852078
           FOLGA=102400
           TAMANHO=$(wc -c < build/web/main.dart.js)
           LIMITE=$((BASE + FOLGA))
