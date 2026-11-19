@@ -1,0 +1,15 @@
+／ATENCAO／,"Esta planilha NAO autoriza embarcar letra nenhuma. Ela resolve so o PRIMEIRO portao (quem escreveu e quando morreu). O SEGUNDO portao — ter o texto de uma edicao em dominio publico, e nao de uma edicao atual — continua fechado para os dois hinarios em 19/11/2026. Ver ferramentas/hinos/LEIA-ME.md."
+／CORTE／,"Lei 9.610/98 art. 41: 70 anos contados de 1o de janeiro do ano seguinte a morte. Em 2026, LIVRE por autoria = todos os envolvidos falecidos ate 1955. Quem morreu em 1956 so entra em 1o/01/2027. O corte anda todo 1o de janeiro."
+／LINHAS／,"Uma linha por hino CONFERIDO. Hino que eu nao conferi NAO esta aqui — linha ausente nao e LIVRE nem PROTEGIDO, e so nao conferido, e na duvida vale protegido."
+
+hinario,numero,autor_letra,falecimento_autor,tradutor,falecimento_tradutor,compositor,falecimento_compositor,classificacao,motivo,fonte
+cantor,1,Henry Maxwell Wright,1931,,,William Henry Monk,1889,LIVRE_POR_AUTORIA,"Autor e compositor falecidos ate 1955. Sem tradutor listado.",https://hymnary.org/hymn/CC1971/1
+cantor,50,Katherine Hankey,1911,Sarah Poulton Kalley,1907,William Howard Doane,1915,LIVRE_POR_AUTORIA,"Autora, tradutora e compositor falecidos ate 1955.",https://hymnary.org/hymn/CC1971/50
+cantor,100,Philip Paul Bliss,1876,Manuel Avelino de Souza,1962,Philip Paul Bliss,1876,PROTEGIDO,"O TRADUTOR morreu em 1962: a traducao em portugues e protegida ate 1o/01/2033, embora o original de 1876 seja livre. E o caso que mais engana.",https://hymnary.org/hymn/CC1971/100
+cantor,200,A. N.,,Salomao Luiz Ginsburg,1927,E. E. Hasty,,INCERTO,"Autor da letra aparece so como iniciais e o compositor nao tem datas. Sem identificar, nao da para contar 70 anos.",https://hymnary.org/hymn/CC1971/200
+cantor,300,Philip Paul Bliss,1876,Ricardo Jacob Inke,1936,I. Allan Sankey,,INCERTO,"Letra livre por autoria (1876 e 1936), mas o compositor esta como 1874-? — sem o ano da morte nao da para liberar a CIFRA, que vem da musica.",https://hymnary.org/hymn/CC1971/300
+cantor,500,Charles Hutchison Gabriel,1932,Salomao Luiz Ginsburg,1927,Charles Hutchison Gabriel,1932,LIVRE_POR_AUTORIA,"Autor/compositor e tradutor falecidos ate 1955.",https://hymnary.org/hymn/CC1971/500
+cantor,560,Joao Gomes da Rocha,1947,,,,,LIVRE_POR_AUTORIA,"Autor falecido em 1947. Melodia alema tradicional (Singvoegelein), sem compositor nomeado.",https://hymnary.org/hymn/CC1971/560
+harpa,1,J.R.,,,,,,INCERTO,"A Harpa atribui por INICIAIS. 'J.R.' nao identifica ninguem, e nao ha datas nem compositor.",https://hymnary.org/hymn/HC1999/1
+harpa,15,H.M.W.,,,,,,INCERTO,"Iniciais 'H.M.W.' (provavelmente Henry Maxwell Wright, 1849-1931) — mas provavel nao e verificado, e a regra manda tratar duvida como protegido.",https://hymnary.org/hymn/HC1999/15
+harpa,300,A.S.,,,,,,INCERTO,"Iniciais 'A.S.'. Sem datas, sem compositor.",https://hymnary.org/hymn/HC1999/300

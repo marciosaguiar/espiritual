@@ -1960,6 +1960,74 @@ hinários — quem gosta de ver por nome gosta disso na Harpa e no Cantor.
 do Flutter (`ReorderableListView`, que o app não usava em lugar nenhum). Ver
 a ressalva em "A trava do tamanho": a folga da publicação ficou curta.
 
+### Hinário com letra: o critério, e por que nada entrou ainda
+
+Pedido de 19/11/2026: levantar autor, tradutor e compositor de cada hino da
+Harpa e do Cantor, classificar em LIVRE / PROTEGIDO / INCERTO e embarcar a
+letra dos livres. **Resultado: nenhum hino pôde entrar**, e o motivo não é a
+classificação — é não existir fonte do texto antigo. O levantamento, a
+evidência e a planilha estão em `ferramentas/hinos/`.
+
+**São TRÊS portões, e todo hino precisa passar nos três.** Esta é a regra que
+nenhuma rodada futura pode furar:
+
+1. **Quem escreveu já está em domínio público?** Lei 9.610/98, art. 41: 70
+   anos contados de **1º de janeiro do ano seguinte** à morte. Em 2026 isso
+   dá: todos os envolvidos falecidos **até 1955**. **O corte anda todo 1º de
+   janeiro** — recalcule, não copie o ano.
+   - **O TRADUTOR conta como autor** (art. 14: *"é titular de direitos de
+     autor quem adapta, traduz, arranja ou orquestra obra caída no domínio
+     público"*). É o caso que mais engana: Cantor 100 é de Philip Bliss
+     (†1876), livre há um século, **traduzido por quem morreu em 1962** —
+     protegido até 2033.
+   - **O COMPOSITOR conta para a CIFRA.** Letra e música são obras
+     diferentes, e cifra é a harmonia da música. Liberar a letra não libera a
+     cifra; Cantor 300 tem a letra livre e o compositor com data de morte
+     desconhecida.
+2. **O texto é o da versão antiga?** A revisão de uma editora é obra nova
+   (art. 7º, XIII). Mesmo com todos os autores livres, copiar o texto de uma
+   edição atual é copiar a revisão.
+3. **A fonte pode ser copiada?** Nunca de app, site atual ou transcrição de
+   edição moderna. **De graça não é livre.**
+
+**INCERTO conta como PROTEGIDO.** Sem nome completo ou sem ano de morte não
+há como contar 70 anos, e o app não aposta.
+
+**Onde cada hinário trava, com a evidência:**
+
+- **Harpa Cristã — trava já no portão 1.** Ela atribui por **INICIAIS**:
+  conferido nos hinos 1, 15 e 300, a autoria aparece como "J.R.", "H.M.W.",
+  "A.S.", sem datas e sem compositor. Iniciais não identificam ninguém. Soma-
+  se a isso o que já estava registrado aqui: 246 dos 640 são de Paulo Leivas
+  Macalão (†1982, protegido até 2052) e a seleção/numeração atual é
+  compilação da CPAD. Não há digitalização de edição antiga — o único item
+  "Harpa Cristã" no Internet Archive é áudio.
+- **Cantor Cristão — passa no portão 1 com frequência, e trava no 2.** A
+  autoria por hino existe com nome e datas, e os dois maiores tradutores
+  estão em domínio público (Ginsburg 1867–1927, 124 textos; Entzminger
+  1859–1930, 89 textos). **Mas a única transcrição completa é a do
+  Wikisource, que declara a 37ª edição, Geo-Gráfica, 2007**, está com
+  "Verificação pendente" e sem declaração de domínio público — o rodapé
+  CC BY-SA é a licença do site para contribuições, não um parecer sobre o
+  hinário.
+
+**A amostra que eu conferi** (7 hinos do Cantor): 4 livres por autoria, 1
+protegido pelo tradutor (†1962) e 2 incertos — um com o autor só em iniciais
+e outro cuja letra passaria mas cujo compositor está sem ano de morte, o que
+barra a cifra. Serve para uma coisa só — dizer que
+**procurar a 18ª edição (1924) vale a pena**, porque boa parte passaria no
+portão 1. Não serve para prometer número nenhum.
+
+**O que destravaria:** um exemplar ou digitalização do Cantor Cristão de 1924
+(a numeração está estável em 578 desde ela) ou de 1956 resolve os portões 2 e
+3 de uma vez. Para a Harpa não há caminho curto: enquanto a atribuição for
+por iniciais e a compilação for da CPAD, o jeito legítimo é pedir
+autorização.
+
+**Enquanto isso, nada muda no app:** hino protegido ou incerto continua como
+sempre — número, título e, para o líder, o caminho de cadastrar a letra do
+hinário que a igreja comprou. Que é o que o app já faz.
+
 ### O manual e o guia dentro do app
 
 Guia que descreve a tela de antes é pior que guia nenhum: ele faz a pessoa
