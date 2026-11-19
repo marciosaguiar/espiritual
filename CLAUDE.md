@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 656 testes
+flutter test                   # 671 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -2078,19 +2078,24 @@ hinário e conferir a prévia. Foi provado quebrando de propósito: com um campo
 mais no app, o teste falha. O lote é de 400 hinos + o índice por commit, e o
 teste de regras prova que isso passa pelo limite de consultas por requisição.
 
-**O motor de leitura** (`core/utils/importar_hinario.dart`, função pura, 41
+**O motor de leitura** (`core/utils/importar_hinario.dart`, função pura, 54
 testes):
 
 - O app NÃO SABE como é o arquivo da pessoa. Tenta cinco formatos (`Hino 15`,
-  `15 - Título`, `15 TÍTULO`, `15. Título`, número sozinho na linha) e fica com
-  o que achou MAIS hinos com letra; no empate, o primeiro da lista.
+  `15 - Título`, `15 TÍTULO` ou `15. TÍTULO`, `15. Título`, número sozinho na
+  linha) e fica com o que achou MAIS hinos com letra; no empate, o primeiro da
+  lista.
 - **O número da ESTROFE é o que engana**: "2." pode ser a segunda estrofe do
   hino 1 ou o começo do hino 2. Por isso o formato vale para o texto inteiro,
   nunca linha a linha — o formato `15 - Título` acha 640 hinos com letra; o
   `15. Título` acharia só estrofes de 1 a 6.
-- Por número, fica o trecho de letra MAIS comprida: é o que faz um sumário
-  perder para o hino de verdade. O corte de cada hino é o PRÓXIMO candidato de
-  qualquer número, então um rodapé "2024 - Editora" encerra o último hino.
+- Por número repetido, fica, nesta ordem: (1) a letra que SERVE (20 a 6.000
+  caracteres) sobre a que não serve — é o que faz um sumário perder para o
+  hino de verdade, e impede que um candidato cujo texto vai até o fim do
+  arquivo derrube o hino certo; (2) a que está na ORDEM dos números (maior que
+  o candidato anterior e menor que o seguinte); (3) a mais comprida. O corte de
+  cada hino é o PRÓXIMO candidato de qualquer número, então um rodapé "2024 -
+  Editora" encerra o último hino.
 - Limites: letra com menos de 20 caracteres não entra; com mais de 6.000 não
   entra (quase sempre o hino seguinte não foi reconhecido e o último levou o
   índice do livro junto); linha com mais de 90 não é título; número acima do
@@ -2161,7 +2166,8 @@ passar:
 - **Teste que só passa em UTC.** `reacoes_e_vistos_test` esperava o ano 1970 da
   data zero, que em Brasília é 31/12/1969. Passava no GitHub e no contêiner
   (UTC) e reprovava no Mac do dono. O defeito era do TESTE (agora `toUtc()`).
-  A suíte inteira foi rodada em `TZ=America/Sao_Paulo` e em UTC: 656 nos dois.
+  A suíte inteira foi rodada em `TZ=America/Sao_Paulo` e em UTC: 656 nos dois
+  (671 depois de ler o texto real da Harpa — ver a seção abaixo).
   **Ao mexer em data, rode também `TZ=America/Sao_Paulo flutter test`.**
 
 Os dois dizem a mesma coisa: o computador do dono é o ambiente que mais difere
@@ -2169,11 +2175,17 @@ da CI, e um teste que só passa na CI não prova que passa onde se publica.
 
 **O que NÃO foi verificado** (leia antes de dizer que está pronto):
 
-1. **O formato do texto REAL.** Todos os testes usam texto inventado nos
-   formatos que eu previ. Se o arquivo da igreja for outro (PDF copiado com
-   quebras no meio, páginas numeradas, duas colunas), a PRÉVIA mostra o
-   problema — mas pode ser preciso ajustar o motor, e para isso é preciso um
-   trecho (10 a 20 linhas) do texto de verdade.
+1. **O texto REAL da Harpa foi LIDO, mas não EXECUTADO aqui.** O dono colou os
+   640 hinos no chat e a forma foi reproduzida em teste (ver "O que o texto real
+   ensinou"). O texto em si não entrou no contêiner — são ~300 KB que não cabem
+   num arquivo escrito à mão e não podem morar no repositório —, então a prova
+   final é a PRÉVIA no app. **O que eu espero, lendo o texto à mão (palpite,
+   não medida): "Achei 639 hinos, do 1 ao 640. Falta o 542.", com o aviso do
+   número suspeito (442 → 542) e os repetidos 200, 201 e 442.** Um ou outro
+   número a mais nos avisos é plausível — a fonte tem erros de digitação que eu
+   posso não ter visto, e a prévia os nomeia. Centenas de "sem letra", ou o
+   intervalo errado, seriam defeito do motor. O Cantor Cristão ainda não teve
+   texto real lido.
 2. **A tela num navegador de verdade a 375 px.** Só há testes de widget, com a
    fonte de teste (mais larga que a Poppins) e sem estouro de layout. Rodar o
    app e fotografar, como na rodada de 19/11, ainda falta.
@@ -2185,6 +2197,46 @@ da CI, e um teste que só passa na CI não prova que passa onde se publica.
    "Importar hinário". O guia de dentro do app, que está aqui, tem.
 5. **"Últimos abertos"** só lista hinos do repertório: o hino lido da
    biblioteca não aparece ali.
+
+### O que o texto real ensinou (19/11/2026)
+
+Colados os 640 hinos da Harpa, a prévia saiu errada: "Achei 347 hinos, faltam o
+8 ao 13 e mais 287". Os 41 testes do motor passavam, porque usavam o formato que
+EU previ. O texto de verdade tem outra forma, e três defeitos que só ele mostra:
+
+- **O cabeçalho é `N. TÍTULO EM MAIÚSCULAS`, com ponto.** Isso só casava no
+  formato `ponto`, e é nele que mora o problema: do hino 200 em diante a fonte
+  numera as **estrofes com ponto também** (`1. Quão bondoso…`). Cada uma virava
+  "hino 1", "hino 2"… e **cortava o cabeçalho de verdade ao meio**, que ficava
+  com a letra vazia — as dezenas de "sem letra". O que separa cabeçalho de
+  estrofe é o **título em maiúsculas**, então `caixaAlta` passou a aceitar o
+  ponto: `15 TÍTULO` e `15. TÍTULO` são o mesmo formato.
+- **"Todo em maiúsculas" é "quase todo".** `CRElO` (um L minúsculo no lugar do
+  I, erro da fonte) fazia o cabeçalho não ser reconhecido, e **o hino anterior
+  engolia o texto dele inteiro, sem erro nenhum**. O limite é 80% das letras.
+  Título que abre com aspas (`301. "VEM CEAR"`) também é cabeçalho.
+- **O número escrito errado trocava a letra de outro hino.** O hino 542 está
+  digitado `442` na fonte. Com ele tendo mais estrofes que o 442 de verdade, a
+  regra "fica a mais comprida" o punha no lugar do 442 — **trocando a letra sem
+  nenhum aviso**. Agora ganha quem está na ordem dos números, e a tela diz
+  "está escrito como 442, mas fica entre o 541 e o 543, então deve ser o 542".
+  **O app não corrige o número sozinho**: trocar número em silêncio é o mesmo
+  erro de trocar a letra. Mostra a linha, e a pessoa conserta e cola de novo.
+- **Candidato cujo texto vai até o fim do arquivo** (passa de 6.000 e vira
+  "grande demais") ganhava por ser o mais comprido e **derrubava o hino de
+  verdade do mesmo número**. Provável causa do "faltam o 8 ao 13" — não
+  confirmada, porque o texto exato daquela colagem não foi guardado. Agora
+  letra que serve ganha de letra que não serve.
+- **Decididos de propósito:** as iniciais do autor (`J.R.`, `H.M.W.`) coladas no
+  fim da última estrofe **ficam na letra** — é autoria, e tirar às cegas apagaria
+  informação que o líder pode querer; os números de estrofe (`1 Deus prometeu…`)
+  também ficam. A fonte repete os hinos 200 e 201 (uma cópia com erros de OCR,
+  outra corrigida): entra um de cada, a tela avisa que apareceram duas vezes, e
+  **vale conferir esses dois** depois de importar.
+
+Medido quebrando de propósito: sem a regra da ordem o teste do 442 reprova; com
+"zero minúsculas" o teste do `CRElO` reprova; e 6 dos 12 testes novos reprovam
+no motor de antes.
 
 ### O manual e o guia dentro do app
 

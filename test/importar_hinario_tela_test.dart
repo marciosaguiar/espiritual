@@ -147,6 +147,45 @@ void main() {
       expect(find.text('Importar 1 hino'), findsOneWidget);
     });
 
+    testWidgets('hinário na forma de verdade (N. TÍTULO): lê tudo', (t) async {
+      // A forma do texto que a igreja colou: cabeçalho com ponto e título em
+      // maiúsculas, estrofes numeradas sem ponto. Antes disto a prévia saía
+      // com centenas de hinos "sem letra".
+      String hino(int n) => '$n. TÍTULO $n\n'
+          '1 palavras inventadas da estrofe um do hino $n de teste\n\n'
+          '2 palavras inventadas da estrofe dois do hino $n de teste\n';
+      await _montar(t,
+          copiado: [for (var n = 1; n <= 12; n++) hino(n)].join('\n'));
+      await _colar(t);
+      expect(find.text('Achei 12 hinos, do 1 ao 12.'), findsOneWidget);
+      expect(find.textContaining('Sem letra'), findsNothing);
+      expect(find.text('Importar 12 hinos'), findsOneWidget);
+    });
+
+    testWidgets('número escrito errado: a tela diz onde está a linha',
+        (t) async {
+      // O 542 está digitado "442". A tela não corrige sozinha: diz qual linha
+      // é, entre quais números está e o que fazer.
+      String hino(int n, {int? escrito}) => '${escrito ?? n}. TÍTULO $n\n'
+          '1 palavras inventadas da estrofe um do hino $n de teste\n\n'
+          '2 palavras inventadas da estrofe dois do hino $n de teste\n';
+      final texto = [
+        for (var n = 442; n <= 543; n++) hino(n, escrito: n == 542 ? 442 : null),
+      ].join('\n');
+      await _montar(t, copiado: texto);
+      await _colar(t);
+
+      expect(find.text('Achei 101 hinos, do 442 ao 543. Falta o 542.'),
+          findsOneWidget);
+      expect(
+          find.textContaining(
+              'está escrito como 442, mas fica entre o 541 e o 543'),
+          findsOneWidget);
+      expect(find.textContaining('deve ser o 542'), findsOneWidget);
+      expect(find.textContaining('Apareceram mais de uma vez'), findsOneWidget);
+      expect(find.text('Importar 101 hinos'), findsOneWidget);
+    });
+
     testWidgets('texto que não é hinário: avisa e NÃO oferece Importar',
         (t) async {
       await _montar(t, copiado: 'só uma conversa qualquer, sem hino nenhum');

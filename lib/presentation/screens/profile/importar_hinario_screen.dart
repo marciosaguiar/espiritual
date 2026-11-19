@@ -675,9 +675,18 @@ class _Conferencia extends StatelessWidget {
       saida.add('Sem título reconhecido, entram como "Hino N": '
           '${ResultadoDaLeitura.listaDeNumeros(r.semTitulo)}.');
     }
+    for (final s in r.suspeitos) {
+      // Diz onde está a linha e o que fazer: o app não troca o número sozinho.
+      final quem = s.titulo.isEmpty ? 'Um hino' : 'O hino "${s.titulo}"';
+      saida.add('$quem está escrito como ${s.escrito}, mas fica entre '
+          'o ${s.provavel - 1} e o ${s.provavel + 1}, então deve ser o '
+          '${s.provavel}. NÃO entra: corrija o número no texto e cole de '
+          'novo.');
+    }
     if (r.repetidos.isNotEmpty) {
-      saida.add('Apareceram mais de uma vez; ficou a de letra mais '
-          'comprida: ${ResultadoDaLeitura.listaDeNumeros(r.repetidos)}.');
+      saida.add('Apareceram mais de uma vez; ficou a que está na ordem certa '
+          'dos números (ou, no empate, a de letra mais comprida): '
+          '${ResultadoDaLeitura.listaDeNumeros(r.repetidos)}.');
     }
     if (r.foraDoLimite > 0) {
       saida.add(r.foraDoLimite == 1

@@ -346,4 +346,257 @@ void main() {
       expect(relogio.elapsedMilliseconds, lessThan(3000));
     });
   });
+
+  // ── A FORMA de um hinário de verdade ───────────────────────────────────────
+  //
+  // Colado o texto real da Harpa (640 hinos), a prévia saiu errada: "Achei 347
+  // hinos, faltam o 8 ao 13 e mais 287". Os testes acima usavam o formato que
+  // EU previ ("15 - Título"); o texto de verdade era outro, e só um texto com a
+  // mesma forma mostra isso. Aqui o texto é todo inventado — só a FORMA é a
+  // real: cabeçalho "N. TÍTULO EM MAIÚSCULAS", estrofes numeradas SEM ponto
+  // ("1 palavras…"), coro em maiúsculas sem número e as iniciais do autor
+  // coladas no fim. E os defeitos da fonte: do hino 200 em diante as estrofes
+  // vêm numeradas COM ponto ("1. palavras…"), alguns cabeçalhos não têm ponto,
+  // um tem aspas, um tem letra minúscula por erro de digitação, e um tem o
+  // número errado.
+  group('a forma de um hinário de verdade', () {
+    /// Um hino de mentira com a forma do texto real. [extra] acrescenta
+    /// estrofes, para a letra ficar mais comprida.
+    String real(
+      int n, {
+      String? numeroEscrito,
+      String titulo = '',
+      String? cabecalho,
+      bool estrofesComPonto = false,
+      int extra = 0,
+    }) {
+      final t = titulo.isEmpty ? 'TÍTULO $n' : titulo;
+      final c = cabecalho ?? '${numeroEscrito ?? n}. $t';
+      final m = estrofesComPonto ? '.' : '';
+      final sb = StringBuffer('$c\n')
+        ..writeln('1$m palavras inventadas da estrofe um do hino $n de teste')
+        ..writeln('com mais uma linha inventada')
+        ..writeln()
+        ..writeln('CORO INVENTADO EM MAIÚSCULAS DO HINO $n')
+        ..writeln('SEGUNDA LINHA DO CORO')
+        ..writeln()
+        ..writeln('2$m palavras inventadas da estrofe dois do hino $n de teste');
+      for (var e = 0; e < extra; e++) {
+        sb
+          ..writeln()
+          ..writeln('${3 + e}$m outra estrofe inventada qualquer do hino $n');
+      }
+      sb.writeln('com mais uma linha inventada    X.Y.Z.');
+      return sb.toString();
+    }
+
+    /// A letra do hino [n] fala só do hino [n]: não engoliu o seguinte nem
+    /// perdeu o começo para o anterior.
+    void soDele(ResultadoDaLeitura r, int n) {
+      final h = r.hinos.firstWhere((h) => h.numero == n,
+          orElse: () => throw TestFailure('o hino $n não foi achado'));
+      expect(h.letra, contains('estrofe um do hino $n de teste'));
+      expect(h.letra, contains('estrofe dois do hino $n de teste'));
+      for (final outro in r.hinos) {
+        if (outro.numero == n) continue;
+        expect(h.letra, isNot(contains('do hino ${outro.numero} de teste')),
+            reason: 'a letra do $n levou texto do ${outro.numero}');
+      }
+    }
+
+    test('cabeçalho "N. TÍTULO" com estrofes sem ponto: acha todos', () {
+      final texto = [for (var n = 1; n <= 30; n++) real(n)].join('\n');
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.formato, FormatoDoHinario.caixaAlta);
+      expect(r.hinos.length, 30);
+      expect(r.faltando, isEmpty);
+      expect(r.curtos, isEmpty);
+      expect(r.hinos[6].titulo, 'Título 7');
+      for (final h in r.hinos) {
+        soDele(r, h.numero);
+      }
+    });
+
+    test('estrofe numerada com ponto (1. palavras) NÃO vira hino', () {
+      // É o que deixava o cabeçalho com a letra vazia: a primeira estrofe "1."
+      // era lida como começo do hino 1 e cortava o hino de verdade ao meio.
+      final texto = [
+        for (var n = 198; n <= 203; n++) real(n, estrofesComPonto: n >= 200),
+      ].join('\n');
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.hinos.map((h) => h.numero), [198, 199, 200, 201, 202, 203]);
+      expect(r.curtos, isEmpty);
+      for (final h in r.hinos) {
+        soDele(r, h.numero);
+      }
+      expect(r.hinos.last.letra, startsWith('1. palavras'));
+    });
+
+    test('cabeçalho sem o ponto no meio dos que têm', () {
+      final texto = [
+        real(5),
+        real(6),
+        real(7, cabecalho: '7 TÍTULO 7'),
+        real(8),
+        real(9),
+      ].join('\n');
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.hinos.map((h) => h.numero), [5, 6, 7, 8, 9]);
+      for (final h in r.hinos) {
+        soDele(r, h.numero);
+      }
+    });
+
+    test('título que começa com aspas não some e não é engolido', () {
+      // Se o cabeçalho não for reconhecido, o hino anterior ENGOLE o texto
+      // dele inteiro — e a prévia mostra um hino só, comprido, sem erro.
+      final texto = [
+        real(300),
+        real(301, cabecalho: '301. "TÍTULO ENTRE ASPAS"  '),
+        real(302, cabecalho: '302. “TÍTULO COM ASPAS CURVAS”'),
+        real(303),
+      ].join('\n');
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.hinos.map((h) => h.numero), [300, 301, 302, 303]);
+      for (final h in r.hinos) {
+        soDele(r, h.numero);
+      }
+    });
+
+    test('tabulação e espaço em volta do número não atrapalham', () {
+      final texto = [
+        real(27, cabecalho: '\t27.  TÍTULO 27'),
+        real(51, cabecalho: '51.\tTÍTULO 51'),
+        real(303, cabecalho: '   303.   TÍTULO 303'),
+      ].join('\n');
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.hinos.map((h) => h.numero), [27, 51, 303]);
+      for (final h in r.hinos) {
+        soDele(r, h.numero);
+      }
+    });
+
+    test('uma letra minúscula por erro de digitação no título não esconde o hino',
+        () {
+      // "CRElO", com L minúsculo no lugar do I: o hino 48 engoliria o 49.
+      final texto = [
+        real(48),
+        real(49, cabecalho: '49. ALELUIA! JA CRElO'),
+        real(50),
+      ].join('\n');
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.hinos.map((h) => h.numero), [48, 49, 50]);
+      for (final h in r.hinos) {
+        soDele(r, h.numero);
+      }
+      // E o título não grita no meio da lista.
+      expect(r.hinos[1].titulo, 'Aleluia! Ja Crelo');
+    });
+
+    test('texto antes do primeiro hino (cabeçalho do site) é ignorado', () {
+      final texto = 'LIVRO INVENTADO\n*****************\n'
+          'hinos do livro do 001 a 640\nVisite: http://exemplo.invalido/\n\n'
+          '${[for (var n = 1; n <= 3; n++) real(n)].join('\n')}';
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.hinos.map((h) => h.numero), [1, 2, 3]);
+      expect(r.hinos.first.letra, isNot(contains('LIVRO INVENTADO')));
+    });
+
+    test('as iniciais do autor, coladas no fim, ficam na letra', () {
+      // De propósito: é a autoria, e tirá-la às cegas apagaria informação que
+      // o líder pode querer. Fica visível na prévia.
+      final r = ImportarHinario.analisar(real(1), harpaCrista);
+      expect(r.hinos.single.letra, endsWith('X.Y.Z.'));
+    });
+
+    test('um candidato gigante não derruba o hino de verdade', () {
+      // Havia um "5." mais adiante cujo texto ia até o fim: com a regra "fica a
+      // mais comprida" ele ganhava, passava de 6000 e o hino 5 SUMIA da
+      // importação (virava "grande demais"). Letra que serve ganha de letra
+      // que não serve.
+      final gigante = List.filled(400, 'uma linha inventada de teste que enche')
+          .join('\n');
+      final texto = '${[real(4), real(5), real(6)].join('\n')}\n'
+          '5. LISTA GIGANTE INVENTADA\n$gigante\n';
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.hinos.map((h) => h.numero), [4, 5, 6]);
+      expect(r.grandes, isEmpty);
+      soDele(r, 5);
+    });
+
+    test('o número escrito errado NÃO apaga o hino de verdade', () {
+      // O 542 está digitado "442". Como tem mais estrofes, a regra "fica a mais
+      // comprida" o poria no lugar do 442 de verdade, TROCANDO a letra sem
+      // nenhum erro. Quem está na ordem certa ganha.
+      final texto = [
+        real(440),
+        real(441),
+        real(442),
+        real(443),
+        real(540),
+        real(541),
+        real(542, numeroEscrito: '442', titulo: 'HISTÓRIA INVENTADA', extra: 3),
+        real(543),
+        real(544),
+      ].join('\n');
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      final h442 = r.hinos.firstWhere((h) => h.numero == 442);
+      expect(h442.letra, contains('do hino 442 de teste'));
+      expect(h442.letra, isNot(contains('do hino 542')));
+      expect(h442.titulo, 'Título 442');
+      expect(r.repetidos, [442]);
+      // O 542 não entra, e a tela diz que falta...
+      expect(r.hinos.any((h) => h.numero == 542), isFalse);
+      expect(r.faltando, contains(542));
+      // ...e diz ONDE está o erro, para a pessoa consertar a linha: o app não
+      // troca o número sozinho.
+      final s = r.suspeitos.single;
+      expect(s.escrito, 442);
+      expect(s.provavel, 542);
+      expect(s.titulo, 'História Inventada');
+    });
+
+    test('o suspeito só aparece quando o número de verdade não foi achado', () {
+      // O 542 existe de verdade em outro lugar: o "442" é só uma cópia
+      // repetida, não um erro de digitação a consertar.
+      final texto = [
+        real(440),
+        real(441),
+        real(442),
+        real(443),
+        real(541),
+        real(542),
+        real(542, numeroEscrito: '442', titulo: 'OUTRA CÓPIA', extra: 3),
+        real(543),
+      ].join('\n');
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.suspeitos, isEmpty);
+    });
+
+    test('duas cópias do mesmo trecho: entra uma de cada, sem acusar erro', () {
+      // A fonte repete o 200 e o 201. Ficam os dois, e a tela avisa que
+      // apareceram duas vezes.
+      final texto =
+          [real(199), real(200), real(201), real(200), real(201), real(202)]
+              .join('\n');
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.hinos.map((h) => h.numero), [199, 200, 201, 202]);
+      expect(r.repetidos, [200, 201]);
+      expect(r.faltando, isEmpty);
+      // Cópia não é erro de digitação: nada a consertar.
+      expect(r.suspeitos, isEmpty);
+    });
+
+    test('sumário bem na ordem continua perdendo para a letra de verdade', () {
+      // O sumário está "na ordem" e a letra de verdade vem depois, "fora da
+      // ordem": ordem NÃO pode vencer letra que existe.
+      final texto = '1. TÍTULO 1\n2. TÍTULO 2\n3. TÍTULO 3\n\n'
+          '${[for (var n = 1; n <= 3; n++) real(n)].join('\n')}';
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.hinos.length, 3);
+      for (final h in r.hinos) {
+        soDele(r, h.numero);
+      }
+    });
+  });
 }

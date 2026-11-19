@@ -18,6 +18,16 @@
 /// escolhido para o texto INTEIRO, e não linha a linha: o formato "15 - Título"
 /// acha 640 hinos com letra; o "15. Título" acharia só estrofes, números de 1
 /// a 6, e perderia.
+///
+/// O QUE O TEXTO REAL DA HARPA ENSINOU (e nenhum teste inventado previa): o
+/// cabeçalho é "15. TÍTULO EM MAIÚSCULAS", com ponto, e do hino 200 em diante a
+/// fonte numera as ESTROFES com ponto também ("1. palavras…"). No formato
+/// "ponto" cada uma dessas estrofes virava um "hino" e cortava o cabeçalho de
+/// verdade, que ficava sem letra. O título em maiúsculas é o que separa um do
+/// outro, então o formato [FormatoDoHinario.caixaAlta] passou a aceitar o ponto.
+/// E, como a fonte tem erros de digitação, a ORDEM dos números também vale:
+/// um "442" entre o 541 e o 543 é o 542 escrito errado, e não pode apagar o
+/// 442 de verdade.
 library;
 
 import '../constants/hinarios.dart';
@@ -29,7 +39,7 @@ import '../constants/hinarios.dart';
 enum FormatoDoHinario {
   hino('Hino 15  (o título na mesma linha ou na linha de baixo)'),
   traco('15 - Título'),
-  caixaAlta('15 TÍTULO TODO EM MAIÚSCULAS'),
+  caixaAlta('15 TÍTULO   ou   15. TÍTULO  (o título todo em maiúsculas)'),
   ponto('15. Título   ou   15) Título'),
   sozinho('O número sozinho numa linha, e o título na linha de baixo');
 
@@ -65,6 +75,30 @@ const int maximoDeLetra = 6000;
 /// Linha mais comprida que isto não é título: é verso.
 const int maximoDoTitulo = 90;
 
+/// Um cabeçalho cujo número parece escrito errado.
+///
+/// Aparece quando um número repetido está ESCRITO fora da ordem e a posição
+/// dele diz qual era o número de verdade: um "442" entre o 541 e o 543 só pode
+/// ser o 542. O app NÃO corrige sozinho — trocar o número de um hino em
+/// silêncio seria o mesmo erro de trocar a letra —, mas diz exatamente onde
+/// está a linha para a pessoa consertar.
+class NumeroSuspeito {
+  /// O número que está escrito no texto.
+  final int escrito;
+
+  /// O número que a posição indica.
+  final int provavel;
+
+  /// O título do hino, como entraria na lista. Pode ser vazio.
+  final String titulo;
+
+  const NumeroSuspeito({
+    required this.escrito,
+    required this.provavel,
+    required this.titulo,
+  });
+}
+
 /// O que o app entendeu do texto colado.
 class ResultadoDaLeitura {
   /// O formato que achou mais hinos. Nulo quando não achou nenhum.
@@ -80,9 +114,14 @@ class ResultadoDaLeitura {
   /// o jeito normal de fazer isto.
   final List<int> faltando;
 
-  /// Números que apareceram mais de uma vez. O app fica com a ocorrência de
-  /// letra mais comprida, porque a outra costuma ser o sumário.
+  /// Números que apareceram mais de uma vez. O app fica com a ocorrência que
+  /// SERVE (letra de tamanho de hino), prefere a que está na ordem certa dos
+  /// números e, no empate, a de letra mais comprida: a outra costuma ser o
+  /// sumário.
   final List<int> repetidos;
+
+  /// Números que parecem escritos errados: ver [NumeroSuspeito]. Não entram.
+  final List<NumeroSuspeito> suspeitos;
 
   /// Achados, mas sem letra que chegue: não entram.
   final List<int> curtos;
@@ -101,6 +140,7 @@ class ResultadoDaLeitura {
     required this.hinos,
     this.faltando = const [],
     this.repetidos = const [],
+    this.suspeitos = const [],
     this.curtos = const [],
     this.grandes = const [],
     this.semTitulo = const [],
@@ -176,13 +216,14 @@ class ImportarHinario {
     final opcoes = formato != null
         ? <FormatoDoHinario>[formato]
         : FormatoDoHinario.values;
+    var trechosEscolhidos = const <_Trecho>[];
     for (final f in opcoes) {
       final candidatos = _candidatos(linhas, f);
-      final trechos = _trechos(linhas, candidatos);
+      final trechos = _trechos(linhas, candidatos, hinario);
       final melhoresDeste = _melhoresPorNumero(trechos, hinario);
-      final pontos = melhoresDeste.values
-          .where((t) => t.tamanho >= minimoDeLetra)
-          .length;
+      // Só conta letra que SERVE: um formato que "acha" hino com 12 mil
+      // caracteres de letra achou o hino seguinte colado, não um hino.
+      final pontos = melhoresDeste.values.where((t) => t.serve).length;
       // `>` e não `>=`: no empate vale o primeiro da lista. Formato forçado
       // vale sempre, mesmo sem achar nada: a tela precisa poder dizer "neste
       // formato não achei hino", e não "formato nenhum".
@@ -190,6 +231,7 @@ class ImportarHinario {
         melhorPontos = pontos;
         escolhido = f;
         candidatosEscolhidos = candidatos;
+        trechosEscolhidos = trechos;
         melhores = melhoresDeste;
       }
     }
@@ -198,7 +240,7 @@ class ImportarHinario {
 
     // Quantas vezes cada número apareceu, para avisar dos repetidos.
     final vezes = <int, int>{};
-    for (final t in _trechos(linhas, candidatosEscolhidos)) {
+    for (final t in trechosEscolhidos) {
       if (hinario.existe(t.numero)) {
         vezes[t.numero] = (vezes[t.numero] ?? 0) + 1;
       }
@@ -239,6 +281,27 @@ class ImportarHinario {
     final foraDoLimite =
         candidatosEscolhidos.where((c) => !hinario.existe(c.numero)).length;
 
+    // Número repetido, de letra que serve, que ficou de fora porque está FORA
+    // DA ORDEM, e cujo lugar no texto deixa só UM número possível entre os
+    // vizinhos (541 · 442 · 543 → 542): provável erro de digitação. Só se o
+    // número de verdade não foi achado em outro lugar.
+    final achados = hinos.map((h) => h.numero).toSet();
+    final suspeitos = <NumeroSuspeito>[];
+    for (final t in trechosEscolhidos) {
+      if (!hinario.existe(t.numero) || !t.serve || t.emOrdem) continue;
+      if (identical(melhores[t.numero], t)) continue; // este entrou
+      final a = t.antes;
+      final d = t.depois;
+      if (a == null || d == null || d - a != 2) continue;
+      if (achados.contains(a + 1)) continue;
+      final nome = tituloLimpo(t.titulo);
+      suspeitos.add(NumeroSuspeito(
+        escrito: t.numero,
+        provavel: a + 1,
+        titulo: nome,
+      ));
+    }
+
     return ResultadoDaLeitura(
       formato: escolhido,
       hinos: hinos,
@@ -246,6 +309,7 @@ class ImportarHinario {
       repetidos: (vezes.entries.where((e) => e.value > 1).map((e) => e.key)
           .toList()
         ..sort()),
+      suspeitos: suspeitos,
       curtos: curtos,
       grandes: grandes,
       semTitulo: semTitulo,
@@ -282,7 +346,7 @@ class ImportarHinario {
         .replaceAll(RegExp(r'[\s*_#.]+$'), '')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
-    if (_semMinusculas(t)) t = emTituloBonito(t);
+    if (_quaseTodoMaiusculo(t)) t = emTituloBonito(t);
     return t;
   }
 
@@ -290,16 +354,25 @@ class ImportarHinario {
 
   static bool _temLetra(String s) => _letra.hasMatch(s);
 
-  /// Tem pelo menos três letras e nenhuma é minúscula?
-  static bool _semMinusculas(String s) {
+  /// Tem pelo menos três letras e quase todas são maiúsculas?
+  ///
+  /// "Quase" é de propósito. Texto copiado de PDF e de site tem erro de
+  /// digitação, e "ALELUIA! JÁ CRElO" (um L minúsculo no lugar do I) é um
+  /// título todo em maiúsculas para quem lê. Exigir ZERO minúsculas fazia esse
+  /// cabeçalho não ser reconhecido — e, sem cabeçalho, o hino anterior engolia
+  /// o texto dele inteiro, sem erro nenhum. 80% separa o título (quase tudo
+  /// maiúsculo) de uma frase de estrofe, que tem uma maiúscula no começo e o
+  /// resto em minúscula.
+  static bool _quaseTodoMaiusculo(String s) {
     var letras = 0;
+    var maiusculas = 0;
     for (final r in s.runes) {
       final c = String.fromCharCode(r);
       if (c.toLowerCase() == c.toUpperCase()) continue; // não é letra
       letras++;
-      if (c != c.toUpperCase()) return false; // achou minúscula
+      if (c == c.toUpperCase()) maiusculas++;
     }
-    return letras >= 3;
+    return letras >= 3 && maiusculas / letras >= 0.8;
   }
 
   /// Palavras que, no meio do título, ficam em minúscula: "Grande é o Senhor",
@@ -363,7 +436,14 @@ class ImportarHinario {
   static final _reTraco = RegExp(r'^(\d{1,4})\s*[-–—−:·•]\s*(\S.*)$');
   static final _rePonto = RegExp(r'^(\d{1,4})\s*[.)]\s+(\S.*)$');
   static final _reSozinho = RegExp(r'^(\d{1,4})$');
-  static final _reCaixaAlta = RegExp(r'^(\d{1,4})\s+(\p{L}.*)$', unicode: true);
+  // O ponto (ou parêntese) depois do número é OPCIONAL, e o título pode abrir
+  // com aspas: `301. "VEM CEAR"` é um cabeçalho de verdade. O que separa o
+  // cabeçalho da estrofe numerada ("1. palavras…") é o título em maiúsculas,
+  // conferido em `_quaseTodoMaiusculo`, e não o formato do número.
+  static final _reCaixaAlta = RegExp(
+    r'^(\d{1,4})(?:\s*[.)])?\s+([\p{L}"“”‘’' "'" r'(].*)$',
+    unicode: true,
+  );
   static final _reHino = RegExp(
     r'^(?:hino|n[ºo°]|n[uú]mero|n\.)\.?\s*(\d{1,4})\s*(?:[-–—:.·)]\s*(.*))?$',
     caseSensitive: false,
@@ -396,7 +476,7 @@ class ImportarHinario {
           final m = _reCaixaAlta.firstMatch(l);
           if (m != null &&
               _tituloPlausivel(m.group(2)!) &&
-              _semMinusculas(m.group(2)!)) {
+              _quaseTodoMaiusculo(m.group(2)!)) {
             saida.add(_Candidato(
                 linha: i, numero: int.parse(m.group(1)!), titulo: m.group(2)));
           }
@@ -427,7 +507,27 @@ class ImportarHinario {
   /// seguinte — QUALQUER seguinte do mesmo formato, mesmo de número que o
   /// hinário não tem. Assim um rodapé "2024 - CPAD" encerra o último hino em
   /// vez de ser colado na letra dele.
-  static List<_Trecho> _trechos(List<String> linhas, List<_Candidato> cands) {
+  static List<_Trecho> _trechos(
+    List<String> linhas,
+    List<_Candidato> cands,
+    Hinario hinario,
+  ) {
+    // Os vizinhos de cada candidato, só entre os que têm número de hinário:
+    // um rodapé "2024 - EDITORA" corta o último hino, mas não conta como
+    // vizinho de ninguém na ordem dos números.
+    final antes = List<int?>.filled(cands.length, null);
+    final depois = List<int?>.filled(cands.length, null);
+    int? ultimo;
+    for (var k = 0; k < cands.length; k++) {
+      antes[k] = ultimo;
+      if (hinario.existe(cands[k].numero)) ultimo = cands[k].numero;
+    }
+    ultimo = null;
+    for (var k = cands.length - 1; k >= 0; k--) {
+      depois[k] = ultimo;
+      if (hinario.existe(cands[k].numero)) ultimo = cands[k].numero;
+    }
+
     final saida = <_Trecho>[];
     for (var k = 0; k < cands.length; k++) {
       final c = cands[k];
@@ -459,16 +559,27 @@ class ImportarHinario {
         titulo: titulo,
         corpo: corpo,
         tamanho: tamanho,
+        antes: antes[k],
+        depois: depois[k],
       ));
     }
     return saida;
   }
 
-  /// Para cada número do hinário, o trecho de letra mais comprida.
+  /// Para cada número do hinário, o trecho que fica. Quando um número aparece
+  /// mais de uma vez, vale, nesta ordem:
   ///
-  /// É isto que faz o sumário perder para o hino de verdade: a linha do
-  /// sumário "15 - Sou Grato ..... 23" é candidata a hino 15 como qualquer
-  /// outra, mas tem a letra de uma linha só.
+  /// 1. **Letra que serve** ([_Trecho.serve]) ganha de letra que não serve.
+  ///    É isto que faz o sumário perder para o hino de verdade — a linha do
+  ///    sumário "15 - Sou Grato ..... 23" é candidata a hino 15 como qualquer
+  ///    outra, mas tem a letra de uma linha só — e também impede que um
+  ///    candidato cujo texto vai até o fim do arquivo (12 mil caracteres)
+  ///    derrube o hino de verdade, que passaria a "grande demais" e sumiria.
+  /// 2. **O que está na ordem certa dos números** ([_Trecho.emOrdem]). Um
+  ///    "442" escrito entre o 541 e o 543 é o 542 digitado errado; como costuma
+  ///    ter mais letra que o 442 de verdade, sem esta regra ele o substituiria
+  ///    em silêncio.
+  /// 3. **A letra mais comprida.**
   static Map<int, _Trecho> _melhoresPorNumero(
     List<_Trecho> trechos,
     Hinario hinario,
@@ -477,9 +588,17 @@ class ImportarHinario {
     for (final t in trechos) {
       if (!hinario.existe(t.numero)) continue;
       final atual = m[t.numero];
-      if (atual == null || t.tamanho > atual.tamanho) m[t.numero] = t;
+      if (atual == null || _ganha(t, atual)) m[t.numero] = t;
     }
     return m;
+  }
+
+  /// [a] é melhor que [b] para o mesmo número? Os critérios estão em
+  /// [_melhoresPorNumero]. Empate total deixa o primeiro do texto.
+  static bool _ganha(_Trecho a, _Trecho b) {
+    if (a.serve != b.serve) return a.serve;
+    if (a.serve && a.emOrdem != b.emOrdem) return a.emOrdem;
+    return a.tamanho > b.tamanho;
   }
 }
 
@@ -510,10 +629,26 @@ class _Trecho {
   /// Tamanho da letra sem contar espaço, para comparar trechos.
   final int tamanho;
 
+  /// O número do candidato anterior e do seguinte (só dos que o hinário tem).
+  /// Nulos nas pontas do texto.
+  final int? antes;
+  final int? depois;
+
   const _Trecho({
     required this.numero,
     required this.titulo,
     required this.corpo,
     required this.tamanho,
+    this.antes,
+    this.depois,
   });
+
+  /// A letra tem tamanho de hino: nem curta demais (sumário), nem grande
+  /// demais (o hino seguinte colado).
+  bool get serve => tamanho >= minimoDeLetra && tamanho <= maximoDeLetra;
+
+  /// O número deste candidato cabe entre os vizinhos: maior que o anterior e
+  /// menor que o seguinte. Quem está nas pontas do texto está em ordem.
+  bool get emOrdem =>
+      (antes == null || antes! < numero) && (depois == null || depois! > numero);
 }
