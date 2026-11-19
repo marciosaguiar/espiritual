@@ -286,7 +286,7 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
               hintText: 'Ex: grato, 15, firme nas promessas',
               prefixIcon: const Icon(Icons.search_rounded, size: 20),
               filled: true,
-              fillColor: isDark ? Colors.white10 : Colors.black.withOpacity(0.04),
+              fillColor: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
@@ -338,7 +338,7 @@ class _SeletorDeHinario extends StatelessWidget {
             child: Material(
               color: ativo
                   ? AppColors.blue
-                  : (isDark ? Colors.white10 : Colors.black.withOpacity(0.05)),
+                  : (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05)),
               borderRadius: BorderRadius.circular(12),
               child: InkWell(
                 borderRadius: BorderRadius.circular(12),
@@ -387,7 +387,7 @@ class _Mostrador extends StatelessWidget {
       alignment: Alignment.center,
       padding: const EdgeInsets.symmetric(vertical: 18),
       decoration: BoxDecoration(
-        color: isDark ? Colors.white10 : Colors.black.withOpacity(0.04),
+        color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Text(
@@ -435,7 +435,7 @@ class _Recado extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
-        color: AppColors.yellow.withOpacity(isDark ? 0.14 : 0.12),
+        color: AppColors.yellow.withValues(alpha: isDark ? 0.14 : 0.12),
         borderRadius: BorderRadius.circular(12),
       ),
       child: Column(
@@ -569,7 +569,7 @@ class _Tecla extends StatelessWidget {
         padding: const EdgeInsets.all(5),
         child: Material(
           color: suave
-              ? (isDark ? Colors.white10 : Colors.black.withOpacity(0.04))
+              ? (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04))
               : (isDark ? Colors.white12 : Colors.white),
           borderRadius: BorderRadius.circular(14),
           elevation: suave ? 0 : 1,
