@@ -840,8 +840,10 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                           Icon(Icons.person_add_alt_rounded,
                               size: 16, color: AppColors.red),
                           SizedBox(width: 4),
+                          // "Definir" não diz o que vai acontecer; "Escalar"
+                          // é a palavra que esta equipe usa ("fui escalado").
                           Text(
-                            'Definir',
+                            'Escalar',
                             style: TextStyle(
                               fontFamily: 'Poppins',
                               fontSize: 12,

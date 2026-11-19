@@ -34,7 +34,7 @@ class SugestoesDoDia extends StatelessWidget {
                 color: AppColors.yellow, size: 20),
             const SizedBox(width: 8),
             Text(
-              'Sugestão de Repertório',
+              'Sugestão de repertório',
               style: TextStyle(
                 fontFamily: 'Poppins',
                 fontSize: 16,

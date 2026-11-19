@@ -69,8 +69,18 @@ class _SongsScreenState extends State<SongsScreen>
     // Só o Repertório tem busca e filtros; nas outras seções a barra é só o
     // seletor, e a altura acompanha — barra alta e vazia come a tela de quem
     // está lendo.
-    final alturaDaBarra =
-        _secao == SecaoDeMusicas.repertorio ? 168.0 : 56.0;
+    // A ALTURA DA BARRA MORA NUM LUGAR SÓ.
+    //
+    // Ela morava em dois — o `preferredSize` fixo em 120 e este cálculo em
+    // 168 — e os dois discordavam. Medido a 375 px: o título "Músicas"
+    // aparecia CORTADO ao meio, porque o conteúdo é maior que o espaço
+    // declarado e o Flutter desenha por cima do título.
+    const alturaDoSeletor = 54.0;
+    const alturaDaBusca = 56.0;
+    const alturaDosFiltros = 44.0;
+    final alturaDaBarra = _secao == SecaoDeMusicas.repertorio
+        ? alturaDoSeletor + alturaDaBusca + alturaDosFiltros
+        : alturaDoSeletor;
     final topInset =
         MediaQuery.of(context).padding.top + kToolbarHeight + alturaDaBarra;
 
@@ -105,7 +115,7 @@ class _SongsScreenState extends State<SongsScreen>
             ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(120),
+          preferredSize: Size.fromHeight(alturaDaBarra),
           child: Column(
             children: [
               _SeletorDeSecao(

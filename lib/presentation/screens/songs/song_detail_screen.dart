@@ -619,7 +619,11 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                   'cifra-ver',
                   _showChords ? Icons.queue_music_rounded
                       : Icons.music_note_rounded,
-                  _showChords ? 'Ocultar cifra' : 'Mostrar cifra',
+                  // As MESMAS palavras do Perfil ("Eu canto" / "Eu toco"):
+                  // "ocultar" e "mostrar" nomeiam a operação, estas duas
+                  // dizem o que a pessoa vai ver. Dois vocabulários para a
+                  // mesma escolha é o jeito de ela parecer duas escolhas.
+                  _showChords ? 'Ver só a letra' : 'Ver a cifra',
                 ),
               if (_temTablatura)
                 _opcao(
@@ -697,14 +701,23 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                   isDark: isDark,
                   onTap: () => _mudarTom(_semitones - 1),
                 ),
+                // MEDIDO A 375 px: "Original" em 54 px quebrava em duas
+                // linhas ("Origina / l") e subia por cima do −. Em letra
+                // minúscula, numa linha só e com mais espaço, cabe — e
+                // minúscula é o certo aqui, que é legenda e não título.
                 SizedBox(
-                  width: 54,
+                  width: 72,
                   child: Text(
-                    ChordTransposer.getTransposeDisplay(_semitones),
+                    _semitones == 0
+                        ? 'original'
+                        : ChordTransposer.getTransposeDisplay(_semitones),
                     textAlign: TextAlign.center,
+                    maxLines: 1,
+                    softWrap: false,
+                    overflow: TextOverflow.visible,
                     style: TextStyle(
                       fontFamily: 'Poppins',
-                      fontSize: 13.5,
+                      fontSize: 12.5,
                       fontWeight: FontWeight.w600,
                       color: isDark
                           ? AppColors.textSecondaryDark

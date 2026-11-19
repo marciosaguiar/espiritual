@@ -171,18 +171,11 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Antes de tudo: instalar. Enquanto o app vive numa aba, ele
-                  // não recebe aviso nenhum no iPhone.
-                  const InstallBanner(),
-
-                  // Depois de instalar, a outra coisa que só funciona se for
-                  // feita ANTES de precisar: o e-mail de recuperação.
-                  //
-                  // Fica aqui, e não só em Perfil, porque ninguém abre o
-                  // Perfil por conta própria — e uma conta sem e-mail, com a
-                  // senha esquecida, é acesso perdido sem conserto. Sai da
-                  // tela sozinho assim que a pessoa cadastra.
-                  const _CartaoRecuperarSenha(),
+                  // O aviso de robô parado vem ANTES de tudo: é o único
+                  // cartão desta tela que ninguém mais vai ver se não for
+                  // agora, e cada dia de silêncio é um culto sem escala ou um
+                  // lembrete que não chegou.
+                  AvisoDeSaude(onAbrir: widget.onAbrirPerfil ?? () {}),
 
                   // UM CARTÃO SÓ DE CULTO.
                   //
@@ -198,16 +191,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   // ministério. Nos dois casos, o toque abre o culto.
                   _CartaoDoCulto(scale: nextScale, songs: songs),
 
-                  // Logo depois do "você toca domingo": é a pergunta
-                  // seguinte, e era a razão de a pessoa abrir o app. Para
-                  // chegar à cifra do domingo ela saía do Início, ia na
-                  // Escala, abria o culto, achava a música e tocava nela.
-                  // O aviso de robô parado vem ANTES de tudo: é o único
-                  // cartão desta tela que ninguém mais vai ver se não for
-                  // agora, e cada dia de silêncio é um culto sem escala ou
-                  // um lembrete que não chegou.
-                  AvisoDeSaude(onAbrir: widget.onAbrirPerfil ?? () {}),
-
                   // O repertório do meu próximo culto, cada música abrindo
                   // no toque, no tom e na função daquele culto. Fica junto do
                   // cartão do culto porque é a mesma pergunta — "o que eu
@@ -222,6 +205,17 @@ class _HomeScreenState extends State<HomeScreen> {
                     onAbrirMembros: widget.onAbrirMembros,
                     onAbrirEscala: widget.onAbrirEscala,
                   ),
+
+                  // OS DOIS CONVITES FICAM NO FIM, e isso foi medido.
+                  //
+                  // Eles abriam a tela, e a 375 px os dois juntos empurravam
+                  // o cartão do culto para fora do primeiro olhar: quem abria
+                  // o app para ver se toca amanhã tinha de rolar para
+                  // descobrir. Nenhum dos dois é "agora" — instalar e
+                  // cadastrar e-mail são coisas de uma vez na vida —, e os
+                  // dois somem sozinhos quando estão feitos.
+                  const InstallBanner(),
+                  const _CartaoRecuperarSenha(),
 
                   // O que SAIU desta tela, e para onde foi:
                   //
