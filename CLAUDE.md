@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 462 testes
+flutter test                   # 484 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -107,7 +107,7 @@ lib/
 ├─ core/
 │  ├─ constants/     cores, textos (AppStrings.appName é o nome do app)
 │  ├─ platform/      install.dart — detecção de PWA, por importação condicional
-│  └─ utils/         chord_transposer.dart
+│  └─ utils/         chord_transposer, mapa_da_musica, texto (busca sem acento)
 ├─ data/
 │  ├─ models/        user, song, arrangement (+ songPref), scale, message
 │  └─ services/      auth_service, firestore_service, local_storage_service
@@ -1728,6 +1728,123 @@ Foi removido também um `loadSongs()` que ninguém chamava e que, no `catch`,
 trocava a falha pela lista de músicas guardadas no aparelho. Depois de
 reinstalar o app essa lista é vazia, então uma falha de leitura teria virado
 "nenhuma música", sem erro nenhum na tela.
+
+### Menos é mais: cada tela responde UMA pergunta
+
+A rodada de 19/11/2026. O app tinha crescido por acréscimo — cada entrega
+punha mais um cartão no Início e mais uma linha no Perfil —, e o resultado
+era uma tela principal com nove cartões e um Perfil com treze linhas mais
+duas listas compridas no fim. Para quem "só sabe usar WhatsApp", tela cheia é
+tela que não se lê.
+
+**A régua:** cada tela responde uma pergunta. O que não ajuda a responder sai
+ou desce um nível. **Nada foi removido** — mudou de lugar.
+
+- **Início: "o que eu preciso fazer agora?"** Um cartão de culto (que já
+  tinha virado um na entrega anterior), as minhas próximas músicas, e
+  pendências DE VERDADE: mensagem nova no chat, culto sem ninguém escalado,
+  pedido de entrada esperando. Saíram os atalhos que repetiam a barra de
+  baixo — "Hino pelo número" e o versículo do dia foram para dentro de
+  Músicas e da Bíblia. **Quando não há nada pendente, uma linha amigável**,
+  não um cartão vazio.
+  As três contas de pendência são funções puras (`widgets/home/pendencias.dart`)
+  e o que os testes guardam é principalmente o que NÃO deve aparecer: minha
+  própria mensagem não conta como não lida, **"nunca abriu o chat neste
+  aparelho" é ZERO e não "tudo"** (estrear o app com "47 mensagens novas" é
+  parede, não notícia), culto cancelado e culto passado não são pendência, e
+  robô pendente não manda o líder procurar uma pessoa que não existe.
+- **Músicas: "onde está a música que eu preciso?"** Virou a biblioteca do
+  ministério, com um seletor no topo: **Repertório · Hinários · Bíblia**. As
+  três telas já existiam; o que mudou é que a Bíblia e o teclado de hinos
+  deixaram de depender de um atalho no Início ou de uma linha no Perfil para
+  serem encontrados. As duas são embutidas por um parâmetro `embutida`, não
+  copiadas — duas telas parecidas é o jeito de uma ficar para trás.
+- **Perfil: "quem eu sou aqui, e como mexo nos meus avisos?"** Treze linhas
+  viraram quatro (Avisos · Conta · Modo escuro · Ajuda) mais, só para o
+  líder, **Painel do líder**. Os três contadores do topo — Favoritas, Tons
+  salvos, No celular — **viraram atalhos tocáveis**: eram números decorativos
+  acima de duas listas que moravam no fim da tela, onde ninguém rolava.
+  Favoritas e No celular levam aos filtros que já existem na aba Músicas;
+  Tons salvos abre a lista que estava no fim.
+- **"Saúde do sistema" saiu do Perfil.** O cartão com as cinco linhas foi
+  para o Painel do líder, e no Perfil ficou só uma tarja — **e só quando algo
+  está amarelo ou vermelho**. Cinco linhas de diagnóstico com tudo verde é o
+  jeito de a pessoa aprender a passar o olho por cima.
+
+**Decisões que tomei sozinho nesta rodada** (ficam registradas porque a
+rodada foi autônoma):
+
+- **Modo escuro é um interruptor na lista, não uma tela "Aparência".** Para
+  quem só usa WhatsApp, um interruptor que se vê e se vira num toque ganha de
+  uma tela que esconde um interruptor.
+- **O versículo do dia foi para a Bíblia** e as sugestões do dia para o
+  Repertório, em vez de desaparecerem do Início para o nada.
+- **A busca das listas de gente só aparece acima de oito pessoas.** Campo de
+  texto sobre seis nomes é um campo a mais na tela.
+- **Durante uma busca, as contagens continuam sendo as do ministério.** "3
+  líderes · 5 membros" é o tamanho da equipe, não o tamanho da busca.
+
+### O campo que faltava: editar a letra e a cifra
+
+**Era um defeito, não uma falta de recurso.** "Editar música" abria nome,
+artista, tom, links e observações — e não a letra. Quem colou a cifra errada,
+ou colou do Cifra Club com o cabeçalho grudado, não tinha como consertar: o
+único caminho era "Colar cifra" substituindo tudo, de novo, do começo.
+
+- **Um editor só, alcançado de três lugares** (cadastrar, editar, e a tela da
+  música), e **um caminho de gravação só** (`_gravarCifra`). Três telas
+  parecidas é o jeito de uma ficar para trás quando a regra muda.
+- **Fonte monoespaçada e nada de correção automática**
+  (`autocorrect: false`, `enableSuggestions: false`,
+  `textCapitalization: none`). Numa cifra, o alinhamento É a informação: o
+  acorde fica em cima da sílaba. O teclado do celular, "ajudando", trocava
+  `Am` por `AM` e comia espaço.
+- **`null` ≠ texto vazio** em `EdicaoDeMusica`: `null` é "não mexi na cifra",
+  vazio seria "apague a cifra". Confundir os dois apagaria a cifra de toda
+  música editada para corrigir um nome.
+- **"Pré-visualizar" transpõe de verdade**, mas não grava nada: é para
+  conferir se a cifra está no tom que se pensa, que é o erro mais caro do
+  "Colar cifra" (ver "Colar cifra do Cifra Club").
+- **Rascunho no aparelho, oferecido e nunca aplicado sozinho.** O editor
+  guarda o texto a cada segundo em `LocalStorageService`, e na volta mostra
+  uma faixa com "Recuperar" e "Descartar". Substituir o texto sozinho seria
+  trocar a cifra certa por um rascunho velho sem pedir licença. O rascunho é
+  esquecido quando a gravação dá certo — não quando a tela fecha, porque
+  fechar a tela é justamente o caso em que ele serve.
+- **As partes são detectadas, não digitadas.** `MapaDaMusica` já achava
+  `[Refrão]` e tablatura para o Modo ao vivo; o editor mostra o que ele achou
+  ("cifra com 12 linhas de acordes · 4 partes"), e a tela da música ganhou
+  **"Ocultar tablaturas"** no menu ⋯ — quem canta não lê `e|---3---`, e são
+  seis linhas de ruído entre dois versos. A escolha fica no APARELHO, e
+  ausência vale como "mostrar".
+- **Dados existentes abrem certo:** o formato não mudou. A cifra continua no
+  arranjo, a letra continua na música, e o editor lê a cifra quando existe e
+  a letra quando não — que é a mesma regra que o Modo ao vivo já usava.
+
+### A tela da música tinha oito botões no topo
+
+Transpor para cima, transpor para baixo, salvar o tom, voltar ao original,
+"só letra", "com cifra", favoritar, salvar no celular, o menu ⋯ — tudo na
+mesma faixa, acima da música, em telas de 375 px.
+
+- **Sobrou o tom, e nada mais:** `Tom G` com um `−` e um `+` de 44 px, o
+  coração e o ⋯. Tudo o que saiu está no ⋯, que é o gesto que esta equipe já
+  conhece do WhatsApp.
+- **O tom se salva sozinho**, 700 ms depois do último toque. "Salvar" e
+  "Reset" eram dois botões para uma coisa que o app podia simplesmente
+  lembrar — e quem não tocava em "Salvar" voltava à música no domingo e
+  achava o tom errado. "Voltar ao tom original" ficou no ⋯, onde se procura
+  uma volta atrás.
+- **"Eu canto" e "Eu toco" substituíram "só letra / com cifra".** São as
+  palavras da pessoa, não as do app: quem canta quer a letra grande, quem
+  toca quer os acordes no seu tom.
+
+### O manual e o guia dentro do app
+
+Guia que descreve a tela de antes é pior que guia nenhum: ele faz a pessoa
+achar que o app está quebrado. Então o "Como usar o app" (Perfil → Ajuda) e o
+manual do administrador foram reescritos junto com a navegação, na mesma
+entrega — nunca depois.
 
 ## O que não existe (e o relatório de auditoria aponta)
 
