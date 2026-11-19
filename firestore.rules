@@ -335,6 +335,76 @@ service cloud.firestore {
       }
     }
 
+    // ── Biblioteca de hinários ──────────────────────────────────────────────
+    //
+    // O TEXTO dos hinos que o líder importa (Harpa Cristã, Cantor Cristão).
+    //
+    //   hinarios/{id}               o ÍNDICE: {titulos: {"15": "Sou Grato"}}
+    //   hinarios/{id}/hinos/{n}     a letra de UM hino
+    //
+    // POR QUE NÃO É `songs`: o app escuta a coleção `songs` INTEIRA, e cada
+    // aparelho a relê toda vez que fica mais de 30 minutos parado. Com os
+    // ~1.200 hinos lá dentro, uma igreja de 15 pessoas passaria das 50 mil
+    // leituras grátis do dia num domingo comum — e, acabada a cota, o app
+    // inteiro para de ler, não só os hinos. Aqui, o índice custa UMA leitura
+    // por hinário e a letra só é lida quando alguém abre aquele hino. O hino
+    // só vira música de `songs` quando o ministério passa a USÁ-LO.
+    //
+    // Escrever é só do líder, e ninguém apaga: re-importar o mesmo hinário
+    // corrige o texto por cima, que é o jeito de consertar um engano.
+    match /hinarios/{hinarioId} {
+      allow read: if aprovado();
+
+      allow create, update: if ehLider()
+        && hinarioId in ['harpa', 'cantor']
+        && _indiceValido();
+
+      allow delete: if false;
+
+      // O índice é a lista de títulos que a tela mostra de uma vez. O total
+      // tem de bater com a lista: um número que mente aqui apareceria na
+      // tela como "640 hinos" sobre um índice de 300.
+      function _indiceValido() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['titulos', 'total', 'atualizadoEm', 'atualizadoPor'])
+          && d.titulos is map
+          && d.total is int
+          && d.total == d.titulos.size()
+          && d.total <= 2000
+          && d.atualizadoPor == eu()
+          && d.atualizadoEm == request.time;
+      }
+
+      match /hinos/{numero} {
+        allow read: if aprovado();
+
+        allow create, update: if ehLider()
+          && hinarioId in ['harpa', 'cantor']
+          && _hinoDaBibliotecaValido(numero);
+
+        allow delete: if false;
+
+        // O id do documento é o NÚMERO, e o campo tem de concordar com ele:
+        // é o que impede duas cópias do mesmo hino e faz "abrir o hino 15"
+        // ser uma leitura por id, sem consulta nenhuma. O teto de 9999 é
+        // largo de propósito, pelo mesmo motivo do de `songs`: o teto de
+        // verdade (640, 581) mora no app, onde se troca sem deploy de regra.
+        function _hinoDaBibliotecaValido(numero) {
+          let d = request.resource.data;
+          return d.keys().hasOnly(['numero', 'titulo', 'letra', 'importadoPor', 'importadoEm'])
+            && d.numero is int
+            && d.numero >= 1 && d.numero <= 9999
+            && string(d.numero) == numero
+            && d.titulo is string
+            && d.titulo.size() >= 1 && d.titulo.size() <= 150
+            && d.letra is string
+            && d.letra.size() >= 1 && d.letra.size() <= 20000
+            && d.importadoPor == eu()
+            && d.importadoEm == request.time;
+        }
+      }
+    }
+
     // ── Equipes ─────────────────────────────────────────────────────────────
     // "Equipe Manhã", "Equipe Noite": quem toca, e em quê. Todo mundo lê
     // (os nomes aparecem na escala); só o líder monta.

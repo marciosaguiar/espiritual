@@ -13,6 +13,7 @@ import 'data/services/local_storage_service.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'presentation/providers/theme_provider.dart';
 import 'presentation/providers/songs_provider.dart';
+import 'presentation/providers/biblioteca_provider.dart';
 import 'presentation/providers/scale_provider.dart';
 import 'presentation/providers/agenda_provider.dart';
 import 'presentation/providers/saude_provider.dart';
@@ -274,6 +275,7 @@ class LevitaSyncApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => SongsProvider()),
+        ChangeNotifierProvider(create: (_) => BibliotecaProvider()),
         ChangeNotifierProvider(create: (_) => ScaleProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
         ChangeNotifierProvider(create: (_) => AgendaProvider()),

@@ -147,6 +147,23 @@ void main() {
             reason: '${h.id} não está na regra');
       }
     });
+
+    test('a regra da BIBLIOTECA também conhece todos os hinários do app', () {
+      // A biblioteca de hinários tem a lista dela, em dois pontos (o índice e
+      // o hino). Esquecer um hinário novo ali faria a importação ser recusada
+      // pelo banco com erro de permissão, depois de o líder colar o hinário
+      // inteiro e conferir a prévia.
+      final regras = File('firestore.rules').readAsStringSync();
+      final listas = RegExp(r"hinarioId in \[([^\]]*)\]").allMatches(regras);
+      expect(listas.length, 2,
+          reason: 'a lista fechada saiu da regra do índice ou da do hino');
+      for (final lista in listas) {
+        for (final h in hinariosDisponiveis) {
+          expect(lista.group(1), contains("'${h.id}'"),
+              reason: '${h.id} não está na regra da biblioteca');
+        }
+      }
+    });
   });
 
   group('achar o hino na lista', () {

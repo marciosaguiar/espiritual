@@ -1,14 +1,18 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/song_model.dart';
+import '../models/hino_da_biblioteca.dart';
 import '../models/arrangement_model.dart';
 import '../models/team_model.dart';
 import '../models/scale_model.dart';
 import '../models/message_model.dart';
 import '../models/user_model.dart';
 import 'auth_service.dart';
+import '../../core/constants/hinarios.dart';
 import '../../core/utils/crypto_utils.dart';
+import '../../core/utils/importar_hinario.dart';
 
 class FirestoreService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -140,6 +144,136 @@ class FirestoreService {
       hinario: hinario,
       numero: numero,
     );
+  }
+
+  // ─── BIBLIOTECA DE HINÁRIOS ───────────────────────────────────────────────
+  // O texto dos hinos que o líder importa, FORA de `songs`: o app escuta
+  // `songs` inteira, e 1.200 hinos ali dentro estourariam a cota de leitura
+  // num domingo comum. Ver [HinoDaBiblioteca].
+
+  static const String _hinarios = 'hinarios';
+
+  /// Quantos hinos vão em cada commit.
+  ///
+  /// O Firestore recusa lote com mais de 500 escritas; 400 deixa folga para o
+  /// índice que vai junto. Não é chute: o teste das regras prova que um lote
+  /// de 400 hinos mais o índice passa pela regra (test_regras).
+  static const int hinosPorLote = 400;
+
+  /// Quanto esperar um commit antes de dizer que a internet não ajudou.
+  static const Duration esperaDoLote = Duration(seconds: 40);
+
+  static CollectionReference<Map<String, dynamic>> _hinosDa(String hinarioId) =>
+      _db.collection(_hinarios).doc(hinarioId).collection('hinos');
+
+  /// Os títulos do hinário que o líder importou. UMA leitura.
+  ///
+  /// Hinário que ninguém importou devolve um índice VAZIO e `error` nulo: é um
+  /// estado normal, e a tela já sabe o que dizer. Erro de verdade — sem
+  /// internet, sem permissão — vem em `error`, e a tela mostra o motivo em vez
+  /// de fingir que a biblioteca está vazia.
+  static Future<({IndiceDoHinario? indice, String? error})>
+      lerIndiceDoHinario(String hinarioId) async {
+    try {
+      final doc = await _db.collection(_hinarios).doc(hinarioId).get();
+      return (
+        indice: IndiceDoHinario.fromFirestore(hinarioId, doc.data()),
+        error: null
+      );
+    } on FirebaseException catch (e) {
+      return (indice: null, error: _describe(e, 'ler a lista de hinos'));
+    } catch (e) {
+      return (indice: null, error: 'Não foi possível ler a lista de hinos: $e');
+    }
+  }
+
+  /// A letra de UM hino. Uma leitura, por id — o id é o número.
+  ///
+  /// `hino` nulo com `error` nulo quer dizer "não está na biblioteca".
+  static Future<({HinoDaBiblioteca? hino, String? error})> lerHinoDaBiblioteca(
+    String hinarioId,
+    int numero,
+  ) async {
+    try {
+      final doc = await _hinosDa(hinarioId).doc('$numero').get();
+      return (
+        hino: HinoDaBiblioteca.fromFirestore(hinarioId, doc.data()),
+        error: null
+      );
+    } on FirebaseException catch (e) {
+      return (hino: null, error: _describe(e, 'abrir o hino'));
+    } catch (e) {
+      return (hino: null, error: 'Não foi possível abrir o hino: $e');
+    }
+  }
+
+  /// Grava os [hinos] lidos na biblioteca do [hinario].
+  ///
+  /// O id de cada hino é o número, então importar DE NOVO regrava por cima:
+  /// não duplica, e é o jeito de corrigir um texto. Cada lote leva junto o
+  /// índice com todos os títulos até ali, para o índice nunca prometer um
+  /// hino que não foi gravado — se a internet cair no meio, o que entrou está
+  /// no índice e o resto simplesmente ainda não está.
+  ///
+  /// O índice atual é lido ANTES, e se essa leitura falha nada é gravado:
+  /// gravar um índice novo sem saber o antigo apagaria da lista os hinos de
+  /// uma importação anterior.
+  ///
+  /// Devolve quantos hinos entraram mesmo no erro, porque "importei 400 de
+  /// 640 antes de falhar" é o que a pessoa precisa para decidir o que fazer.
+  static Future<({int gravados, String? error})> importarHinario({
+    required Hinario hinario,
+    required List<HinoLido> hinos,
+    required String porQuemId,
+    void Function(int feitos, int total)? aoAvancar,
+  }) async {
+    if (hinos.isEmpty) {
+      return (gravados: 0, error: 'Não há nenhum hino para importar.');
+    }
+
+    final atual = await lerIndiceDoHinario(hinario.id);
+    if (atual.error != null) {
+      return (
+        gravados: 0,
+        error: 'Não gravei nada, porque não consegui conferir a lista que já '
+            'existe. ${atual.error}'
+      );
+    }
+
+    var indice = atual.indice!;
+    var gravados = 0;
+    try {
+      for (final pedaco in emPedacos(hinos, hinosPorLote)) {
+        indice = indice.comHinos(pedaco);
+        final lote = _db.batch();
+        for (final h in pedaco) {
+          lote.set(_hinosDa(hinario.id).doc('${h.numero}'),
+              HinoDaBiblioteca.paraFirestore(h, porQuemId));
+        }
+        lote.set(_db.collection(_hinarios).doc(hinario.id),
+            indice.paraDocumento(porQuemId));
+        await lote.commit().timeout(esperaDoLote);
+        gravados += pedaco.length;
+        aoAvancar?.call(gravados, hinos.length);
+      }
+      return (gravados: gravados, error: null);
+    } on TimeoutException {
+      // O Firestore guarda a escrita no aparelho e a envia quando a internet
+      // volta, então o lote pode ainda entrar. Como o id é o número, repetir a
+      // importação depois é seguro: regrava por cima, sem duplicar.
+      return (
+        gravados: gravados,
+        error: 'A internet demorou demais. O que já foi enviado continua '
+            'valendo; quando ela voltar, importe de novo para completar.'
+      );
+    } on FirebaseException catch (e) {
+      return (gravados: gravados, error: _describe(e, 'importar o hinário'));
+    } catch (e) {
+      return (
+        gravados: gravados,
+        error: 'Não foi possível importar o hinário: $e'
+      );
+    }
   }
 
   // ─── ARRANGEMENTS ─────────────────────────────────────────────────────────

@@ -10,7 +10,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc,
-  serverTimestamp, Bytes, deleteField,
+  serverTimestamp, Bytes, deleteField, writeBatch,
 } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 
@@ -1563,6 +1563,189 @@ await teste('o carimbo de FALHA também é aceito', () =>
 
 await teste('NEM O LÍDER apaga o carimbo', () =>
   assertFails(deleteDoc(doc(lider(), 'saude', 'cultos'))));
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Biblioteca de hinários: `hinarios/{id}` (índice) e `hinarios/{id}/hinos/{n}`
+//
+// É onde mora o TEXTO dos hinos que o líder importa, FORA de `songs`: a
+// coleção `songs` é escutada inteira por todo aparelho, e 1.200 hinos lá
+// dentro estourariam a cota de leitura num domingo. As regras guardam o que
+// erra em silêncio: o id do documento ter de ser o número (senão "abrir o
+// hino 15" lê o documento errado), o total do índice bater com a lista, e a
+// hora vir do servidor.
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log('\n── biblioteca de hinários ──');
+
+// O documento EXATO que o app grava (FirestoreService.importarHinario).
+const hinoDaBiblioteca = (n, extra = {}) => ({
+  numero: n, titulo: `Título ${n}`, letra: `Letra inventada do hino ${n}`,
+  importadoPor: LIDER, importadoEm: serverTimestamp(), ...extra,
+});
+const indiceDaBiblioteca = (extra = {}) => ({
+  titulos: { '15': 'Título 15', '16': 'Título 16' }, total: 2,
+  atualizadoEm: serverTimestamp(), atualizadoPor: LIDER, ...extra,
+});
+
+await teste('o líder grava o hino como o app o grava', () =>
+  assertSucceeds(setDoc(doc(lider(), 'hinarios/harpa/hinos', '15'),
+    hinoDaBiblioteca(15))));
+
+await teste('o líder grava o índice como o app o grava', () =>
+  assertSucceeds(setDoc(doc(lider(), 'hinarios', 'harpa'),
+    indiceDaBiblioteca())));
+
+await teste('re-importar (gravar por cima) corrige o texto', () =>
+  assertSucceeds(setDoc(doc(lider(), 'hinarios/harpa/hinos', '15'),
+    hinoDaBiblioteca(15, { letra: 'Letra corrigida' }))));
+
+await teste('levita aprovado LÊ o hino', () =>
+  assertSucceeds(getDoc(doc(levita(), 'hinarios/harpa/hinos', '15'))));
+
+await teste('levita aprovado LÊ o índice', () =>
+  assertSucceeds(getDoc(doc(levita(), 'hinarios', 'harpa'))));
+
+await teste('quem está pendente NÃO lê o hino', () =>
+  assertFails(getDoc(doc(novato(), 'hinarios/harpa/hinos', '15'))));
+
+await teste('quem está pendente NÃO lê o índice', () =>
+  assertFails(getDoc(doc(novato(), 'hinarios', 'harpa'))));
+
+await teste('sem login NÃO lê', () =>
+  assertFails(getDoc(doc(deslogado(), 'hinarios/harpa/hinos', '15'))));
+
+await teste('levita NÃO grava hino', () =>
+  assertFails(setDoc(doc(levita(), 'hinarios/harpa/hinos', '20'),
+    hinoDaBiblioteca(20, { importadoPor: LEVITA }))));
+
+await teste('levita NÃO grava o índice', () =>
+  assertFails(setDoc(doc(levita(), 'hinarios', 'cantor'),
+    indiceDaBiblioteca({ atualizadoPor: LEVITA }))));
+
+await teste('NEM O LÍDER apaga um hino', () =>
+  assertFails(deleteDoc(doc(lider(), 'hinarios/harpa/hinos', '15'))));
+
+await teste('NEM O LÍDER apaga o índice', () =>
+  assertFails(deleteDoc(doc(lider(), 'hinarios', 'harpa'))));
+
+// ── o id do documento é o número ──
+await teste('o número do campo tem de ser o do documento', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios/harpa/hinos', '21'),
+    hinoDaBiblioteca(22))));
+
+await teste('número gravado como TEXTO é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios/harpa/hinos', '23'),
+    hinoDaBiblioteca(23, { numero: '23' }))));
+
+await teste('hino 0 é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios/harpa/hinos', '0'),
+    hinoDaBiblioteca(0))));
+
+await teste('hino 10000 é recusado (o teto da regra é 9999)', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios/harpa/hinos', '10000'),
+    hinoDaBiblioteca(10000))));
+
+await teste('hino 9999 passa: o teto de verdade mora no app', () =>
+  assertSucceeds(setDoc(doc(lider(), 'hinarios/harpa/hinos', '9999'),
+    hinoDaBiblioteca(9999))));
+
+// ── o conteúdo ──
+await teste('título vazio é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios/harpa/hinos', '24'),
+    hinoDaBiblioteca(24, { titulo: '' }))));
+
+await teste('título de 151 letras é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios/harpa/hinos', '24'),
+    hinoDaBiblioteca(24, { titulo: 'x'.repeat(151) }))));
+
+await teste('letra vazia é recusada', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios/harpa/hinos', '24'),
+    hinoDaBiblioteca(24, { letra: '' }))));
+
+await teste('letra de 20 mil letras passa; de 20.001 não', async () => {
+  await assertSucceeds(setDoc(doc(lider(), 'hinarios/harpa/hinos', '25'),
+    hinoDaBiblioteca(25, { letra: 'x'.repeat(20000) })));
+  await assertFails(setDoc(doc(lider(), 'hinarios/harpa/hinos', '26'),
+    hinoDaBiblioteca(26, { letra: 'x'.repeat(20001) })));
+});
+
+await teste('campo que não existe no modelo é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios/harpa/hinos', '27'),
+    hinoDaBiblioteca(27, { extra: 1 }))));
+
+// ── quem importou, e quando ──
+await teste('importadoPor de outra pessoa é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios/harpa/hinos', '28'),
+    hinoDaBiblioteca(28, { importadoPor: LEVITA }))));
+
+await teste('a hora do APARELHO é recusada: tem de ser a do servidor', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios/harpa/hinos', '28'),
+    hinoDaBiblioteca(28, { importadoEm: new Date() }))));
+
+// ── a lista de hinários é fechada ──
+await teste('hinário desconhecido é recusado (hino)', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios/biblia/hinos', '1'),
+    hinoDaBiblioteca(1))));
+
+await teste('hinário desconhecido é recusado (índice)', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios', 'biblia'),
+    indiceDaBiblioteca())));
+
+await teste('o Cantor Cristão também grava', () =>
+  assertSucceeds(setDoc(doc(lider(), 'hinarios/cantor/hinos', '125'),
+    hinoDaBiblioteca(125))));
+
+// ── o índice ──
+await teste('total que não bate com a lista é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios', 'harpa'),
+    indiceDaBiblioteca({ total: 640 }))));
+
+await teste('títulos que não são um mapa são recusados', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios', 'harpa'),
+    indiceDaBiblioteca({ titulos: ['a', 'b'], total: 2 }))));
+
+await teste('índice sem a hora do servidor é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios', 'harpa'),
+    indiceDaBiblioteca({ atualizadoEm: new Date() }))));
+
+await teste('índice com campo extra é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'hinarios', 'harpa'),
+    indiceDaBiblioteca({ extra: true }))));
+
+// ── o lote da importação ──
+//
+// A importação grava centenas de hinos num commit só, e cada escrita passa
+// pela regra, que consulta o cadastro do líder. O Firestore limita quantas
+// consultas uma requisição pode fazer — este teste existe para provar que o
+// tamanho do lote que o app usa cabe nesse limite, em vez de descobrir isso
+// com o líder olhando a barra de progresso.
+await teste('um lote de 400 hinos + o índice passa num commit só', async () => {
+  const db = lider();
+  const lote = writeBatch(db);
+  const titulos = {};
+  for (let n = 1; n <= 400; n++) {
+    lote.set(doc(db, 'hinarios/cantor/hinos', String(n)), hinoDaBiblioteca(n));
+    titulos[String(n)] = `Título ${n}`;
+  }
+  lote.set(doc(db, 'hinarios', 'cantor'), {
+    titulos, total: 400, atualizadoEm: serverTimestamp(), atualizadoPor: LIDER,
+  });
+  await assertSucceeds(lote.commit());
+});
+
+await teste('o lote com UM hino ruim é recusado inteiro', async () => {
+  const db = lider();
+  const lote = writeBatch(db);
+  lote.set(doc(db, 'hinarios/cantor/hinos', '500'), hinoDaBiblioteca(500));
+  lote.set(doc(db, 'hinarios/cantor/hinos', '501'), hinoDaBiblioteca(502));
+  await assertFails(lote.commit());
+  // E o bom também não entrou: lote é tudo ou nada. Lê como LÍDER — ler como
+  // quem não pode seria erro de permissão de qualquer jeito, e o teste
+  // passaria sem provar nada.
+  const bom = await getDoc(doc(lider(), 'hinarios/cantor/hinos', '500'));
+  if (bom.exists()) throw new Error('o hino bom entrou mesmo com o lote recusado');
+});
 
 console.log('\n── coleção desconhecida ──');
 await teste('coleção sem regra fica bloqueada', () =>
