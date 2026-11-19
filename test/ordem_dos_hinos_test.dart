@@ -55,6 +55,33 @@ void main() {
       expect(numerosDe(r), [3, 15, 42, 200]);
     });
 
+    test('pelo nome ordena pelo NOME, não pela sigla e pelo número', () {
+      // O título gravado é "HC 15 · Sou Grato", e ordenar o título inteiro
+      // ordena por "hc 1", "hc 120", "hc 15"… — ou seja, pelo número de
+      // novo. MEDIDO NA TELA antes do conserto: "HC 1 · Chuvas de Graça"
+      // vinha antes de "HC 120 · Amigo de Pecadores", e a opção parecia um
+      // botão que não faz nada.
+      final comTitulo = [
+        hino(1, 'HC 1 · Chuvas de Graça'),
+        hino(120, 'HC 120 · Amigo de Pecadores'),
+        hino(15, 'HC 15 · Sou Grato'),
+      ];
+      final r = SongsProvider.hinosOrdenados(comTitulo, OrdemDosHinos.nome);
+      expect(numerosDe(r), [120, 1, 15]);
+    });
+
+    test('nome cadastrado à mão, sem prefixo, passa intacto', () {
+      // Nem todo hino foi cadastrado pelo teclado numérico: o líder pode ter
+      // digitado só "Sou Grato". Cortar o que não é prefixo comeria o nome.
+      expect(nomeSemHinario('Sou Grato'), 'Sou Grato');
+      expect(nomeSemHinario('HC 15 · Sou Grato'), 'Sou Grato');
+      expect(
+          nomeSemHinario('CC 8 · Firme nas Promessas'), 'Firme nas Promessas');
+      // Título que é só o prefixo volta inteiro: linha vazia ordenaria como
+      // vazia e iria toda para o começo.
+      expect(nomeSemHinario('HC 15 · '), 'HC 15 ·');
+    });
+
     test('pelo nome ignora acento', () {
       // "Átrios" tem de vir ANTES de "Bendito". Comparando o texto cru, o
       // código do "Á" é maior que o de qualquer letra comum e ele cairia no

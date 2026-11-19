@@ -174,6 +174,27 @@ enum OrdemDosHinos {
   const OrdemDosHinos(this.id, this.rotulo);
 }
 
+/// O nome do hino sem o "HC 15 · " que o app grava no título.
+///
+/// A sigla e o número vão gravados no título de propósito — é o que faz o
+/// hino se reconhecer na escala e no chat. Mas ordenar "pelo nome" com esse
+/// prefixo dentro ordena pela SIGLA e pelo NÚMERO, e a lista sai quase igual
+/// à de "pelo número": a pessoa toca na opção, nada muda, e o botão parece
+/// quebrado.
+///
+/// **Medido na tela**, antes de isto existir: "HC 1 · Chuvas de Graça" vinha
+/// antes de "HC 120 · Amigo de Pecadores".
+///
+/// Só corta o que tem a cara do prefixo gerado — sigla curta, número, " · ".
+/// Hino cadastrado à mão com o nome puro passa intacto, e um título que seja
+/// SÓ o prefixo volta inteiro, para nenhuma linha ordenar como vazia.
+final _prefixoDeHino = RegExp(r'^[A-Za-zÀ-ÿ]{1,5}\s*\d{1,4}\s*·\s*');
+
+String nomeSemHinario(String titulo) {
+  final sem = titulo.replaceFirst(_prefixoDeHino, '').trim();
+  return sem.isEmpty ? titulo.trim() : sem;
+}
+
 /// A ordem com este id, ou "pelo número".
 ///
 /// Valor desconhecido cai no PADRÃO, nunca lança: a chave vem do aparelho e

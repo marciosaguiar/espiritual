@@ -316,10 +316,15 @@ class SongsProvider extends ChangeNotifier {
       case OrdemDosHinos.numero:
         saida.sort(porNumero);
       case OrdemDosHinos.nome:
-        // Sem acento e sem maiúscula: senão "Ó Vem" cairia depois de "Zelo",
-        // porque o código do "Ó" é maior que o de qualquer letra comum.
+        // Duas coisas, e as duas foram vistas na tela:
+        //
+        // · sem a sigla e o número do título ("HC 15 · "), senão isto ordena
+        //   pelo número de novo e a opção parece não fazer nada;
+        // · sem acento e sem maiúscula, senão "Ó Vem" cai depois de "Zelo",
+        //   porque o código do "Ó" é maior que o de qualquer letra comum.
         saida.sort((a, b) {
-          final c = nomeComparavel(a.name).compareTo(nomeComparavel(b.name));
+          final c = nomeComparavel(nomeSemHinario(a.name))
+              .compareTo(nomeComparavel(nomeSemHinario(b.name)));
           return c != 0 ? c : porNumero(a, b);
         });
       case OrdemDosHinos.maisTocados:
