@@ -1889,6 +1889,77 @@ coisas custaram tempo e ficam registradas:
 sozinho. Tocar no + leva "Tom G" a "Tom G#/Ab"; saindo da música e abrindo de
 novo, continua "Tom G#/Ab". O − e o + são 44×44.
 
+### A ordem dos hinos e dos hinários
+
+Rodada de 19/11/2026, pequena. A lista de hinos saía sempre em ordem de
+número, e os hinários apareciam na ordem em que eu os acrescentei ao código —
+uma igreja que canta do Cantor Cristão tocava na pastilha certa toda vez que
+abria a tela, sempre com a igreja esperando.
+
+**Ordenar os hinos**, num botão discreto ao lado da busca: pelo número
+(padrão), pelo nome, mais tocados no ministério, meus favoritos primeiro.
+
+- **A busca continua valendo em qualquer ordem**, porque filtrar e ordenar
+  são funções separadas: `hinosFiltrados` acha, `hinosOrdenados` põe em
+  ordem.
+- **O NÚMERO É SEMPRE O DESEMPATE.** Em "mais tocados", dois hinos com a
+  mesma contagem — e o caso comum é zero — sairiam em ordem indefinida, e a
+  lista dançaria a cada abertura. É a mesma regra de "Escolher as músicas do
+  culto", pelo mesmo motivo: lista que muda de lugar faz a pessoa tocar na
+  linha errada.
+- **"Pelo nome" ordena pelo NOME, não pelo título.** O título gravado é
+  "HC 15 · Sou Grato" — a sigla vai nele de propósito, para o hino se
+  reconhecer na escala e no chat. Mas ordenar o título inteiro ordena por
+  "hc 1", "hc 120", "hc 15", ou seja, pelo número de novo. **Visto na tela:**
+  "HC 1 · Chuvas de Graça" vinha antes de "HC 120 · Amigo de Pecadores", e a
+  opção parecia um botão que não faz nada. `nomeSemHinario` corta só o que
+  tem a cara do prefixo gerado; hino cadastrado à mão com o nome puro passa
+  intacto.
+- **"Mais tocados" diz de quando.** A contagem sai dos cultos que o app já
+  tem em memória, e a janela de leitura são 60 dias — então a tela escreve
+  "Mais tocados nos últimos 2 meses, primeiro", e nunca promete o histórico
+  inteiro. Mesma honestidade de "não tocada nos últimos 2 meses" no
+  repertório.
+- **Sem culto registrado, a opção avisa e cai para o número.** Escolher "mais
+  tocados" num ministério sem histórico devolveria uma lista por número sem
+  explicação nenhuma — a pessoa acharia que o botão não funcionou.
+- `ScaleProvider.vezesTocadas` segue as regras de `ultimaVezTocada`: culto
+  cancelado não conta, culto futuro não conta. E a mesma música repetida
+  dentro de um culto conta **uma vez**: foi um culto.
+
+**Arrastar os hinários.** As duas pastilhas lado a lado viraram uma lista de
+pé, porque lado a lado não existe "arrastar para cima". O preço são uns 50 px
+antes do teclado; o que se ganha é a igreja do Cantor Cristão deixá-lo em
+primeiro **e o app abrir nele**.
+
+- **A alça fica visível, e o mesmo movimento está no menu de cada linha**
+  ("Mover para cima/baixo"). Arrastar exige firmeza na mão, e metade deste
+  ministério tem mais de sessenta anos. A opção que não tem para onde ir
+  **some**, em vez de aparecer e não fazer nada.
+- **`hinariosNaOrdem` é pura porque a lista gravada envelhece em silêncio.**
+  Um hinário NOVO não está nela — e, se a tela mostrasse só o que está
+  gravado, ele simplesmente não apareceria para quem já arrastou os cartões
+  uma vez, sem que ninguém ligasse uma coisa à outra. Então o que não está na
+  lista entra no fim, e id que não existe mais é descartado.
+- **O primeiro da lista é o que abre, e a linha diz isso** ("abre aqui").
+  Duas fontes para a mesma decisão seria arrastar o Cantor para cima e o app
+  continuar abrindo na Harpa. O último hinário usado só vale **enquanto
+  ninguém arrastou nada** — é o que preserva o costume de quem já usa o app.
+- **Reordenar NÃO troca de hinário:** quem arrasta está organizando a lista,
+  não escolhendo o que ler agora.
+- `movido` prende o índice nas bordas: subir o primeiro devolve a mesma
+  lista, em vez de dar a volta e mandá-lo para o fim.
+
+**As duas escolhas ficam no APARELHO** (`LocalStorageService`), como o
+marcador da Bíblia e os últimos hinos abertos: é preferência de quem está com
+o celular na mão, não há o que sincronizar, e no Firestore custaria leitura
+por abertura para guardar duas palavras. A ordem dos hinos vale para todos os
+hinários — quem gosta de ver por nome gosta disso na Harpa e no Cantor.
+
+**O que isto custou no pacote:** +29 KB, quase todos da máquina de arrastar
+do Flutter (`ReorderableListView`, que o app não usava em lugar nenhum). Ver
+a ressalva em "A trava do tamanho": a folga da publicação ficou curta.
+
 ### O manual e o guia dentro do app
 
 Guia que descreve a tela de antes é pior que guia nenhum: ele faz a pessoa

@@ -74,7 +74,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             Icons.music_note_rounded,
             'Músicas',
             'O repertório da igreja, os hinários (hino pelo número) e a '
-                'Bíblia. Dá para mudar o tom e guardar no celular.'
+                'Bíblia. Dá para mudar o tom e guardar no celular. Nos '
+                'hinários, o botão ao lado da busca muda a ordem da lista, '
+                'e dá para arrastar os hinários: o primeiro é o que abre.'
           ),
           (
             Icons.calendar_month_rounded,
