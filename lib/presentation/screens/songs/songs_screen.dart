@@ -10,6 +10,7 @@ import '../../../data/models/song_model.dart';
 import 'song_detail_screen.dart';
 import 'add_song_screen.dart';
 import 'hino_por_numero_screen.dart';
+import '../biblia/biblia_screen.dart';
 import '../../widgets/songs/colar_cifra.dart';
 import '../../widgets/songs/faixa_cifra_copiada.dart';
 import '../../widgets/common/glass.dart';
@@ -21,9 +22,32 @@ class SongsScreen extends StatefulWidget {
   State<SongsScreen> createState() => _SongsScreenState();
 }
 
+/// As três bibliotecas da aba Músicas.
+enum SecaoDeMusicas {
+  /// O que a igreja canta: o repertório cadastrado.
+  repertorio('Repertório'),
+
+  /// Harpa Cristã e Cantor Cristão, pelo número.
+  hinarios('Hinários'),
+
+  /// Leitura offline, no aparelho.
+  biblia('Bíblia');
+
+  const SecaoDeMusicas(this.rotulo);
+  final String rotulo;
+}
+
 class _SongsScreenState extends State<SongsScreen>
     with SingleTickerProviderStateMixin {
   final _searchCtrl = TextEditingController();
+
+  /// Qual biblioteca está na tela.
+  ///
+  /// A aba Músicas virou a BIBLIOTECA do ministério: o repertório da igreja,
+  /// os hinários e a Bíblia. Antes, o hino pelo número era um atalho no
+  /// Início e a Bíblia era uma linha no Perfil — dois lugares que ninguém
+  /// procuraria para achar algo para ler.
+  SecaoDeMusicas _secao = SecaoDeMusicas.repertorio;
 
   @override
   void dispose() {
@@ -41,7 +65,13 @@ class _SongsScreenState extends State<SongsScreen>
     // so there is no per-frame work here anymore.
 
     // Body extends behind the frosted app bar so the list blurs underneath it.
-    final topInset = MediaQuery.of(context).padding.top + kToolbarHeight + 120;
+    // Só o Repertório tem busca e filtros; nas outras seções a barra é só o
+    // seletor, e a altura acompanha — barra alta e vazia come a tela de quem
+    // está lendo.
+    final alturaDaBarra =
+        _secao == SecaoDeMusicas.repertorio ? 168.0 : 56.0;
+    final topInset =
+        MediaQuery.of(context).padding.top + kToolbarHeight + alturaDaBarra;
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -59,19 +89,10 @@ class _SongsScreenState extends State<SongsScreen>
         ),
         title: const Text(AppStrings.songs),
         actions: [
-          // Para TODOS, não só para o líder: quem precisa abrir o hino 15 no
-          // meio do culto é quem vai tocar.
-          IconButton(
-            icon: const Icon(Icons.dialpad_rounded),
-            tooltip: 'Hino pelo número',
-            onPressed: () {
-              Navigator.push(
-                context,
-                GlassPageRoute(builder: (_) => const HinoPorNumeroScreen()),
-              );
-            },
-          ),
-          if (auth.isAdmin)
+          // O teclado de hinos saiu daqui: virou a seção "Hinários", ao lado
+          // de "Repertório". Ícone de teclado numérico numa barra não diz a
+          // ninguém que ali estão a Harpa e o Cantor Cristão.
+          if (auth.isAdmin && _secao == SecaoDeMusicas.repertorio)
             IconButton(
               icon: const Icon(Icons.add_rounded),
               onPressed: () {
@@ -86,6 +107,12 @@ class _SongsScreenState extends State<SongsScreen>
           preferredSize: const Size.fromHeight(120),
           child: Column(
             children: [
+              _SeletorDeSecao(
+                escolhida: _secao,
+                isDark: isDark,
+                onEscolher: (s) => setState(() => _secao = s),
+              ),
+              if (_secao == SecaoDeMusicas.repertorio) ...[
               // Search bar
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
@@ -171,11 +198,26 @@ class _SongsScreenState extends State<SongsScreen>
                 ),
               ),
               const SizedBox(height: 8),
+              ],
             ],
           ),
         ),
       ),
-      body: _buildBody(songsProvider, isDark, topInset),
+      body: switch (_secao) {
+        SecaoDeMusicas.repertorio =>
+          _buildBody(songsProvider, isDark, topInset),
+        // O teclado e a Bíblia vêm sem barra própria (`embutida`): a aba já
+        // tem a dela, e duas barras empilhadas com dois títulos parecem
+        // defeito.
+        SecaoDeMusicas.hinarios => Padding(
+            padding: EdgeInsets.only(top: topInset),
+            child: const HinoPorNumeroScreen(embutida: true),
+          ),
+        SecaoDeMusicas.biblia => Padding(
+            padding: EdgeInsets.only(top: topInset),
+            child: const BibliaScreen(embutida: true),
+          ),
+      },
     );
   }
 
@@ -578,6 +620,73 @@ class _SongListTile extends StatelessWidget {
                 color: AppColors.textSecondaryLight, size: 20),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Repertório · Hinários · Bíblia.
+///
+/// Três palavras, do mesmo tamanho, sempre visíveis. Um menu escondido aqui
+/// faria a Bíblia e os hinários continuarem invisíveis — que era justamente
+/// o problema de eles morarem num atalho no Início e numa linha no Perfil.
+class _SeletorDeSecao extends StatelessWidget {
+  final SecaoDeMusicas escolhida;
+  final bool isDark;
+  final ValueChanged<SecaoDeMusicas> onEscolher;
+
+  const _SeletorDeSecao({
+    required this.escolhida,
+    required this.isDark,
+    required this.onEscolher,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      child: Row(
+        children: SecaoDeMusicas.values.map((s) {
+          final ativa = s == escolhida;
+          return Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Material(
+                color: ativa
+                    ? AppColors.blue
+                    : (isDark
+                        ? Colors.white10
+                        : Colors.black.withValues(alpha: 0.05)),
+                borderRadius: BorderRadius.circular(10),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () => onEscolher(s),
+                  child: Padding(
+                    // 11 px de altura dá um alvo de ~40 px, que o polegar
+                    // acerta sem olhar.
+                    padding: const EdgeInsets.symmetric(vertical: 11),
+                    child: Text(
+                      s.rotulo,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: ativa
+                            ? Colors.white
+                            : (isDark
+                                ? AppColors.textPrimaryDark
+                                : AppColors.textPrimaryLight),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }

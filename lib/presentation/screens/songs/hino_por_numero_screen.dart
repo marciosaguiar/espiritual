@@ -41,7 +41,16 @@ class HinoPorNumeroScreen extends StatefulWidget {
   /// trás quando a regra muda.
   final bool paraEscolher;
 
-  const HinoPorNumeroScreen({super.key, this.paraEscolher = false});
+  /// Dentro da aba Músicas, o teclado não traz Scaffold nem barra própria: a
+  /// aba já tem as suas, e duas barras empilhadas com dois títulos é o tipo
+  /// de tela que parece defeito.
+  final bool embutida;
+
+  const HinoPorNumeroScreen({
+    super.key,
+    this.paraEscolher = false,
+    this.embutida = false,
+  });
 
   @override
   State<HinoPorNumeroScreen> createState() => _HinoPorNumeroScreenState();
@@ -201,13 +210,7 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
     final achados = songs.hinosDe(_hinario.id, busca: _busca);
     final numeroDigitado = int.tryParse(_digitado);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(widget.paraEscolher
-            ? 'Escolher hino pelo número'
-            : 'Hino pelo número'),
-      ),
-      body: ListView(
+    final corpo = ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
         children: [
           _SeletorDeHinario(
@@ -308,8 +311,18 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
                   isDark: isDark,
                   onAbrir: () => _irPara(h),
                 )),
-        ],
+      ],
+    );
+
+    if (widget.embutida) return corpo;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.paraEscolher
+            ? 'Escolher hino pelo número'
+            : 'Hino pelo número'),
       ),
+      body: corpo,
     );
   }
 }

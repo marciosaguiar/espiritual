@@ -13,19 +13,26 @@ import 'biblia_leitura_screen.dart';
 /// O provider nasce aqui, e não em `main.dart` junto dos outros, porque a
 /// Bíblia só deve custar alguma coisa a quem a abre.
 class BibliaScreen extends StatelessWidget {
-  const BibliaScreen({super.key});
+  /// Dentro da aba Músicas, a Bíblia não traz Scaffold nem barra própria: a
+  /// aba já tem as suas. Sem isto apareceriam duas barras, uma embaixo da
+  /// outra, com dois títulos.
+  final bool embutida;
+
+  const BibliaScreen({super.key, this.embutida = false});
 
   @override
   Widget build(BuildContext context) {
     return ChangeNotifierProvider(
       create: (_) => BibliaProvider()..iniciar(),
-      child: const _BibliaCorpo(),
+      child: _BibliaCorpo(embutida: embutida),
     );
   }
 }
 
 class _BibliaCorpo extends StatefulWidget {
-  const _BibliaCorpo();
+  final bool embutida;
+
+  const _BibliaCorpo({this.embutida = false});
 
   @override
   State<_BibliaCorpo> createState() => _BibliaCorpoState();
@@ -87,28 +94,38 @@ class _BibliaCorpoState extends State<_BibliaCorpo> {
     final corTexto =
         isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
 
+    final corpo = b.carregando
+        ? _Carregando(tamanho: b.descricaoAtual.tamanho)
+        : b.erro != null
+            ? _Falhou(
+                mensagem: b.erro!,
+                aoTentar: () => b.trocarTraducao(b.idAtual),
+              )
+            : _listaDeLivros(context, b, isDark, corTexto);
+
+    final trocarTraducao = TextButton.icon(
+      onPressed: () => _escolherTraducao(context, b),
+      icon: const Icon(Icons.translate_rounded, size: 18),
+      label: Text(b.descricaoAtual.sigla),
+      style: TextButton.styleFrom(foregroundColor: AppColors.blue),
+    );
+
+    if (widget.embutida) {
+      return Column(
+        children: [
+          Align(alignment: Alignment.centerRight, child: trocarTraducao),
+          Expanded(child: corpo),
+        ],
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       appBar: AppBar(
         title: const Text('Bíblia'),
-        actions: [
-          TextButton.icon(
-            onPressed: () => _escolherTraducao(context, b),
-            icon: const Icon(Icons.translate_rounded, size: 18),
-            label: Text(b.descricaoAtual.sigla),
-            style: TextButton.styleFrom(foregroundColor: AppColors.blue),
-          ),
-          const SizedBox(width: 6),
-        ],
+        actions: [trocarTraducao, const SizedBox(width: 6)],
       ),
-      body: b.carregando
-          ? _Carregando(tamanho: b.descricaoAtual.tamanho)
-          : b.erro != null
-              ? _Falhou(
-                  mensagem: b.erro!,
-                  aoTentar: () => b.trocarTraducao(b.idAtual),
-                )
-              : _listaDeLivros(context, b, isDark, corTexto),
+      body: corpo,
     );
   }
 
