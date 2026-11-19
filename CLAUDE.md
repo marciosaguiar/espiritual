@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 671 testes
+flutter test                   # 675 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -2078,7 +2078,7 @@ hinário e conferir a prévia. Foi provado quebrando de propósito: com um campo
 mais no app, o teste falha. O lote é de 400 hinos + o índice por commit, e o
 teste de regras prova que isso passa pelo limite de consultas por requisição.
 
-**O motor de leitura** (`core/utils/importar_hinario.dart`, função pura, 54
+**O motor de leitura** (`core/utils/importar_hinario.dart`, função pura, 57
 testes):
 
 - O app NÃO SABE como é o arquivo da pessoa. Tenta cinco formatos (`Hino 15`,
@@ -2167,7 +2167,7 @@ passar:
   data zero, que em Brasília é 31/12/1969. Passava no GitHub e no contêiner
   (UTC) e reprovava no Mac do dono. O defeito era do TESTE (agora `toUtc()`).
   A suíte inteira foi rodada em `TZ=America/Sao_Paulo` e em UTC: 656 nos dois
-  (671 depois de ler o texto real da Harpa — ver a seção abaixo).
+  (675 depois de ler o texto real da Harpa — ver a seção abaixo).
   **Ao mexer em data, rode também `TZ=America/Sao_Paulo flutter test`.**
 
 Os dois dizem a mesma coisa: o computador do dono é o ambiente que mais difere
@@ -2227,6 +2227,24 @@ EU previ. O texto de verdade tem outra forma, e três defeitos que só ele mostr
   verdade do mesmo número**. Provável causa do "faltam o 8 ao 13" — não
   confirmada, porque o texto exato daquela colagem não foi guardado. Agora
   letra que serve ganha de letra que não serve.
+- **O primeiro teste de verdade no app achou mais um (foto da prévia do dono):**
+  "Achei 625 hinos, do 15 ao 640. Falta o 584." — tudo certo, menos um. Na fonte
+  o cabeçalho é `584.O PILOTO`, com o ponto **colado** no título, e o leitor
+  exigia espaço depois do ponto. O hino 584 inteiro **entrou na letra do 583**,
+  e a frase só dizia "Falta o 584": a prévia não avisava que o 583 estava sujo.
+  Dois consertos: o ponto colado passou a valer (`584.O PILOTO`; a estrofe
+  `2.Os encantos…` continua não sendo cabeçalho, porque o título dela não é
+  maiúsculo), e **todo número que falta é procurado no texto** — se há uma linha
+  que começa com ele, a tela diz qual é e em que hino ela foi parar, e que é
+  melhor NÃO importar assim (`LinhaPerdida`). O limite é 10: abaixo disso "4.
+  palavras…" é estrofe, e todo hino que faltasse acusaria a própria estrofe.
+  **A frase sozinha não basta como prova:** "Falta o N" só diz que o N sumiu da
+  lista, não que o texto dele não foi parar em outro hino.
+- **Limite conhecido:** um trecho MINÚSCULO (menos de uns 6 hinos) cujas
+  estrofes sejam numeradas com ponto pode ser lido como estrofes — ler `1.` a
+  `6.` como "hinos 1 a 6" rende mais que ler 3 cabeçalhos. A prévia mostra
+  "do 1 ao 6" e a saída existe: "Não está certo? Escolher como ler". Em trechos
+  de dezenas de hinos não acontece.
 - **Decididos de propósito:** as iniciais do autor (`J.R.`, `H.M.W.`) coladas no
   fim da última estrofe **ficam na letra** — é autoria, e tirar às cegas apagaria
   informação que o líder pode querer; os números de estrofe (`1 Deus prometeu…`)
@@ -2235,8 +2253,9 @@ EU previ. O texto de verdade tem outra forma, e três defeitos que só ele mostr
   **vale conferir esses dois** depois de importar.
 
 Medido quebrando de propósito: sem a regra da ordem o teste do 442 reprova; com
-"zero minúsculas" o teste do `CRElO` reprova; e 6 dos 12 testes novos reprovam
-no motor de antes.
+"zero minúsculas" o teste do `CRElO` reprova; exigindo de novo o espaço depois
+do ponto o teste do 584 reprova, e tirando o limite de 10 o teste da estrofe
+"4." reprova; e 6 dos 12 primeiros testes reprovam no motor de antes.
 
 ### O manual e o guia dentro do app
 

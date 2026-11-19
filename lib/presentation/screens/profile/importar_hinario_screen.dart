@@ -675,6 +675,18 @@ class _Conferencia extends StatelessWidget {
       saida.add('Sem título reconhecido, entram como "Hino N": '
           '${ResultadoDaLeitura.listaDeNumeros(r.semTitulo)}.');
     }
+    // No máximo cinco: se o texto estiver muito estragado, uma parede de
+    // avisos não se lê, e a frase de cima já diz que faltam muitos.
+    for (final p in r.perdidos.take(5)) {
+      final onde = p.dentroDe == null ? '' : ', dentro do hino ${p.dentroDe}';
+      final linha =
+          p.linha.length > 40 ? '${p.linha.substring(0, 40)}…' : p.linha;
+      saida.add('O ${p.numero} não foi reconhecido como começo de hino, mas '
+          'há uma linha que começa com ${p.numero}$onde: "$linha". Se for o '
+          'começo do hino ${p.numero}, conserte essa linha no texto e cole de '
+          'novo.${p.dentroDe == null ? '' : ' Por enquanto o texto dele fica '
+              'na letra do ${p.dentroDe}, e é melhor NÃO importar assim.'}');
+    }
     for (final s in r.suspeitos) {
       // Diz onde está a linha e o que fazer: o app não troca o número sozinho.
       final quem = s.titulo.isEmpty ? 'Um hino' : 'O hino "${s.titulo}"';

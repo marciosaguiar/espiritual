@@ -587,6 +587,65 @@ void main() {
       expect(r.suspeitos, isEmpty);
     });
 
+    test('ponto colado no título ("584.TÍTULO") também é cabeçalho', () {
+      // Na fonte de verdade, "584.O PILOTO". O leitor exigia espaço depois do
+      // ponto, e o hino 584 INTEIRO entrou na letra do 583, sem nenhum erro.
+      final texto = [
+        real(583),
+        real(584, cabecalho: '584.TÍTULO COLADO'),
+        real(585),
+      ].join('\n');
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.hinos.map((h) => h.numero), [583, 584, 585]);
+      expect(r.faltando, isEmpty);
+      expect(r.perdidos, isEmpty);
+      for (final h in r.hinos) {
+        soDele(r, h.numero);
+      }
+      expect(r.hinos[1].titulo, 'Título Colado');
+    });
+
+    test('cabeçalho que não foi reconhecido é APONTADO, com a linha e o hino '
+        'que o engoliu', () {
+      // Título em minúsculas no meio de um livro em maiúsculas: não é
+      // reconhecido, o 583 leva o texto do 584, e a frase sozinha só diria
+      // "Falta o 584". Tem de dizer ONDE.
+      // Estrofes COM ponto, como na fonte: é o que faz o formato de maiúsculas
+      // vencer. (Com estrofes sem ponto, o formato "N. Título" leria o 584
+      // direitinho, e não haveria defeito nenhum a apontar.)
+      final texto = [
+        real(582, estrofesComPonto: true),
+        real(583, estrofesComPonto: true),
+        real(584,
+            cabecalho: '584. Título em minúsculas', estrofesComPonto: true),
+        real(585, estrofesComPonto: true),
+      ].join('\n');
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.faltando, [584]);
+      final p = r.perdidos.single;
+      expect(p.numero, 584);
+      expect(p.dentroDe, 583);
+      expect(p.linha, '584. Título em minúsculas');
+    });
+
+    test('estrofe numerada de um hino que falta NÃO é acusada de ser ele', () {
+      // O hino 4 falta, e o 3 tem estrofes "4. palavras…". Número pequeno é
+      // estrofe, não cabeçalho: sem este limite todo hino faltando acusaria a
+      // própria estrofe e o aviso perderia o crédito.
+      // (Com volume de verdade: num texto de dois hinos, ler as estrofes como
+      // hinos renderia mais que ler os cabeçalhos, e o leitor escolheria isso.)
+      final texto = [
+        for (var n = 1; n <= 12; n++)
+          if (n != 4) real(n, estrofesComPonto: n == 3, extra: n == 3 ? 2 : 0),
+      ].join('\n');
+      expect(texto, contains('\n4. outra estrofe inventada'),
+          reason: 'o teste precisa ter a estrofe "4." para provar o limite');
+      final r = ImportarHinario.analisar(texto, harpaCrista);
+      expect(r.formato, FormatoDoHinario.caixaAlta);
+      expect(r.faltando, [4]);
+      expect(r.perdidos, isEmpty);
+    });
+
     test('sumário bem na ordem continua perdendo para a letra de verdade', () {
       // O sumário está "na ordem" e a letra de verdade vem depois, "fora da
       // ordem": ordem NÃO pode vencer letra que existe.

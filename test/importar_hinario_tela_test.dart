@@ -186,6 +186,37 @@ void main() {
       expect(find.text('Importar 101 hinos'), findsOneWidget);
     });
 
+    testWidgets('cabeçalho não reconhecido: a tela aponta a linha e o hino que '
+        'levou o texto', (t) async {
+      // Antes, a prévia dizia só "Falta o 584" — e o texto do 584 estava
+      // dentro da letra do 583, que seria importada suja.
+      String hino(int n, {String? cabecalho}) =>
+          '${cabecalho ?? '$n. TÍTULO $n'}\n'
+          '1. palavras inventadas da estrofe um do hino $n de teste\n\n'
+          '2. palavras inventadas da estrofe dois do hino $n de teste\n';
+      // Estrofes COM ponto, como na fonte: é o que faz o formato de maiúsculas
+      // vencer, e o cabeçalho em minúsculas ficar sem ser reconhecido.
+      final texto = [
+        for (var n = 580; n <= 586; n++)
+          hino(n, cabecalho: n == 584 ? '584. Título em minúsculas' : null),
+      ].join('\n');
+      await _montar(t, copiado: texto);
+      await _colar(t);
+
+      expect(find.text('Achei 6 hinos, do 580 ao 586. Falta o 584.'),
+          findsOneWidget);
+      expect(
+          find.textContaining(
+              'O 584 não foi reconhecido como começo de hino, mas há uma '
+              'linha que começa com 584, dentro do hino 583'),
+          findsOneWidget);
+      // A linha vem entre aspas, no aviso. (Ela aparece também na prévia da
+      // letra do 583, que é onde o texto foi parar — e é bom que apareça.)
+      expect(find.textContaining('"584. Título em minúsculas"'),
+          findsOneWidget);
+      expect(find.textContaining('NÃO importar assim'), findsOneWidget);
+    });
+
     testWidgets('texto que não é hinário: avisa e NÃO oferece Importar',
         (t) async {
       await _montar(t, copiado: 'só uma conversa qualquer, sem hino nenhum');

@@ -99,6 +99,30 @@ class NumeroSuspeito {
   });
 }
 
+/// Um número que falta, mas que aparece no texto numa linha que NÃO foi
+/// reconhecida como começo de hino.
+///
+/// É o defeito mais silencioso da leitura: o cabeçalho não é reconhecido, e o
+/// hino anterior **engole o texto inteiro dele** — que entra na letra errada,
+/// sem erro nenhum, enquanto a frase só diz "Falta o 584". Aqui o app aponta a
+/// linha e o hino que a levou, para a pessoa consertar o texto.
+class LinhaPerdida {
+  /// O número que falta e que a linha parece trazer.
+  final int numero;
+
+  /// A linha como está no texto, já sem espaço nas pontas.
+  final String linha;
+
+  /// O hino em cuja letra a linha foi parar. Nulo se veio antes do primeiro.
+  final int? dentroDe;
+
+  const LinhaPerdida({
+    required this.numero,
+    required this.linha,
+    required this.dentroDe,
+  });
+}
+
 /// O que o app entendeu do texto colado.
 class ResultadoDaLeitura {
   /// O formato que achou mais hinos. Nulo quando não achou nenhum.
@@ -123,6 +147,10 @@ class ResultadoDaLeitura {
   /// Números que parecem escritos errados: ver [NumeroSuspeito]. Não entram.
   final List<NumeroSuspeito> suspeitos;
 
+  /// Números que faltam mas aparecem numa linha não reconhecida: ver
+  /// [LinhaPerdida]. O texto deles está na letra de outro hino.
+  final List<LinhaPerdida> perdidos;
+
   /// Achados, mas sem letra que chegue: não entram.
   final List<int> curtos;
 
@@ -141,6 +169,7 @@ class ResultadoDaLeitura {
     this.faltando = const [],
     this.repetidos = const [],
     this.suspeitos = const [],
+    this.perdidos = const [],
     this.curtos = const [],
     this.grandes = const [],
     this.semTitulo = const [],
@@ -281,6 +310,35 @@ class ImportarHinario {
     final foraDoLimite =
         candidatosEscolhidos.where((c) => !hinario.existe(c.numero)).length;
 
+    // Número que FALTA mas aparece no texto, numa linha que não foi reconhecida
+    // como começo de hino: o texto dele foi parar na letra do hino anterior,
+    // e a frase sozinha só diria "Falta o 584". Só números de 10 para cima:
+    // abaixo disso a linha "4. palavras…" é uma estrofe, e todo hino que
+    // faltasse acusaria a própria estrofe.
+    final perdidos = <LinhaPerdida>[];
+    final procurar = faltando.where((n) => n >= 10).toSet();
+    if (procurar.isNotEmpty) {
+      final reLinha = RegExp(r'^(\d{1,4})\s*[.)]\s*\S');
+      final lugares = candidatosEscolhidos.map((c) => c.linha).toSet();
+      var k = -1; // o último candidato que começa antes desta linha
+      for (var i = 0; i < linhas.length; i++) {
+        while (k + 1 < candidatosEscolhidos.length &&
+            candidatosEscolhidos[k + 1].linha <= i) {
+          k++;
+        }
+        if (lugares.contains(i)) continue;
+        final m = reLinha.firstMatch(linhas[i]);
+        if (m == null) continue;
+        final n = int.parse(m.group(1)!);
+        if (!procurar.contains(n) || perdidos.any((p) => p.numero == n)) continue;
+        perdidos.add(LinhaPerdida(
+          numero: n,
+          linha: linhas[i],
+          dentroDe: k >= 0 ? candidatosEscolhidos[k].numero : null,
+        ));
+      }
+    }
+
     // Número repetido, de letra que serve, que ficou de fora porque está FORA
     // DA ORDEM, e cujo lugar no texto deixa só UM número possível entre os
     // vizinhos (541 · 442 · 543 → 542): provável erro de digitação. Só se o
@@ -310,6 +368,7 @@ class ImportarHinario {
           .toList()
         ..sort()),
       suspeitos: suspeitos,
+      perdidos: perdidos,
       curtos: curtos,
       grandes: grandes,
       semTitulo: semTitulo,
@@ -436,12 +495,14 @@ class ImportarHinario {
   static final _reTraco = RegExp(r'^(\d{1,4})\s*[-–—−:·•]\s*(\S.*)$');
   static final _rePonto = RegExp(r'^(\d{1,4})\s*[.)]\s+(\S.*)$');
   static final _reSozinho = RegExp(r'^(\d{1,4})$');
-  // O ponto (ou parêntese) depois do número é OPCIONAL, e o título pode abrir
-  // com aspas: `301. "VEM CEAR"` é um cabeçalho de verdade. O que separa o
-  // cabeçalho da estrofe numerada ("1. palavras…") é o título em maiúsculas,
+  // O ponto (ou parêntese) depois do número é OPCIONAL, pode vir COLADO no
+  // título (`584.O PILOTO` — na fonte de verdade, e sem isto o hino inteiro
+  // entrava na letra do anterior), e o título pode abrir com aspas: `301.
+  // "VEM CEAR"` é um cabeçalho de verdade. O que separa o cabeçalho da estrofe
+  // numerada ("1. palavras…", "2.Os encantos…") é o título em maiúsculas,
   // conferido em `_quaseTodoMaiusculo`, e não o formato do número.
   static final _reCaixaAlta = RegExp(
-    r'^(\d{1,4})(?:\s*[.)])?\s+([\p{L}"“”‘’' "'" r'(].*)$',
+    r'^(\d{1,4})(?:\s*[.)]\s*|\s+)([\p{L}"“”‘’' "'" r'(].*)$',
     unicode: true,
   );
   static final _reHino = RegExp(
