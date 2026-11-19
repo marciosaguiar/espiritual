@@ -818,43 +818,51 @@ class _EscolhaDeFormato extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Theme(
-      data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        title: const Text('Não está certo? Escolher como ler',
-            style: TextStyle(fontFamily: 'Poppins', fontSize: 13.5)),
-        childrenPadding: EdgeInsets.zero,
-        children: [
-          RadioGroup<FormatoDoHinario?>(
-            groupValue: atual,
-            onChanged: (v) {
-              if (!desligado) onEscolher(v);
-            },
-            child: Column(
-              children: [
-                const RadioListTile<FormatoDoHinario?>(
-                  value: null,
-                  dense: true,
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('Deixar o app decidir',
-                      style: TextStyle(fontFamily: 'Poppins', fontSize: 13)),
+    // O Material TRANSPARENTE no meio é o que deixa o toque aparecer: o
+    // ListTile pinta o efeito no Material mais próximo, e sem este o mais
+    // próximo é o da tela — com a caixa colorida do cartão na frente, que o
+    // esconde. Um Flutter mais novo recusa isso; um mais velho só deixa o
+    // toque sem resposta nenhuma.
+    return Material(
+        type: MaterialType.transparency,
+        child: Theme(
+          data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+          child: ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: const Text('Não está certo? Escolher como ler',
+                style: TextStyle(fontFamily: 'Poppins', fontSize: 13.5)),
+            childrenPadding: EdgeInsets.zero,
+            children: [
+              RadioGroup<FormatoDoHinario?>(
+                groupValue: atual,
+                onChanged: (v) {
+                  if (!desligado) onEscolher(v);
+                },
+                child: Column(
+                  children: [
+                    const RadioListTile<FormatoDoHinario?>(
+                      value: null,
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      title: Text('Deixar o app decidir',
+                          style:
+                              TextStyle(fontFamily: 'Poppins', fontSize: 13)),
+                    ),
+                    for (final f in FormatoDoHinario.values)
+                      RadioListTile<FormatoDoHinario?>(
+                        value: f,
+                        dense: true,
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(f.exemplo,
+                            style: const TextStyle(
+                                fontFamily: 'Poppins', fontSize: 13)),
+                      ),
+                  ],
                 ),
-                for (final f in FormatoDoHinario.values)
-                  RadioListTile<FormatoDoHinario?>(
-                    value: f,
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(f.exemplo,
-                        style: const TextStyle(
-                            fontFamily: 'Poppins', fontSize: 13)),
-                  ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
-      ),
-    );
+        ));
   }
 }
 

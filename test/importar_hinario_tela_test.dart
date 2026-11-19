@@ -242,6 +242,47 @@ void main() {
     });
   });
 
+  group('o toque aparece na tela', () {
+    // Um Flutter mais novo recusa, em teste, um ListTile dentro de uma caixa
+    // COLORIDA sem um Material no meio: o efeito do toque é pintado no
+    // Material mais próximo, e a caixa colorida o esconde — o toque não dá
+    // sinal nenhum. A CI usa um Flutter que ainda não faz essa checagem, então
+    // ela passava verde enquanto o Mac, com outro Flutter, reprovava 12 testes.
+    // Este teste refaz a conta da checagem, em qualquer versão.
+    testWidgets('todo ListTile tem um Material entre ele e a caixa colorida',
+        (t) async {
+      await _montar(t, copiado: [_hino(1), _hino(2)].join('\n'));
+      await _colar(t);
+
+      // Abre "Não está certo?", para as opções (RadioListTile) existirem.
+      await t.ensureVisible(find.textContaining('Não está certo?'));
+      await t.tap(find.textContaining('Não está certo?'));
+      await t.pumpAndSettle();
+
+      final tiles = find.byType(ListTile).evaluate().toList();
+      expect(tiles, isNotEmpty, reason: 'o teste precisa ter o que conferir');
+
+      for (final tile in tiles) {
+        String? escondidoPor;
+        tile.visitAncestorElements((ancestral) {
+          final w = ancestral.widget;
+          if (w is Material) return false; // achou o Material: está a salvo
+          if (w is DecoratedBox) {
+            final d = w.decoration;
+            if (d is BoxDecoration && d.color != null) {
+              escondidoPor = 'DecoratedBox colorido';
+              return false;
+            }
+          }
+          return true;
+        });
+        expect(escondidoPor, isNull,
+            reason: 'um ListTile fica atrás de um $escondidoPor, sem um '
+                'Material no meio: o toque não mostra efeito nenhum');
+      }
+    });
+  });
+
   group('o hinário inteiro', () {
     testWidgets('640 hinos colados: acha tudo e a tela aguenta', (t) async {
       final tudo = [for (var n = 1; n <= 640; n++) _hino(n)].join('\n');

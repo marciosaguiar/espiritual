@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 655 testes
+flutter test                   # 656 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -2143,6 +2143,29 @@ trocado nos DOIS workflows (`ci.yml` e `web-preview.yml`) no mesmo commit, ou a
 CI fica verde e a publicação vermelha, que é exatamente o incidente descrito em
 "A trava do tamanho reprovou TODO deploy por dias". O valor certo é o que a CI
 imprimir (`main.dart.js: N bytes`), nunca o meu palpite.
+
+**Dois defeitos que o Mac achou e a CI não.** O `publicar.sh` roda os testes
+ANTES de enviar, no Flutter do Mac, e parou na primeira entrega desta
+biblioteca — por dois motivos que a CI, com o Flutter fixado e em UTC, deixaria
+passar:
+
+- **`ListTile` dentro de uma caixa colorida (`GlassCard`) sem um `Material` no
+  meio.** O efeito do toque é pintado no Material mais próximo, e a caixa
+  colorida o esconde: o toque não dá sinal nenhum. Um Flutter mais novo recusa
+  isso em teste (12 testes da tela reprovaram no Mac); o da CI ainda não checa e
+  passou verde. Conserto: `Material(type: MaterialType.transparency)` em volta
+  — o que a própria mensagem do Flutter manda. **Vale para todo `ListTile`,
+  `ExpansionTile` ou `RadioListTile` dentro de `GlassCard`.** Um teste refaz a
+  conta da checagem sem depender da versão (sobe os ancestrais de cada
+  `ListTile`), e foi provado: falha sem o conserto, passa com ele.
+- **Teste que só passa em UTC.** `reacoes_e_vistos_test` esperava o ano 1970 da
+  data zero, que em Brasília é 31/12/1969. Passava no GitHub e no contêiner
+  (UTC) e reprovava no Mac do dono. O defeito era do TESTE (agora `toUtc()`).
+  A suíte inteira foi rodada em `TZ=America/Sao_Paulo` e em UTC: 656 nos dois.
+  **Ao mexer em data, rode também `TZ=America/Sao_Paulo flutter test`.**
+
+Os dois dizem a mesma coisa: o computador do dono é o ambiente que mais difere
+da CI, e um teste que só passa na CI não prova que passa onde se publica.
 
 **O que NÃO foi verificado** (leia antes de dizer que está pronto):
 

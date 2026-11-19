@@ -268,7 +268,12 @@ void main() {
       // quem não viu nada.
       final lida = LeituraDoChat.fromFirestore(
           {'userId': 'u-ana', 'userName': 'Ana'});
-      expect(lida.lidoAte.year, 1970);
+      // `toUtc()`: a data zero é 1/1/1970 em UTC, mas em Brasília (UTC-3) é
+      // 31/12/1969 às 21h. Sem isto o teste passava no GitHub e no contêiner,
+      // que são UTC, e REPROVAVA no Mac do dono — e o `publicar.sh`, que roda
+      // os testes antes de enviar, parava por causa de um teste e não de um
+      // defeito.
+      expect(lida.lidoAte.toUtc().year, 1970);
       expect(
           quemViu(
               mensagem: msg(),
