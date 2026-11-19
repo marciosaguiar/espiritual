@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 428 testes
+flutter test                   # 462 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 268 testes
+cd test_regras && npm install && npm test    # 279 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -44,12 +44,25 @@ nem de Flutter:
 ```bash
 node --test worker/teste/*.mjs               # 83 testes
 node --test web/teste/*.mjs                  # 11 testes do service worker
-node --test ferramentas/teste/*.mjs          # 8 testes das rotinas diárias
+node --test ferramentas/teste/*.mjs          # 22 testes das rotinas diárias
 ```
 
 **A versão do Flutter é fixa** (`flutter-version: '3.50.0'` nos dois
 workflows), e medir o pacote com outra versão não vale: ver "A trava do
 tamanho reprovou todo deploy por dias".
+
+**E a string da versão NÃO BASTA.** Quem compila é o motor e o Dart, que
+aparecem nas outras linhas do `flutter --version`. Um contêiner com
+framework novo e motor velho diz "3.50.0" e gera 199 KB a menos — ver "A
+versão fixada mentiu" nas armadilhas. Antes de comparar qualquer número de
+tamanho, confira as três linhas:
+
+```
+Flutter 3.50.0 • channel stable
+Framework • revision ... (dias)
+Engine    • hash ... (dias, não MESES)
+Tools     • Dart 3.x
+```
 
 O segundo roda o `web/sw.js` de verdade, com o `self` do navegador simulado:
 é ele que decide qual etiqueta cada aviso usa e para onde vai quem toca, e
@@ -379,6 +392,34 @@ servidor tudo o que as quatro escutas de `main_screen` alcançam — e **leitura
   A lição que vale além deste caso: **número medido em ambiente diferente do
   que decide não é medida, é palpite** — e toda trava precisa falhar onde a
   pessoa olha, não onde o robô olha.
+- **A versão fixada mentiu, e o palpite voltou um nível mais fundo.** Com
+  `flutter-version: '3.50.0'` nos dois lados, eu medi 3.668.988 bytes e a CI
+  mediu **3.868.219** no mesmo commit. A trava de versão estava funcionando —
+  o log mostra `FLUTTER_ROOT=/opt/hostedtoolcache/flutter/stable-3.50.0-x64`.
+  O problema era o meu SDK:
+
+  ```
+  Framework • revision ab2912035e (9 days ago)  • 2026-11-09
+  Engine    • hash 6cd51c08a88e (14 months ago) • 2025-08-13
+  Tools     • Dart 3.9.0
+  ```
+
+  Framework de 9 dias com motor e Dart de 14 meses: um `dart2js` velho,
+  gerando menos código. **A string da versão não basta** — ela diz o
+  framework, e quem compila é o motor. Agora a CI imprime
+  `flutter --version`, `FLUTTER_ROOT` e `dart --version` no passo "Qual
+  Flutter está medindo", antes de medir, e a mensagem de erro manda olhar
+  para lá. A base passou a ser a que a CI mediu (3.868.219), com a prova de
+  que ela mede o app e não ruído: 3.852.078 no `60f377c` e 3.868.219 no
+  `83080d1`, e os 16 KB de diferença são exatamente a tela de hinos.
+- **`--pwa-strategy` está deprecado e vai sair.** O log do build avisa, e
+  aponta o [issue 156910](https://github.com/flutter/flutter/issues/156910).
+  A flag não foi trocada de propósito: é ela que impede o Flutter de
+  registrar o service worker dele por cima do nosso (`web/sw.js`). Quando
+  ela sair, o build vai falhar ou — pior — voltar a registrar o worker do
+  Flutter, e a trava da publicação pega isso. Ao mexer nisto, confira
+  `navigator.serviceWorker.getRegistration()` no app publicado antes de dar
+  por resolvido.
 - **Status não é diagnóstico.** A rotina diária falhou duas noites seguidas
   dizendo só "O Worker respondeu 403: {...}". Cada status tem causa e conserto
   diferentes, e nenhum deles está no código do app: estão na Cloudflare, no
@@ -567,6 +608,52 @@ tradução.
   (`LocalStorageService`), não no banco: é o marcador de quem lê, não há o
   que sincronizar, e no Firestore custaria uma leitura por abertura.
 
+### Saúde do sistema
+
+Os robôs falharam em silêncio por **dias**. A rotina diária batia num 403, o
+motivo ficava no log do Worker, e ninguém abre log de Worker — então a escala
+parou de ser criada e o lembrete da véspera parou de chegar, sem nada
+vermelho em lugar nenhum. A causa final: uma `FIREBASE_API_KEY` digitada à
+mão na Cloudflare, com um caractere errado.
+
+- **Cartão "Saúde do sistema" em Perfil, só para líder**, com cinco linhas:
+  servidor dos avisos, robô, criação dos cultos, lembrete da véspera e faxina
+  do chat. Cada uma diz **o que fazer**, não o número do erro: "o Worker
+  respondeu 403" não é informação para quem vai consertar; "o robô não é
+  líder: promova-o em Membros" é.
+- **Aviso vermelho no Início** quando algo está quebrado, e **sem "agora
+  não"**: ele sai quando o problema sai. Um cartão que se dispensa voltaria
+  ao mesmo lugar — o toque sem pensar do primeiro dia, e o aviso nunca mais
+  aparece.
+- **Coleção `saude/{cultos,vespera,faxina}`:** cada rotina carimba "rodou às
+  tantas" ao terminar, por `ferramentas/carimbo.mjs`. **A hora é do
+  SERVIDOR** (`setToServerValue: REQUEST_TIME`) e a regra exige: com a hora
+  do runner do GitHub, um relógio torto faria a tela dizer "rodou hoje" sobre
+  uma rotina parada há uma semana.
+- **O carimbo de FALHA também é gravado.** Sem ele, uma rotina que falha todo
+  dia na mesma hora pareceria "rodou ontem" para sempre — que é exatamente o
+  que aconteceu.
+- **Falhar no carimbo não derruba a rotina:** quando ele não grava, o
+  trabalho de verdade já foi feito. Derrubar o job por causa do registro
+  transformaria um problema de anotação numa execução perdida.
+
+**As três decisões que evitam alarme falso** — e alarme falso é o jeito mais
+rápido de uma tela de diagnóstico virar tela que ninguém lê:
+
+1. **"Não consegui falar com o Worker" é `desconhecido`, nunca vermelho.** É
+   o wi-fi da igreja, não o sistema. Nenhum estado `desconhecido` acende o
+   aviso do Início.
+2. **Alerta em 26 h, vermelho só em 36 h.** Um job diário chega
+   legitimamente perto das 24 h sem ter falhado; acender em 24 h daria alarme
+   falso todo dia, pouco antes da hora dele.
+3. **Carimbo ausente é `desconhecido`.** No dia desta entrega nenhuma rotina
+   tinha carimbo, e estrear uma tela de diagnóstico em vermelho é a pior
+   apresentação possível.
+
+Nenhum segredo novo: `FIREBASE_PROJECT_ID` já existia (a faxina o usa) e
+passou a ser passado também à rotina diária. O `/saude` do Worker é GET sem
+login, então consultá-lo não custa leitura de Firestore nem token.
+
 ### Hino pelo número (Harpa Cristã e Cantor Cristão)
 
 Na igreja o dirigente anuncia "hino 15 da Harpa" sem avisar antes. Antes
@@ -666,9 +753,87 @@ caminho para resolver — não um erro.
   ativo novo: não há arquivo de hinário para baixar, então não há pedido na
   abertura do app nem peso no pacote inicial.
 
-**O que ainda falta (próxima entrega):** o atalho dentro do Modo Culto ao
-vivo, com o hino entrando como música extra daquele culto, e "adicionar hino
-pelo número" no diálogo de escolher as músicas do culto.
+**No Modo Culto ao vivo e ao montar o culto** (entrega 2):
+
+- O **mesmo teclado** nos três lugares, por um parâmetro `paraEscolher` que
+  faz a tela devolver o hino em vez de abri-lo. Três telas parecidas é o
+  jeito de uma ficar para trás quando a regra muda — e as duas novas herdam
+  de graça o "não existe o hino 700", o "ainda não está no repertório" e os
+  últimos abertos.
+- **O hino entra como música EXTRA do culto e sincroniza** como qualquer
+  outra, porque a posição que viaja entre os aparelhos é `{índice da música,
+  âncora}` e índice só existe para música que está na lista do culto.
+- **Só o líder põe hino no culto, inclusive no Modo ao vivo.** Mexer no
+  repertório é do líder na regra do banco, e afrouxar isso por causa de um
+  caso de domingo abriria "qualquer aprovado edita o culto" para sempre. Para
+  quem não é líder o botão nem aparece.
+- **`ScaleModel.comMusicaExtra` é pura e mora no modelo**, porque pôr a mesma
+  música duas vezes não dá erro nenhum: ela apareceria duplicada na tela, o
+  índice do Modo ao vivo apontaria para a cópia errada e "5 músicas" passaria
+  a mentir.
+- A conta da cifra, do tom e do mapa de âncoras saiu de dentro do laço
+  (`_prepararMusica`): o hino que entra agora precisa das MESMAS âncoras dos
+  outros aparelhos, senão o culto desalinha sem nada aparecer na tela.
+
+### Cadastrar música com menos esforço
+
+Cadastrar era digitar nome, artista, tom e colar a cifra — de memória. Quatro
+atalhos, e **nada é buscado nem gerado automaticamente**: o app não baixa
+página de site nenhum, nem por decisão do dono nem porque copiar a cifra de
+lá é o que a licença não permite.
+
+- **"Buscar no Cifra Club" na busca que não achou nada.** É o melhor momento
+  do app: a pessoa acabou de digitar o nome, e o que falta é a cifra dele. O
+  mesmo botão no "ainda não está no repertório" do teclado de hinos, com
+  "Harpa Cristã 15" já no texto.
+- **Faixa "Toque para usar a cifra copiada"**, quando a pessoa volta do Cifra
+  Club. Ela **não lê a área de transferência para decidir se aparece**: no
+  iPhone, ler exige um toque e mostra um pedido de permissão, e perguntar
+  antes de ter o que oferecer é o caminho para a pessoa negar para sempre. O
+  sinal é outro e mais forte: o app guardou que ela acabou de tocar em
+  "Buscar no Cifra Club" (`LocalStorageService.marcarIdaAoCifraClub`, 30
+  minutos). A leitura acontece **só no toque**, e se o que vier não parecer
+  cifra a faixa diz isso em vez de abrir um cadastro vazio.
+- **Web Share Target no Android** (PWA instalado): o app aparece no menu
+  "Compartilhar". O que chega pode ser a cifra (quem seleciona tudo) ou só o
+  endereço da página (quem usa o botão do site), e `comoUsarCompartilhado`
+  decide — cifra vira cifra, endereço vira **link** da música. No iPhone não
+  há nada a esconder: o Safari não tem Web Share Target, então o app não
+  aparece no menu de lá. A leitura do parâmetro é no `avisos.js`, como o
+  `?abrir=chat` já fazia, e é consumida na primeira leitura para o cadastro
+  não reabrir a cada volta para a aba.
+- **Aviso de duplicata por nome parecido, ANTES de criar**, com os nomes à
+  vista. `nomesParecidos` ignora acento, maiúscula e pontuação, e acha
+  "Sou Grato" contra "HC 15 · Sou Grato" — a mesma música cadastrada de outro
+  jeito. **Piso de quatro letras** para a continência valer: sem ele, "Ele"
+  casaria com meio repertório e o aviso perderia o crédito na primeira vez.
+- **Uma heurística só.** Os três caminhos novos passam pelo MESMO
+  `CifraColada.analisar` do campo "Colar cifra". Duas heurísticas para a
+  mesma coisa é o jeito de elas discordarem um dia.
+
+### Os atalhos do computador do dono
+
+Três scripts em `ferramentas/`, para rodar no Mac. Eles existem porque os
+comandos de verdade falham de jeitos que não explicam nada, e porque o app
+vai passar para as mãos de um líder leigo.
+
+- **`aplicar.sh`** — aplica o patch que está na área de transferência.
+  Confere se o repositório está limpo (`git am` com mudança não salva para no
+  meio e deixa um estado que assusta), mostra o que o patch traz, e no erro
+  faz `git am --abort` e diz que o patch foi feito a partir de outro commit.
+- **`publicar.sh`** — roda o que a CI roda, na ordem, e só então envia:
+  analyze, testes do app, testes das rotinas e do Worker, testes de regra
+  (com pergunta, que é o passo lento), push, regras do Firestore e Worker.
+  Pergunta antes de cada passo que muda algo fora do computador, e termina
+  consultando o `/saude`.
+- **`robo.sh`** — troca a senha do robô nos TRÊS lugares que precisam
+  combinar: a conta no Firebase Authentication, `ROBO_SENHA` na Cloudflare e
+  `FAXINA_SENHA` no GitHub. **Não guarda senha nenhuma**: pede na hora, sem
+  eco, sem arquivo, sem histórico de terminal. O primeiro passo é no console
+  do Firebase, com as mãos do dono — trocar senha de conta pelo terminal
+  exigiria chave de administrador, que este projeto não usa. O script avisa
+  que a ordem importa: entre o primeiro passo e o último, o robô fica sem
+  entrar.
 
 ### Recuperar a senha
 
