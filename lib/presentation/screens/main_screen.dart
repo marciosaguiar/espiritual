@@ -15,6 +15,7 @@ import '../../../core/platform/avisos.dart';
 import '../../../core/platform/tela_atual.dart';
 import '../../../core/utils/compartilhado.dart';
 import '../../data/services/avisos_service.dart';
+import '../../data/services/local_storage_service.dart';
 import '../widgets/common/glass.dart';
 import 'home/home_screen.dart';
 import 'songs/songs_screen.dart';
@@ -50,7 +51,12 @@ class _MainScreenState extends State<MainScreen> {
   static const int _abaPerfil = 4;
 
   late final List<Widget> _screens = [
-    HomeScreen(onAbrirPerfil: () => _goToTab(_abaPerfil)),
+    HomeScreen(
+      onAbrirPerfil: () => _goToTab(_abaPerfil),
+      onAbrirChat: () => _goToTab(_abaChat),
+      onAbrirEscala: () => _goToTab(_abaEscala),
+      onAbrirMembros: _abrirMembros,
+    ),
     const SongsScreen(),
     const ScaleScreen(),
     const ChatScreen(),
@@ -171,6 +177,11 @@ class _MainScreenState extends State<MainScreen> {
 
   void _goToTab(int index) {
     if (index < 0 || index >= _screens.length) return;
+    // Abrir a aba do chat é "eu vi": é o que zera a contagem de não lidas no
+    // Início. Fica aqui, e não na tela do chat, porque com `IndexedStack` a
+    // tela do chat é construída uma vez e nunca mais — o `initState` dela
+    // rodaria no primeiro dia e nunca de novo.
+    if (index == _abaChat) LocalStorageService.marcarChatVisto();
     setState(() => _currentIndex = index);
     // A faixa "Nova versão disponível" só se aplica sozinha com a pessoa no
     // Início e parada; fora dali ela pergunta. Ver tela_atual.dart.

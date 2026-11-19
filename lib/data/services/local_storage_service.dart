@@ -171,6 +171,33 @@ class LocalStorageService {
 
   static double get fonteBiblia => prefs.getDouble(_bibliaFonteKey) ?? 17;
 
+  // ─── Quando o chat foi visto ───────────────────────────────────────────────
+
+  static const String _chatVistoKey = 'chat_visto_em';
+
+  /// A última vez que esta pessoa abriu o chat NESTE aparelho.
+  ///
+  /// Fica no aparelho, e não no banco, de propósito: o Firestore já tem
+  /// `chatLeituras` para os dois tiques, e aquele documento é escrito uma vez
+  /// por abertura do chat. Ler de lá para contar não lidas no Início
+  /// custaria uma escuta a mais sobre o mesmo dado, e o número aqui é só
+  /// para um aviso — não para prometer nada a ninguém.
+  ///
+  /// Limite conhecido: quem usa dois aparelhos vê a contagem de cada um
+  /// separada. Para um aviso de "tem mensagem nova", isso é aceitável; se um
+  /// dia não for, o caminho é `chatLeituras`, não este campo.
+  static Future<void> marcarChatVisto() async {
+    await prefs.setString(_chatVistoKey, DateTime.now().toIso8601String());
+  }
+
+  /// Nulo quando nunca abriu o chat neste aparelho — e aí a contagem é zero,
+  /// não "tudo". Estrear o app com "47 mensagens novas" não é notícia, é
+  /// parede.
+  static DateTime? get chatVistoEm {
+    final bruto = prefs.getString(_chatVistoKey);
+    return bruto == null ? null : DateTime.tryParse(bruto);
+  }
+
   // ─── Esconder tablatura ───────────────────────────────────────────────────
 
   static const String _tablaturaKey = 'ocultar_tablaturas';

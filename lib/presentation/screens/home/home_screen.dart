@@ -1,6 +1,5 @@
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
@@ -11,10 +10,11 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/scale_model.dart';
 import '../scale/scale_detail_screen.dart';
-import '../songs/song_detail_screen.dart';
-import '../biblia/biblia_screen.dart';
-import '../songs/hino_por_numero_screen.dart';
+import '../scale/modo_ao_vivo_screen.dart';
 import '../../widgets/home/aviso_de_saude.dart';
+import '../../widgets/home/pendencias.dart';
+import '../../../data/services/local_storage_service.dart';
+import '../../providers/chat_provider.dart';
 import '../../widgets/common/glass.dart';
 import '../../widgets/common/recuperacao_por_email.dart';
 import '../../widgets/common/minhas_proximas_musicas.dart';
@@ -25,20 +25,51 @@ class HomeScreen extends StatefulWidget {
   /// quem toca ali espera o próprio perfil, não um enfeite.
   final VoidCallback? onAbrirPerfil;
 
-  const HomeScreen({super.key, this.onAbrirPerfil});
+  /// Para onde as pendências levam. Vêm de fora porque quem troca de aba é o
+  /// `main_screen`: o Início não conhece a barra de baixo.
+  final VoidCallback? onAbrirChat;
+  final VoidCallback? onAbrirMembros;
+  final VoidCallback? onAbrirEscala;
+
+  const HomeScreen({
+    super.key,
+    this.onAbrirPerfil,
+    this.onAbrirChat,
+    this.onAbrirMembros,
+    this.onAbrirEscala,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  late int _verseIndex;
+  /// Não há nada esperando por esta pessoa?
+  ///
+  /// A pergunta usa as MESMAS contas que desenham os cartões (as funções de
+  /// `pendencias.dart`). Se fossem duas contas, um dia a tela diria "tudo em
+  /// ordem" com um cartão de pendência do lado.
+  bool _nadaPendente(BuildContext context) {
+    final auth = context.watch<AuthProvider>();
+    final eu = auth.user;
+    if (eu == null) return false;
 
-  @override
-  void initState() {
-    super.initState();
-    final now = DateTime.now();
-    _verseIndex = (now.day + now.month) % AppStrings.verses.length;
+    final chat = context.watch<ChatProvider>();
+    final escala = context.watch<ScaleProvider>();
+    final proximo = escala.nextScale;
+
+    final temCulto = proximo != null && proximo.isUserInScale(eu.id);
+    final temMensagem = naoLidas(
+          chat.messages,
+          eu.id,
+          LocalStorageService.chatVistoEm,
+        ) >
+        0;
+    final temLider = auth.isAdmin &&
+        (quantosPendentes(auth.pessoas) > 0 ||
+            cultosSemEscala(escala.scales, DateTime.now()).isNotEmpty);
+
+    return !temCulto && !temMensagem && !temLider;
   }
 
   @override
@@ -177,190 +208,39 @@ class _HomeScreenState extends State<HomeScreen> {
                   // um lembrete que não chegou.
                   AvisoDeSaude(onAbrir: widget.onAbrirPerfil ?? () {}),
 
+                  // O repertório do meu próximo culto, cada música abrindo
+                  // no toque, no tom e na função daquele culto. Fica junto do
+                  // cartão do culto porque é a mesma pergunta — "o que eu
+                  // toco no domingo?" — e são duas partes da resposta.
                   const MinhasProximasMusicas(),
 
-                  // O hino pelo número fica ALTO na tela, acima do versículo
-                  // e da Bíblia, porque é o atalho com pressa: o dirigente
-                  // anuncia "hino 15" e a igreja já está de pé. Os outros
-                  // dois se abrem com calma.
-                  const _AtalhoHino(),
-                  const SizedBox(height: 12),
+                  // As pendências, e SÓ quando existem: pedidos de entrada e
+                  // culto sem escala, para o líder; mensagens novas, para
+                  // todos.
+                  Pendencias(
+                    onAbrirChat: widget.onAbrirChat,
+                    onAbrirMembros: widget.onAbrirMembros,
+                    onAbrirEscala: widget.onAbrirEscala,
+                  ),
 
-                  // Verse of the Day Card
-                  _VerseCard(verse: AppStrings.verses[_verseIndex]),
-                  const SizedBox(height: 12),
-
-                  // A Bíblia fica logo abaixo do versículo do dia, que é
-                  // onde a pessoa já está com a cabeça no texto.
-                  const _AtalhoBiblia(),
-                  const SizedBox(height: 20),
-
-                  // Suggested repertoire
-                  _SuggestionSection(songs: songs),
+                  // O que SAIU desta tela, e para onde foi:
+                  //
+                  //   · "Hino pelo número"  → aba Músicas, seção Hinários
+                  //   · atalho da Bíblia    → aba Músicas, seção Bíblia
+                  //   · versículo do dia    → topo da Bíblia
+                  //   · sugestões do dia    → aba Músicas, no Repertório
+                  //
+                  // Nenhum deles respondia "o que eu preciso fazer agora", e
+                  // os dois primeiros repetiam a barra de baixo. Nada
+                  // desapareceu: tudo mudou de endereço para o lugar onde se
+                  // procura aquilo.
+                  NadaPendente(mostrar: _nadaPendente(context)),
                   const SizedBox(height: 100),
                 ],
               ),
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// Atalho para a Bíblia.
-///
-/// A tela e o texto são carregados só quando este botão é tocado: a Bíblia
-/// não entra no pacote inicial do app nem atrasa a abertura de quem nunca a
-/// abre.
-class _AtalhoBiblia extends StatelessWidget {
-  const _AtalhoBiblia();
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        GlassPageRoute(builder: (_) => const BibliaScreen()),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : Colors.white.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : Colors.white.withValues(alpha: 0.7),
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                gradient: AppColors.primaryGradient,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.menu_book_rounded,
-                  color: Colors.white, size: 21),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Bíblia',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: isDark
-                          ? AppColors.textPrimaryDark
-                          : AppColors.textPrimaryLight,
-                    ),
-                  ),
-                  Text(
-                    'Ler offline, no aparelho',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 12.5,
-                      color: isDark
-                          ? AppColors.textSecondaryDark
-                          : AppColors.textSecondaryLight,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded,
-                color: AppColors.textSecondaryLight),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// Atalho para abrir um hino pelo número.
-///
-/// Mesma forma do atalho da Bíblia de propósito: são os dois atalhos para
-/// fora do repertório, e dar formas diferentes a coisas do mesmo tipo faz a
-/// tela parecer remendada.
-class _AtalhoHino extends StatelessWidget {
-  const _AtalhoHino();
-
-  @override
-  Widget build(BuildContext context) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        GlassPageRoute(builder: (_) => const HinoPorNumeroScreen()),
-      ),
-      child: Container(
-        padding: const EdgeInsets.all(14),
-        decoration: BoxDecoration(
-          color: isDark
-              ? Colors.white.withValues(alpha: 0.06)
-              : Colors.white.withValues(alpha: 0.55),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : Colors.white.withValues(alpha: 0.7),
-          ),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 42,
-              height: 42,
-              decoration: BoxDecoration(
-                gradient: AppColors.primaryGradient,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: const Icon(Icons.dialpad_rounded,
-                  color: Colors.white, size: 21),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Hino pelo número',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w700,
-                      color: isDark
-                          ? AppColors.textPrimaryDark
-                          : AppColors.textPrimaryLight,
-                    ),
-                  ),
-                  Text(
-                    'Harpa Cristã e Cantor Cristão',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 12.5,
-                      color: isDark
-                          ? AppColors.textSecondaryDark
-                          : AppColors.textSecondaryLight,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const Icon(Icons.chevron_right_rounded,
-                color: AppColors.textSecondaryLight),
-          ],
-        ),
       ),
     );
   }
@@ -436,91 +316,6 @@ class _CartaoRecuperarSenha extends StatelessWidget {
   }
 }
 
-class _VerseCard extends StatelessWidget {
-  final String verse;
-  const _VerseCard({required this.verse});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: AppColors.primaryGradient,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: AppColors.blue.withOpacity(0.3),
-            blurRadius: 16,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text(
-                  '✨ Versículo do Dia',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              const Spacer(),
-              GestureDetector(
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: verse));
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('Versículo copiado!'),
-                      duration: Duration(seconds: 2),
-                    ),
-                  );
-                },
-                child: Container(
-                  width: 32,
-                  height: 32,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Icon(
-                    Icons.share_outlined,
-                    color: Colors.white,
-                    size: 16,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            verse,
-            style: const TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 14,
-              color: Colors.white,
-              height: 1.6,
-              fontStyle: FontStyle.italic,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 /// O cartão do culto no Início: um só.
 ///
 /// Eram dois, com a mesma data e o mesmo culto — "Meu próximo compromisso" no
@@ -540,9 +335,21 @@ class _CartaoDoCulto extends StatelessWidget {
     final euEstouEscalado =
         culto != null && eu != null && culto.isUserInScale(eu.id);
 
+    // É HOJE? Então o botão do Modo ao vivo entra, abaixo do cartão.
+    //
+    // Domingo, com a igreja de pé, chegar ao Modo ao vivo era: abrir a aba
+    // Escala, achar o culto, abrir, rolar até o botão. Quatro toques, no
+    // único momento em que ninguém tem tempo.
+    final ehHoje = culto != null &&
+        DateTime(culto.date.year, culto.date.month, culto.date.day) ==
+            DateTime(DateTime.now().year, DateTime.now().month,
+                DateTime.now().day);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 20),
-      child: GestureDetector(
+      child: Column(
+        children: [
+          GestureDetector(
         onTap: culto == null
             ? null
             : () => Navigator.push(
@@ -564,8 +371,49 @@ class _CartaoDoCulto extends StatelessWidget {
             ],
           ),
         ),
+          ),
+          if (ehHoje && euEstouEscalado) ...[
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  GlassPageRoute(
+                    builder: (_) => ModoAoVivoScreen(
+                      culto: culto,
+                      funcaoNoCulto: _minhaFuncao(context, culto),
+                    ),
+                  ),
+                ),
+                icon: const Icon(Icons.queue_music_rounded, size: 21),
+                label: const Text('Modo Culto ao vivo'),
+                style: FilledButton.styleFrom(
+                  // Alto: é botão que se toca de pé, com o instrumento na
+                  // mão.
+                  padding: const EdgeInsets.symmetric(vertical: 15),
+                ),
+              ),
+            ),
+          ],
+        ],
       ),
     );
+  }
+
+  /// A minha função NESTE culto, para a música abrir em cifra ou em letra.
+  ///
+  /// A mesma conta da tela do culto: quem canta num domingo e toca baixo no
+  /// outro precisa de coisas diferentes, e é a escala que sabe qual é hoje.
+  UserInstrument? _minhaFuncao(BuildContext context, ScaleModel culto) {
+    final eu = context.read<AuthProvider>().user?.id;
+    if (eu == null) return null;
+    for (final l in culto.levitas) {
+      if (l.userId == eu) {
+        return UserInstrumentExtension.fromString(l.instrument);
+      }
+    }
+    return null;
   }
 }
 
@@ -825,126 +673,6 @@ class _InfoRow extends StatelessWidget {
               fontFamily: 'Poppins',
               fontSize: 13,
               color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _SuggestionSection extends StatelessWidget {
-  final SongsProvider songs;
-  const _SuggestionSection({required this.songs});
-
-  @override
-  Widget build(BuildContext context) {
-    final suggested = songs.suggestRepertoire(count: 4);
-    if (suggested.isEmpty) return const SizedBox.shrink();
-
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            const Icon(Icons.auto_awesome_rounded,
-                color: AppColors.yellow, size: 20),
-            const SizedBox(width: 8),
-            Text(
-              'Sugestão de Repertório',
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 16,
-                fontWeight: FontWeight.w600,
-                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
-              ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        ...suggested.map(
-          (song) => GestureDetector(
-            onTap: () {
-              Navigator.push(
-                context,
-                GlassPageRoute(
-                  builder: (_) => SongDetailScreen(song: song),
-                ),
-              );
-            },
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 8),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.cardDark : AppColors.cardLight,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
-                ),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppColors.blue.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.music_note_rounded,
-                        color: AppColors.blue, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          song.name,
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: isDark
-                                ? AppColors.textPrimaryDark
-                                : AppColors.textPrimaryLight,
-                          ),
-                        ),
-                        Text(
-                          song.artist,
-                          style: const TextStyle(
-                            fontFamily: 'Poppins',
-                            fontSize: 12,
-                            color: AppColors.textSecondaryLight,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: AppColors.blue.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      song.originalKey,
-                      style: const TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.blue,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  const Icon(Icons.chevron_right_rounded,
-                      color: AppColors.textSecondaryLight, size: 20),
-                ],
-              ),
             ),
           ),
         ),

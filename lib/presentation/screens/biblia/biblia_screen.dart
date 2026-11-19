@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_colors.dart';
+import '../../widgets/biblia/versiculo_do_dia.dart';
 import '../../../core/constants/livros_biblia.dart';
 import '../../../data/services/biblia_service.dart';
 import '../../providers/biblia_provider.dart';
@@ -170,6 +171,14 @@ class _BibliaCorpoState extends State<_BibliaCorpo> {
               : ListView(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 110),
                   children: [
+                    // O versículo do dia, que morava no Início. Aqui em cima
+                    // porque é onde a pessoa já está com a cabeça no texto —
+                    // e some quando ela está procurando um livro, que é
+                    // quando ela tem outra coisa em mente.
+                    if (_procurando.isEmpty) ...[
+                      VersiculoDoDia(verse: versiculoDeHoje()),
+                      const SizedBox(height: 14),
+                    ],
                     if (ultima != null && _procurando.isEmpty)
                       _ContinuarLendo(
                         ultima: ultima,

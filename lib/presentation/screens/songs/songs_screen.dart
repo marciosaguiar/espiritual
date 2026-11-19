@@ -11,6 +11,7 @@ import 'song_detail_screen.dart';
 import 'add_song_screen.dart';
 import 'hino_por_numero_screen.dart';
 import '../biblia/biblia_screen.dart';
+import '../../widgets/songs/sugestoes_do_dia.dart';
 import '../../widgets/songs/colar_cifra.dart';
 import '../../widgets/songs/faixa_cifra_copiada.dart';
 import '../../widgets/common/glass.dart';
@@ -244,11 +245,26 @@ class _SongsScreenState extends State<SongsScreen>
   /// baixo da barra de cima, e sem isso a faixa nasceria escondida atrás
   /// dela.
   Widget _comFaixa(SongsProvider songs, bool isDark, double topInset) {
+    // As sugestões do dia aparecem só na lista INTEIRA: com busca ou filtro
+    // na tela, a pessoa já sabe o que quer, e sugestão ali é estorvo.
+    final naListaInteira = songs.searchQuery.trim().isEmpty &&
+        songs.filter == SongsFilter.all;
     return Column(
       children: [
         SizedBox(height: topInset),
         const FaixaCifraCopiada(),
-        Expanded(child: _buildList(songs, isDark, 0)),
+        Expanded(
+          child: naListaInteira && songs.songs.isNotEmpty
+              ? ListView(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
+                  children: [
+                    SugestoesDoDia(songs: songs),
+                    const SizedBox(height: 18),
+                    ...songs.songs.map((s) => _SongListTile(song: s)),
+                  ],
+                )
+              : _buildList(songs, isDark, 0),
+        ),
       ],
     );
   }
