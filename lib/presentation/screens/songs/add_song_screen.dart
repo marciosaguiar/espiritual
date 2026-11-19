@@ -10,6 +10,7 @@ import '../../../data/models/song_model.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../../core/utils/chord_transposer.dart';
 import '../../../core/utils/cifra_colada.dart';
+import '../../../core/utils/texto.dart';
 import '../../widgets/songs/colar_cifra.dart';
 
 class AddSongScreen extends StatefulWidget {
@@ -22,7 +23,26 @@ class AddSongScreen extends StatefulWidget {
   final Hinario? hinario;
   final int? numero;
 
-  const AddSongScreen({super.key, this.hinario, this.numero});
+  /// A cifra que a pessoa já tinha copiado, vinda da faixa "usar a cifra
+  /// copiada" ou de um compartilhamento do Android.
+  ///
+  /// Chega analisada do mesmo jeito que se tivesse sido colada no campo —
+  /// pelo MESMO `CifraColada.analisar`, nunca por uma segunda leitura de
+  /// cabeçalho escrita só para este caminho.
+  final String? cifraInicial;
+
+  /// Nome e link que vieram de um compartilhamento do Android.
+  final String? tituloInicial;
+  final String? linkInicial;
+
+  const AddSongScreen({
+    super.key,
+    this.hinario,
+    this.numero,
+    this.cifraInicial,
+    this.tituloInicial,
+    this.linkInicial,
+  });
 
   @override
   State<AddSongScreen> createState() => _AddSongScreenState();
@@ -47,6 +67,33 @@ class _AddSongScreenState extends State<AddSongScreen> {
     // O artista de um hino é o hinário. Preenchido, e não fixo, porque o
     // líder pode querer pôr o autor de verdade do hino no lugar.
     if (_ehHino) _artistCtrl.text = widget.hinario!.nome;
+
+    // O que veio de um compartilhamento. Vem ANTES da análise da cifra, que
+    // só preenche campo vazio — assim o título do site não sobrescreve o
+    // nome do hinário num cadastro de hino.
+    final tituloDeFora = widget.tituloInicial?.trim() ?? '';
+    if (tituloDeFora.isNotEmpty && _nameCtrl.text.trim().isEmpty) {
+      _nameCtrl.text = tituloDeFora;
+    }
+    final linkDeFora = widget.linkInicial?.trim() ?? '';
+    if (linkDeFora.isNotEmpty) _youtubeCtrl.text = linkDeFora;
+
+    final colada = widget.cifraInicial;
+    if (colada != null && colada.trim().isNotEmpty) {
+      _cifraCtrl.text = colada;
+      final r = CifraColada.analisar(colada);
+      final tom = tomDaLista(r.tom);
+      if (tom != null) _selectedKey = tom;
+      // Só em campo VAZIO, como no painel de colar: num hino, o artista já
+      // é o hinário, e sobrescrevê-lo pelo que o site diz seria trocar
+      // "Harpa Cristã" por um nome que ninguém procurou.
+      if (_nameCtrl.text.trim().isEmpty && r.titulo != null) {
+        _nameCtrl.text = r.titulo!;
+      }
+      if (_artistCtrl.text.trim().isEmpty && r.artista != null) {
+        _artistCtrl.text = r.artista!;
+      }
+    }
   }
 
   @override
@@ -58,12 +105,69 @@ class _AddSongScreenState extends State<AddSongScreen> {
     super.dispose();
   }
 
+  /// Pergunta antes de criar uma música com nome parecido com uma que já
+  /// existe. Devolve true quando é para seguir.
+  ///
+  /// Cadastrar a mesma música duas vezes não dá erro nenhum, e o estrago só
+  /// aparece depois: duas "Grande é o Senhor" na lista, a cifra colada numa
+  /// e o culto montado com a outra, e o "tocada pela última vez" partido em
+  /// dois. A pergunta vem ANTES de gravar, com os nomes à vista.
+  Future<bool> _seguirApesarDaParecida(List<String> parecidas) async {
+    final r = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Já existe algo parecido',
+            style: TextStyle(fontFamily: 'Poppins', fontSize: 16)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(parecidas.length == 1
+                ? 'O repertório já tem:'
+                : 'O repertório já tem estas:'),
+            const SizedBox(height: 8),
+            ...parecidas.take(5).map((p) => Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: Text('• $p',
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                )),
+            const SizedBox(height: 10),
+            const Text('Se for a mesma música, é melhor abrir a que já '
+                'existe e colar a cifra nela: assim o histórico dos cultos '
+                'não se parte em dois.'),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Voltar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Cadastrar assim mesmo'),
+          ),
+        ],
+      ),
+    );
+    return r ?? false;
+  }
+
   Future<void> _save() async {
     if (!(_formKey.currentState?.validate() ?? false)) return;
+
+    final songs = context.read<SongsProvider>();
+    // Compara com TUDO, inclusive o que está fora do repertório: avisar que
+    // a música existe arquivada é melhor que deixar criar a segunda.
+    final parecidas = nomesParecidos(
+        _nameCtrl.text, songs.allSongs.map((s) => s.name));
+    if (parecidas.isNotEmpty) {
+      final seguir = await _seguirApesarDaParecida(parecidas);
+      if (!seguir || !mounted) return;
+    }
+
     setState(() => _isSaving = true);
 
     final auth = context.read<AuthProvider>();
-    final songs = context.read<SongsProvider>();
 
     // A letra pura sai da cifra; a cifra (com as quebras de linha intactas)
     // vira o arranjo da igreja. Sem acordes, o texto entra só como letra.

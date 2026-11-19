@@ -10,6 +10,8 @@ import '../../../data/models/song_model.dart';
 import 'song_detail_screen.dart';
 import 'add_song_screen.dart';
 import 'hino_por_numero_screen.dart';
+import '../../widgets/songs/colar_cifra.dart';
+import '../../widgets/songs/faixa_cifra_copiada.dart';
 import '../../widgets/common/glass.dart';
 
 class SongsScreen extends StatefulWidget {
@@ -188,7 +190,25 @@ class _SongsScreenState extends State<SongsScreen>
         ],
       );
     }
-    return _buildList(songs, isDark, topInset);
+    return _comFaixa(songs, isDark, topInset);
+  }
+
+  /// A lista com a faixa da cifra copiada por cima, quando houver.
+  ///
+  /// A faixa fica aqui, e não no Início, porque é aqui que a pessoa estava
+  /// quando tocou em "Buscar no Cifra Club" — e é aqui que ela volta.
+  ///
+  /// O `topInset` sai da lista e passa para a coluna: a lista desenha por
+  /// baixo da barra de cima, e sem isso a faixa nasceria escondida atrás
+  /// dela.
+  Widget _comFaixa(SongsProvider songs, bool isDark, double topInset) {
+    return Column(
+      children: [
+        SizedBox(height: topInset),
+        const FaixaCifraCopiada(),
+        Expanded(child: _buildList(songs, isDark, 0)),
+      ],
+    );
   }
 
   Widget _buildList(SongsProvider songs, bool isDark, double topInset) {
@@ -297,6 +317,31 @@ class _ListaVazia extends StatelessWidget {
                     : AppColors.textSecondaryLight,
               ),
             ),
+            // A busca que não achou nada é o melhor momento do app para
+            // oferecer o Cifra Club: a pessoa acabou de digitar o nome da
+            // música, e o que falta é justamente a cifra dela. O texto já
+            // vai preenchido com o que ela digitou.
+            if (songs.searchQuery.trim().isNotEmpty && ehLider) ...[
+              const SizedBox(height: 18),
+              OutlinedButton.icon(
+                onPressed: () =>
+                    abrirBuscaCifraClub(context, songs.searchQuery),
+                icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                label: const Text('Buscar no Cifra Club'),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                'Copie a cifra lá e volte: o app oferece colá-la.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 12.5,
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondaryLight,
+                ),
+              ),
+            ],
           ],
         ),
       ),

@@ -10,7 +10,10 @@
     "theme_color": "#003C8F",
     "description": "Repertório, escala e conversas do ministério de louvor, num lugar só.",
     "orientation": "portrait-primary",
-    "categories": ["music", "productivity"],
+    "categories": [
+        "music",
+        "productivity"
+    ],
     "prefer_related_applications": false,
     "icons": [
         {
@@ -35,5 +38,15 @@
             "type": "image/png",
             "purpose": "maskable"
         }
-    ]
+    ],
+    "share_target": {
+        "action": "./",
+        "method": "GET",
+        "enctype": "application/x-www-form-urlencoded",
+        "params": {
+            "title": "compartilhadoTitulo",
+            "text": "compartilhadoTexto",
+            "url": "compartilhadoEndereco"
+        }
+    }
 }

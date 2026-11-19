@@ -13,10 +13,12 @@ import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/platform/avisos.dart';
 import '../../../core/platform/tela_atual.dart';
+import '../../../core/utils/compartilhado.dart';
 import '../../data/services/avisos_service.dart';
 import '../widgets/common/glass.dart';
 import 'home/home_screen.dart';
 import 'songs/songs_screen.dart';
+import 'songs/add_song_screen.dart';
 import 'scale/scale_screen.dart';
 import 'scale/scale_detail_screen.dart';
 import 'chat/chat_screen.dart';
@@ -77,6 +79,11 @@ class _MainScreenState extends State<MainScreen> {
   void _vigiarAvisos() {
     _olhoNoAviso = Timer.periodic(const Duration(seconds: 1), (_) {
       if (!mounted) return;
+      // Compartilhado de outro app (só Android, com o app instalado). Vem
+      // antes do pedido de notificação porque é ação direta da pessoa: ela
+      // acabou de tocar em "compartilhar" e está esperando a tela abrir.
+      _conferirCompartilhado();
+
       final pedido = pediuAbrir();
       if (pedido == null) return;
       if (pedido.onde == 'chat') {
@@ -97,6 +104,42 @@ class _MainScreenState extends State<MainScreen> {
   /// uma tela onde não há botão nenhum para ele. O Worker já manda só para
   /// líderes; esta é a segunda tranca, para o caso de alguém ser rebaixado
   /// entre o envio e o toque.
+  /// Abre o cadastro de música com o que outro app compartilhou.
+  ///
+  /// Só para líder: só o líder cria música no banco, e abrir um cadastro que
+  /// a regra vai recusar no fim é a pior forma de receber alguém que acabou
+  /// de tocar em "compartilhar".
+  void _conferirCompartilhado() {
+    final veio = compartilhado();
+    if (veio == null) return;
+    if (!context.read<AuthProvider>().isAdmin) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Só o líder cadastra música. Mande a cifra para ele '
+            'pelo chat.'),
+        duration: Duration(seconds: 4),
+      ));
+      return;
+    }
+
+    final uso = comoUsarCompartilhado(
+      titulo: veio.titulo,
+      texto: veio.texto,
+      endereco: veio.endereco,
+    );
+    if (!uso.temAlgo) return;
+
+    Navigator.push(
+      context,
+      GlassPageRoute(
+        builder: (_) => AddSongScreen(
+          cifraInicial: uso.cifra,
+          tituloInicial: uso.titulo,
+          linkInicial: uso.link,
+        ),
+      ),
+    );
+  }
+
   void _abrirMembros() {
     final auth = context.read<AuthProvider>();
     _goToTab(_abaPerfil);

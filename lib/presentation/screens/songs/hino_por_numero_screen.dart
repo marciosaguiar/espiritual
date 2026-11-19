@@ -11,6 +11,7 @@ import '../../../data/services/local_storage_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/songs_provider.dart';
 import '../../widgets/common/glass.dart';
+import '../../widgets/songs/colar_cifra.dart';
 import 'add_song_screen.dart';
 import 'song_detail_screen.dart';
 
@@ -241,6 +242,18 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
               rodape: auth.isAdmin
                   ? null
                   : 'Peça a um líder para cadastrar este hino.',
+              // O atalho para achar a cifra do hino, com o nome do hinário
+              // já no texto da busca: "Harpa Cristã 15" é o que acha o hino
+              // certo no Cifra Club.
+              acaoExtra: (auth.isAdmin &&
+                      numeroDigitado != null &&
+                      _hinario.existe(numeroDigitado))
+                  ? 'Buscar no Cifra Club'
+                  : null,
+              onAcaoExtra: numeroDigitado == null
+                  ? null
+                  : () => abrirBuscaCifraClub(
+                      context, '${_hinario.nome} $numeroDigitado'),
             ),
           ],
           const SizedBox(height: 18),
@@ -403,6 +416,8 @@ class _Recado extends StatelessWidget {
   final String? acao;
   final VoidCallback? onAcao;
   final String? rodape;
+  final String? acaoExtra;
+  final VoidCallback? onAcaoExtra;
 
   const _Recado({
     required this.texto,
@@ -410,6 +425,8 @@ class _Recado extends StatelessWidget {
     this.acao,
     this.onAcao,
     this.rodape,
+    this.acaoExtra,
+    this.onAcaoExtra,
   });
 
   @override
@@ -435,13 +452,26 @@ class _Recado extends StatelessWidget {
                   : AppColors.textPrimaryLight,
             ),
           ),
-          if (acao != null) ...[
-            const SizedBox(height: 6),
-            TextButton.icon(
-              onPressed: onAcao,
-              icon: const Icon(Icons.add_rounded, size: 18),
-              label: Text(acao!),
-              style: TextButton.styleFrom(padding: EdgeInsets.zero),
+          if (acao != null || acaoExtra != null) ...[
+            const SizedBox(height: 2),
+            Wrap(
+              spacing: 14,
+              children: [
+                if (acao != null)
+                  TextButton.icon(
+                    onPressed: onAcao,
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: Text(acao!),
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                  ),
+                if (acaoExtra != null)
+                  TextButton.icon(
+                    onPressed: onAcaoExtra,
+                    icon: const Icon(Icons.open_in_new_rounded, size: 17),
+                    label: Text(acaoExtra!),
+                    style: TextButton.styleFrom(padding: EdgeInsets.zero),
+                  ),
+              ],
             ),
           ],
           if (rodape != null) ...[

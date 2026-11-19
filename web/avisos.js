@@ -173,9 +173,33 @@
   //   fechado → o worker abre o app com ?abrir=chat, e isto lê o endereço.
 
   var pedido = null;
+  var compartilhado = null;
 
   try {
     var params = new URL(window.location.href).searchParams;
+
+    // ── Compartilhado de outro app (Android) ────────────────────────────
+    //
+    // O manifesto declara `share_target`, então o LevitaSync aparece no
+    // menu "Compartilhar" do Android quando o app está instalado. O que
+    // chega pode ser o texto da cifra (quem seleciona tudo e compartilha)
+    // ou só o endereço da página (quem usa o botão de compartilhar do
+    // site) — e os dois casos são úteis de jeitos diferentes, então o app
+    // recebe os dois e decide depois.
+    //
+    // No iPhone isto não existe: o Safari não tem Web Share Target. Não há
+    // nada a esconder na tela, porque o app simplesmente não aparece no
+    // menu de compartilhar de lá.
+    var texto = params.get('compartilhadoTexto') || '';
+    var endereco = params.get('compartilhadoEndereco') || '';
+    var titulo = params.get('compartilhadoTitulo') || '';
+    if (texto || endereco) {
+      compartilhado = { titulo: titulo, texto: texto, endereco: endereco };
+      if (window.history && window.history.replaceState) {
+        window.history.replaceState(null, '', window.location.pathname);
+      }
+    }
+
     var onde = params.get('abrir');
     if (onde === 'chat' || onde === 'culto' || onde === 'membros') {
       pedido = { onde: onde, cultoId: params.get('culto') || '' };
@@ -208,6 +232,17 @@
     if (!pedido) return '';
     var r = JSON.stringify(pedido);
     pedido = null;
+    return r;
+  };
+
+  /// Alguém compartilhou algo com o app? Responde uma vez só.
+  ///
+  /// Consumir na leitura, como o `levitaPediuAbrir`: sem isso, o app abriria
+  /// o cadastro de novo a cada vez que a pessoa voltasse para a aba.
+  window.levitaCompartilhado = function () {
+    if (!compartilhado) return '';
+    var r = JSON.stringify(compartilhado);
+    compartilhado = null;
     return r;
   };
 })();

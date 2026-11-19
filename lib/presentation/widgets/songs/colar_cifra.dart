@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/chord_transposer.dart';
 import '../../../core/utils/cifra_colada.dart';
+import '../../../data/services/local_storage_service.dart';
 import '../common/app_text_field.dart';
 
 /// Abre a busca do Cifra Club no navegador com o nome já digitado. O app não
@@ -18,6 +19,10 @@ Future<void> abrirBuscaCifraClub(
     );
     return;
   }
+  // A marca é o que faz a faixa "usar a cifra copiada" aparecer quando a
+  // pessoa voltar. Fica ANTES de abrir: se o navegador não abrir, a marca
+  // some sozinha em 30 minutos e não custa nada.
+  await LocalStorageService.marcarIdaAoCifraClub(musica.trim());
   final ok = await launchUrl(
     CifraColada.buscaNoCifraClub(musica, artista),
     mode: LaunchMode.externalApplication,

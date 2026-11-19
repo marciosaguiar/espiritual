@@ -171,6 +171,49 @@ class LocalStorageService {
 
   static double get fonteBiblia => prefs.getDouble(_bibliaFonteKey) ?? 17;
 
+  // ─── Fui ao Cifra Club ────────────────────────────────────────────────────
+
+  static const String _idaAoCifraClubKey = 'ida_ao_cifra_club';
+
+  /// Quanto tempo a ida ao Cifra Club continua valendo como "acabei de ir".
+  ///
+  /// Trinta minutos: é tempo de achar a música, conferir o tom e copiar, e
+  /// curto o bastante para a faixa não aparecer no domingo seguinte por
+  /// causa de uma busca de quarta-feira.
+  static const Duration validadeDaIda = Duration(minutes: 30);
+
+  /// Marca que a pessoa acabou de sair para o Cifra Club, com o que ela
+  /// estava procurando.
+  ///
+  /// POR QUE A MARCA EXISTE
+  ///
+  /// A faixa "toque para usar a cifra copiada" não pode LER a área de
+  /// transferência para decidir se aparece: no iPhone, ler exige um toque da
+  /// pessoa, e perguntar antes de ter o que oferecer seria pedir permissão
+  /// por nada. A marca resolve isso de outro jeito — se acabamos de mandar a
+  /// pessoa ao Cifra Club, o que ela copiou lá é quase certamente uma cifra.
+  static Future<void> marcarIdaAoCifraClub(String procurado) async {
+    await prefs.setString(_idaAoCifraClubKey,
+        '${DateTime.now().toIso8601String()}|$procurado');
+  }
+
+  /// O que foi procurado, se a ida foi recente. Nulo caso contrário.
+  static String? idaRecenteAoCifraClub([DateTime? agora]) {
+    final bruto = prefs.getString(_idaAoCifraClubKey);
+    if (bruto == null) return null;
+    final corte = bruto.indexOf('|');
+    if (corte < 0) return null;
+    final quando = DateTime.tryParse(bruto.substring(0, corte));
+    if (quando == null) return null;
+    final referencia = agora ?? DateTime.now();
+    if (referencia.difference(quando) > validadeDaIda) return null;
+    return bruto.substring(corte + 1);
+  }
+
+  static Future<void> esquecerIdaAoCifraClub() async {
+    await prefs.remove(_idaAoCifraClubKey);
+  }
+
   // ─── Hinos pelo número ────────────────────────────────────────────────────
 
   static const String _hinarioKey = 'hinario_escolhido';

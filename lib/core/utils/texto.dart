@@ -32,3 +32,58 @@ bool combina(String busca, Iterable<String> campos) {
   }
   return false;
 }
+
+/// O mesmo texto reduzido ao que importa para comparar NOMES.
+///
+/// Minúsculas, sem acento, sem pontuação, sem espaço repetido. É o que faz
+/// "Grande é o Senhor", "grande e o senhor" e "Grande É O SENHOR!" serem o
+/// mesmo nome — e eles são, para quem está cadastrando.
+String nomeComparavel(String texto) {
+  final sb = StringBuffer();
+  var espacoPendente = false;
+  for (final rune in semAcento(texto).runes) {
+    final c = String.fromCharCode(rune);
+    final letra = (c.compareTo('a') >= 0 && c.compareTo('z') <= 0) ||
+        (c.compareTo('0') >= 0 && c.compareTo('9') <= 0);
+    if (letra) {
+      if (espacoPendente && sb.isNotEmpty) sb.write(' ');
+      espacoPendente = false;
+      sb.write(c);
+    } else {
+      // Tudo o que não é letra nem número vira separador: ponto, hífen,
+      // parêntese, o "·" do título dos hinos.
+      espacoPendente = true;
+    }
+  }
+  return sb.toString();
+}
+
+/// Quais dos [existentes] são, para gente, o mesmo nome que [nome].
+///
+/// POR QUE ISTO EXISTE
+///
+/// Cadastrar a mesma música duas vezes não dá erro nenhum, e o estrago só
+/// aparece depois: duas "Grande é o Senhor" na lista, a cifra colada numa e
+/// o culto montado com a outra, e o histórico de "tocada pela última vez"
+/// partido em dois.
+///
+/// O que conta como parecido: nome igual depois de normalizado, ou um
+/// contido no outro — é este segundo caso que pega "Sou Grato" contra
+/// "HC 15 · Sou Grato", que é a MESMA música cadastrada de outro jeito.
+///
+/// Quatro letras é o piso para a continência valer. Sem ele, "Ele" casaria
+/// com meia dúzia de títulos e o aviso perderia o crédito na primeira vez.
+List<String> nomesParecidos(String nome, Iterable<String> existentes) {
+  final alvo = nomeComparavel(nome);
+  if (alvo.length < 3) return const [];
+  final achados = <String>[];
+  for (final outro in existentes) {
+    final c = nomeComparavel(outro);
+    if (c.isEmpty) continue;
+    final igual = c == alvo;
+    final contido = (alvo.length >= 4 && c.contains(alvo)) ||
+        (c.length >= 4 && alvo.contains(c));
+    if (igual || contido) achados.add(outro);
+  }
+  return achados;
+}

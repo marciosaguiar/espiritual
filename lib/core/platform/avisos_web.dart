@@ -30,6 +30,9 @@ external JSFunction? get _chamarWorker;
 @JS('levitaBuscarJson')
 external JSFunction? get _buscarJson;
 
+@JS('levitaCompartilhado')
+external JSFunction? get _compartilhado;
+
 /// Este aparelho sabe receber aviso?
 ///
 /// Falso no Safari do iPhone quando o app NÃO está instalado na tela de
@@ -126,6 +129,27 @@ Future<({int status, String corpo})> chamarWorker(
     );
   } catch (e) {
     return (status: 0, corpo: '$e');
+  }
+}
+
+/// Alguém compartilhou algo com o app? Responde uma vez só.
+///
+/// Só no Android, com o app instalado: é o `share_target` do manifesto. O
+/// Safari do iPhone não tem Web Share Target, então aqui nunca vem nada.
+({String titulo, String texto, String endereco})? compartilhado() {
+  final f = _compartilhado;
+  if (f == null) return null;
+  try {
+    final bruto = f.callAsFunction(null)?.dartify();
+    if (bruto is! String || bruto.isEmpty) return null;
+    final m = jsonDecode(bruto) as Map<String, dynamic>;
+    return (
+      titulo: (m['titulo'] as String?) ?? '',
+      texto: (m['texto'] as String?) ?? '',
+      endereco: (m['endereco'] as String?) ?? '',
+    );
+  } catch (_) {
+    return null;
   }
 }
 
