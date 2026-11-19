@@ -157,7 +157,15 @@ jobs:
           #    desenvolvimento, e a trava passou a barrar toda publicação desde
           #    3251e74 sem que nenhum ativo tivesse virado código. Medir sempre
           #    aqui, nunca fora da CI.
-          BASE=3868219
+          # 19/11/2026: a biblioteca de hinários (tela de importar, tela de
+          # leitura e motor de leitura) é código de verdade e acrescentou
+          # 59.021 bytes (medido antes e depois, no mesmo Flutter). A CI
+          # mediu 4.001.604 em c2f49ec, 30.985 acima do limite antigo, com a
+          # análise e os testes verdes. O resto dos ~133 KB desde 83080d1 veio
+          # das entregas anteriores, que já vinham comendo a folga.
+          # A base passa a ser o que a CI mediu. Trocar nos DOIS workflows
+          # (ci.yml e web-preview.yml), no mesmo commit.
+          BASE=4001604
           FOLGA=102400
           TAMANHO=$(wc -c < build/web/main.dart.js)
           LIMITE=$((BASE + FOLGA))
