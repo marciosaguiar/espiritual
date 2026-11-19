@@ -171,6 +171,39 @@ class LocalStorageService {
 
   static double get fonteBiblia => prefs.getDouble(_bibliaFonteKey) ?? 17;
 
+  // ─── Rascunho do editor de letra e cifra ──────────────────────────────────
+
+  static const String _rascunhoKey = 'rascunho_cifra';
+
+  /// Guarda o que está sendo escrito no editor de letra e cifra.
+  ///
+  /// POR QUE ISTO EXISTE
+  ///
+  /// Colar e arrumar uma cifra leva minutos, e é feito sentado no sofá com a
+  /// internet da casa — a mesma que cai. Sem rascunho, a tela volta vazia e o
+  /// trabalho inteiro se perde sem nada avisar; é o tipo de perda que faz uma
+  /// pessoa desistir do app.
+  ///
+  /// Fica no APARELHO, não no banco: é texto não salvo, de uma pessoa só, e
+  /// gravá-lo no Firestore a cada tecla seria cota jogada fora.
+  static Future<void> salvarRascunho(String songId, String texto) async {
+    if (songId.isEmpty) return;
+    await prefs.setString('$_rascunhoKey|$songId', texto);
+  }
+
+  /// O rascunho daquela música, ou nulo.
+  static String? rascunho(String songId) {
+    if (songId.isEmpty) return null;
+    final t = prefs.getString('$_rascunhoKey|$songId');
+    return (t == null || t.trim().isEmpty) ? null : t;
+  }
+
+  /// Apaga o rascunho. Chamado quando a gravação dá certo — e só então.
+  static Future<void> esquecerRascunho(String songId) async {
+    if (songId.isEmpty) return;
+    await prefs.remove('$_rascunhoKey|$songId');
+  }
+
   // ─── Fui ao Cifra Club ────────────────────────────────────────────────────
 
   static const String _idaAoCifraClubKey = 'ida_ao_cifra_club';

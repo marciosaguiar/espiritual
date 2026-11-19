@@ -12,6 +12,8 @@ import '../../../core/utils/chord_transposer.dart';
 import '../../../core/utils/cifra_colada.dart';
 import '../../../core/utils/texto.dart';
 import '../../widgets/songs/colar_cifra.dart';
+import '../../widgets/common/glass.dart';
+import 'editor_de_cifra_screen.dart';
 
 class AddSongScreen extends StatefulWidget {
   /// Quando o cadastro começou pelo teclado numérico de hinos, o hinário e o
@@ -150,6 +152,37 @@ class _AddSongScreenState extends State<AddSongScreen> {
       ),
     );
     return r ?? false;
+  }
+
+  /// Abre o editor de tela cheia com o que já está no campo.
+  ///
+  /// O cadastro ainda não tem id, então o editor fica SEM rascunho aqui: não
+  /// haveria a que voltar, e guardar rascunho de música que não existe criaria
+  /// um texto órfão no aparelho para sempre.
+  Future<void> _abrirEditorGrande() async {
+    final r = await Navigator.push<CifraColada>(
+      context,
+      GlassPageRoute(
+        builder: (_) => EditorDeCifraScreen(
+          musica: _nameCtrl.text.trim(),
+          artista: _artistCtrl.text.trim(),
+          inicial: _cifraCtrl.text,
+          tomDoTexto: _selectedKey,
+        ),
+      ),
+    );
+    if (r == null || !mounted) return;
+    setState(() {
+      _cifraCtrl.text = r.cifra.isNotEmpty ? r.cifra : r.letra;
+      final tom = tomDaLista(r.tom);
+      if (tom != null) _selectedKey = tom;
+      if (_nameCtrl.text.trim().isEmpty && r.titulo != null) {
+        _nameCtrl.text = r.titulo!;
+      }
+      if (_artistCtrl.text.trim().isEmpty && r.artista != null) {
+        _artistCtrl.text = r.artista!;
+      }
+    });
   }
 
   Future<void> _save() async {
@@ -347,7 +380,20 @@ class _AddSongScreenState extends State<AddSongScreen> {
                   });
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: TextButton.icon(
+                  // O mesmo editor da tela de editar. Cifra comprida não cabe
+                  // num campo de doze linhas no meio de um formulário, e
+                  // editar olhando por uma fresta é o que fazia o líder colar
+                  // tudo de novo em vez de corrigir uma palavra.
+                  onPressed: _abrirEditorGrande,
+                  icon: const Icon(Icons.open_in_full_rounded, size: 18),
+                  label: const Text('Abrir editor de tela cheia'),
+                ),
+              ),
+              const SizedBox(height: 8),
               AppTextField(
                 label: 'Link do YouTube (opcional)',
                 hint: 'https://youtube.com/...',

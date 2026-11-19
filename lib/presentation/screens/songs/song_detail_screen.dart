@@ -11,6 +11,8 @@ import '../../widgets/common/abrir_link.dart';
 import '../../widgets/common/glass.dart';
 import '../../widgets/songs/colar_cifra.dart';
 import 'editar_musica_screen.dart';
+import 'editor_de_cifra_screen.dart';
+import '../../../data/services/local_storage_service.dart';
 import '../../../data/models/arrangement_model.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../../data/models/song_model.dart';
@@ -138,6 +140,18 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
         backgroundColor: erro == null ? AppColors.success : AppColors.red,
       ),
     );
+
+    // A letra e a cifra vêm por fora do `SongModel`, porque a cifra mora no
+    // ARRANJO (modelo de três camadas) e a letra pura é extraída dela. Nulo
+    // significa "não mexeu" — e é diferente de vazio, que apagaria tudo.
+    final cifra = r.cifra;
+    if (erro == null && cifra != null && mounted) {
+      await _gravarCifra(CifraColada.analisar(
+        cifra,
+        nomeConhecido: r.musica.name,
+        artistaConhecido: r.musica.artist,
+      ));
+    }
   }
 
   /// "A cifra está em D, a música está em G. Trocar?"
@@ -171,24 +185,41 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   /// Líder cola a cifra de novo (conserta música cadastrada com a cifra
   /// embolada num parágrafo só): a cifra vira a da igreja e a letra é
   /// trocada pela letra pura tirada dela.
-  Future<void> _colarCifra() async {
-    final auth = context.read<AuthProvider>();
-    final songs = context.read<SongsProvider>();
-    final inicial = _arrangement?.hasChords == true
-        ? _arrangement!.chords
-        : (CifraColada.pareceCifra(widget.song.lyrics) ? widget.song.lyrics : '');
+  /// O texto que o editor abre: a cifra da igreja, ou a letra quando não há
+  /// cifra. Nunca vazio quando existe algo escrito na música.
+  String get _textoParaEditar => _arrangement?.hasChords == true
+      ? _arrangement!.chords
+      : widget.song.lyrics;
 
+  /// Abre o editor de letra e cifra.
+  Future<void> _abrirEditorDeCifra() async {
     final r = await Navigator.push<CifraColada>(
       context,
       GlassPageRoute(
-        builder: (_) => ColarCifraScreen(
+        builder: (_) => EditorDeCifraScreen(
+          songId: widget.song.id,
           musica: widget.song.name,
           artista: widget.song.artist,
-          inicial: inicial,
+          inicial: _textoParaEditar,
+          tomDoTexto: _arrangement?.churchKey.isNotEmpty == true
+              ? _arrangement!.churchKey
+              : widget.song.originalKey,
         ),
       ),
     );
     if (r == null || !mounted) return;
+    await _gravarCifra(r);
+  }
+
+  /// Grava a cifra e a letra que saíram do editor.
+  ///
+  /// UM caminho só, chamado pelo editor e por "Editar música". Antes havia
+  /// dois lugares gravando as mesmas três coisas (a cifra no arranjo, a letra
+  /// na música e o tom original), e o segundo esquecia de perguntar sobre o
+  /// tom — o defeito que já fez o levita ler o tom errado no domingo.
+  Future<void> _gravarCifra(CifraColada r) async {
+    final auth = context.read<AuthProvider>();
+    final songs = context.read<SongsProvider>();
 
     String? erro;
     ArrangementModel? novo = _arrangement;
@@ -241,6 +272,12 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       _arrangement = novo;
       if (r.temAcordes && !_cantaAgora(context)) _showChords = true;
     });
+    // O rascunho do editor só morre quando a gravação deu certo. Apagá-lo
+    // antes, ou junto de uma falha, jogaria fora exatamente o texto que a
+    // pessoa precisa para tentar de novo.
+    if (erro == null) {
+      await LocalStorageService.esquecerRascunho(widget.song.id);
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(erro ?? 'Cifra salva.'),
@@ -433,8 +470,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                   await _editar();
                   return;
                 }
-                if (v == 'colar') {
-                  await _colarCifra();
+                if (v == 'cifra') {
+                  await _abrirEditorDeCifra();
                   return;
                 }
                 if (v == 'arquivar') {
@@ -497,6 +534,20 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                 }
               },
               itemBuilder: (_) => [
+                // "Letra e cifra" vem antes de "Editar música": é o que mais
+                // se mexe numa música já cadastrada, e era justamente o que
+                // não tinha onde ser mexido.
+                if (auth.isAdmin)
+                  const PopupMenuItem(
+                    value: 'cifra',
+                    child: Row(
+                      children: [
+                        Icon(Icons.notes_rounded, size: 18),
+                        SizedBox(width: 8),
+                        Text('Letra e cifra'),
+                      ],
+                    ),
+                  ),
                 const PopupMenuItem(
                   value: 'editar',
                   child: Row(
@@ -507,17 +558,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     ],
                   ),
                 ),
-                if (auth.isAdmin)
-                  const PopupMenuItem(
-                    value: 'colar',
-                    child: Row(
-                      children: [
-                        Icon(Icons.content_paste_rounded, size: 18),
-                        SizedBox(width: 8),
-                        Text('Colar cifra'),
-                      ],
-                    ),
-                  ),
                 // Tirar do repertório continua só do líder: é decisão sobre o
                 // repertório da igreja, não sobre o cadastro de uma música.
                 if (auth.isAdmin)

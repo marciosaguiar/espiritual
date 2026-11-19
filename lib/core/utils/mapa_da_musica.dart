@@ -180,6 +180,42 @@ class MapaDaMusica {
     return dentro;
   }
 
-  static bool _ehTablatura(String linha) =>
-      RegExp(r'^\s*[eEBGDAb]\|').hasMatch(linha);
+  static bool _ehTablatura(String linha) => ehTablatura(linha);
+}
+
+/// Esta linha é tablatura? (`e|---3---`, `B|--0--`)
+///
+/// Era privada do mapa. Virou pública porque a tela de leitura precisa da
+/// MESMA resposta para poder esconder tablatura: duas contas diferentes para
+/// "isto é tablatura" acabariam discordando, e aí o músico esconderia as
+/// tablaturas e sobraria meia tablatura na tela.
+bool ehTablatura(String linha) => RegExp(r'^\s*[eEBGDAb]\|').hasMatch(linha);
+
+/// O mesmo texto sem as linhas de tablatura.
+///
+/// POR QUE ISTO EXISTE
+///
+/// Cifra do Cifra Club vem com tablatura da introdução, e ela ocupa seis
+/// linhas para dizer o que o tecladista e a cantora não vão tocar. Num
+/// celular, isso é meia tela de rolagem antes do primeiro verso. Quem toca
+/// violão quer; os outros, não — daí ser opção, e não decisão nossa.
+///
+/// Linha em branco que sobra no lugar da tablatura é juntada: três linhas
+/// vazias seguidas, no meio da música, parecem que falta algo.
+String semTablaturas(String texto) {
+  final saida = <String>[];
+  for (final linha in texto.split('\n')) {
+    if (ehTablatura(linha)) continue;
+    final vazia = linha.trim().isEmpty;
+    if (vazia && saida.isNotEmpty && saida.last.trim().isEmpty) continue;
+    saida.add(linha);
+  }
+  // Sobra em branco no começo e no fim não serve a ninguém.
+  while (saida.isNotEmpty && saida.first.trim().isEmpty) {
+    saida.removeAt(0);
+  }
+  while (saida.isNotEmpty && saida.last.trim().isEmpty) {
+    saida.removeLast();
+  }
+  return saida.join('\n');
 }
