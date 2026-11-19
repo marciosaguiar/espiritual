@@ -68,6 +68,25 @@ jobs:
       - name: Testes das rotinas diárias
         run: node --test ferramentas/teste/*.mjs
 
+      # QUEM está medindo, impresso no log.
+      #
+      # Isto não é enfeite: é o passo que faltava. A trava foi fixada em
+      # `flutter-version: '3.50.0'` e eu medi 3.668.988 bytes no meu
+      # contêiner, enquanto a CI media 3.868.219 no mesmo commit — 199 KB de
+      # diferença com a versão supostamente igual. A causa estava no SDK do
+      # meu contêiner: framework de 9 dias atrás com motor e Dart de 14 meses
+      # (Dart 3.9.0), ou seja, um `dart2js` velho gerando menos código.
+      #
+      # A lição: **a string da versão não basta**. Quem compila é o motor e o
+      # Dart, e eles aparecem só nas outras linhas do `flutter --version`.
+      # Com este passo, a próxima divergência se explica numa olhada em vez
+      # de virar caça ao fantasma.
+      - name: Qual Flutter está medindo
+        run: |
+          flutter --version
+          echo "FLUTTER_ROOT=$FLUTTER_ROOT"
+          dart --version
+
       - name: Tamanho do pacote inicial
         # A TRAVA DO TAMANHO MORA AQUI, e não só no deploy.
         #
@@ -77,21 +96,30 @@ jobs:
         # lugar certo.
         #
         # As flags são as MESMAS da publicação, senão o número não é
-        # comparável. (Medido: as flags mudam 73 bytes; o que muda 200 KB é a
-        # versão do Flutter, fixada acima.)
+        # comparável. (Medido: as flags mudam 73 bytes.)
         #
-        # BASE é o tamanho do `main.dart.js` antes da Bíblia, e vale para a
-        # versão fixada acima — trocar de versão exige medir de novo. A folga
-        # de 100 KB é o que a tela da Bíblia em si pode custar.
+        # DE ONDE VEM A BASE, E POR QUE ELA SUBIU
         #
-        # Onde a folga está hoje: em 18/11/2026, com o Flutter 3.50.0 e estas
-        # flags, o `main.dart.js` mediu 3.668.988 bytes — 43 KB abaixo do
-        # limite. Quem for gastar mais que isso de uma vez precisa medir
-        # antes, com ESTA versão, não no navegador nem em outro contêiner.
+        # A base anterior (3.610.328) foi medida no site no ar em 15/11, com
+        # outro conjunto de ferramentas. Com o Flutter 3.50.0 de verdade, o
+        # MESMO app compila para ~3,86 MB: a diferença é o compilador, não o
+        # código. Prova de que a CI está medindo o app, e não ruído: dois
+        # commits seguidos deram 3.852.078 (60f377c) e 3.868.219 (83080d1), e
+        # os 16 KB de diferença são exatamente o tamanho da tela de hinos que
+        # entrou entre os dois.
+        #
+        # Então a base passou a ser o que a CI mediu, no commit 83080d1:
+        # 3.868.219 bytes. Trocar `flutter-version` exige medir de novo AQUI,
+        # e o passo acima diz com o quê.
+        #
+        # A trava não é orçamento de bytes bonito: ela existe para pegar
+        # alguém transformando ATIVO em CÓDIGO sem perceber — a Bíblia são
+        # 7,7 MB, e o salto apareceria na hora. A folga de 100 KB é o que uma
+        # tela nova inteira pode custar sem que ninguém precise medir antes.
         run: |
           flutter build web --release --base-href "/espiritual/" \
             --pwa-strategy=none --no-web-resources-cdn
-          BASE=3610328
+          BASE=3868219
           FOLGA=102400
           TAMANHO=$(wc -c < build/web/main.dart.js)
           LIMITE=$((BASE + FOLGA))
@@ -99,6 +127,8 @@ jobs:
           if [ "$TAMANHO" -gt "$LIMITE" ]; then
             echo "::error::o pacote inicial passou de $LIMITE bytes ($TAMANHO)."
             echo "::error::Ou algo que devia ser ativo virou código, ou a"
-            echo "::error::versão do Flutter mudou. O número acima é o oficial."
+            echo "::error::versão do Flutter mudou. Confira o passo"
+            echo "::error::'Qual Flutter está medindo' acima: motor e Dart"
+            echo "::error::contam, não só o 3.50.0. O número aqui é o oficial."
             exit 1
           fi
