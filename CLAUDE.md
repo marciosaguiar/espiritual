@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 484 testes
+flutter test                   # 655 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 279 testes
+cd test_regras && npm install && npm test    # 312 testes
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -695,7 +695,11 @@ regra deste projeto — nada protegido por direito autoral embarcado:
 
 Então o app sabe **numerar e achar** hinos; o texto de cada um entra pelo
 cadastro do ministério, do hinário que a igreja comprou, com o "Colar cifra"
-que já existia. "Ainda não está no repertório" é um estado NORMAL da tela, com
+que já existia.
+
+  **Atualização de 19/11/2026 (tarde):** o texto passou a poder entrar em lote,
+  pela tela "Importar hinário" — ver "Biblioteca de hinários". O que não mudou:
+  nenhuma letra mora no repositório nem no pacote do app. "Ainda não está no repertório" é um estado NORMAL da tela, com
 caminho para resolver — não um erro.
 
 **Como foi feito:**
@@ -2027,6 +2031,137 @@ autorização.
 **Enquanto isso, nada muda no app:** hino protegido ou incerto continua como
 sempre — número, título e, para o líder, o caminho de cadastrar a letra do
 hinário que a igreja comprou. Que é o que o app já faz.
+
+### Biblioteca de hinários: importar o hinário inteiro de uma vez
+
+Pedido de 19/11/2026: "preencha os hinários com todas as músicas". O dono
+disse que os detentores dos direitos já autorizaram o uso. **Isso foi dito,
+não conferido, e não está no repositório**: vale guardar a resposta por
+escrito e conferir se cobre os DOIS hinários (a Harpa Cristã é da CPAD; o
+Cantor Cristão é de outra casa) e o ato de guardar o texto num banco.
+
+**A regra de nunca embarcar letra continua valendo.** Nada de hino mora no
+repositório, no pacote ou nos testes (todo texto de teste é inventado). O
+texto entra por **Perfil → Painel do líder → Importar hinário**, colado pelo
+líder, e fica no banco do ministério. O app não traz texto de lugar nenhum.
+
+**Por que NÃO dentro de `songs`** — a decisão que mais pesa:
+
+- `watchSongs` escuta a coleção INTEIRA, e cada aparelho a relê, cobrada como
+  consulta nova, depois de 30 minutos parado. Com ~1.200 hinos ali dentro,
+  15 pessoas × 3 aberturas no dia × ~1.300 documentos são ~58 mil leituras num
+  domingo: passa das 50 mil do plano grátis, e acabada a cota o app INTEIRO
+  para de ler, não só os hinos. (Conta de pior caso razoável, não medida.)
+- Então o texto mora numa biblioteca à parte: `hinarios/{id}` é o ÍNDICE
+  (`titulos`: número → título, `total`, `atualizadoEm`, `atualizadoPor`) e
+  custa UMA leitura por hinário; `hinarios/{id}/hinos/{n}` é a letra de UM
+  hino, lida só quando alguém o abre. O id é o NÚMERO, então abrir o hino 15 é
+  uma leitura por id, sem consulta. **Número fora do índice custa ZERO leituras
+  de letra** — provado contando chamadas (`biblioteca_provider_test.dart`), não
+  só afirmado aqui.
+- O hino só vira música de `songs` quando o ministério o USA: "Pôr no
+  repertório" (líder) ou escolher para um culto. Aí ganha tom, cifra e favorito.
+  Ler não escreve nada.
+- O índice fica em memória por 20 minutos (para quem estava com o app aberto
+  ver o que acabou de ser importado) e duas chamadas simultâneas esperam a
+  MESMA leitura.
+
+**As regras** (`firestore.rules`; +33 testes em `test_regras`, 312 no total):
+leitura de aprovado, escrita só do líder, `delete: if false` (re-importar
+regrava por cima, que é o jeito de corrigir); lista fechada `harpa`/`cantor`
+(um teste em Dart confere que ela não diverge do app); o id do documento TEM de
+ser o número (`string(d.numero) == numero`); `total == titulos.size()`; hora do
+servidor. **Os campos que o app grava e o `hasOnly` da regra são duas listas em
+dois arquivos**, e um teste em Dart as compara — um campo a mais e o banco
+recusaria a importação INTEIRA com erro de permissão, depois de o líder colar o
+hinário e conferir a prévia. Foi provado quebrando de propósito: com um campo a
+mais no app, o teste falha. O lote é de 400 hinos + o índice por commit, e o
+teste de regras prova que isso passa pelo limite de consultas por requisição.
+
+**O motor de leitura** (`core/utils/importar_hinario.dart`, função pura, 41
+testes):
+
+- O app NÃO SABE como é o arquivo da pessoa. Tenta cinco formatos (`Hino 15`,
+  `15 - Título`, `15 TÍTULO`, `15. Título`, número sozinho na linha) e fica com
+  o que achou MAIS hinos com letra; no empate, o primeiro da lista.
+- **O número da ESTROFE é o que engana**: "2." pode ser a segunda estrofe do
+  hino 1 ou o começo do hino 2. Por isso o formato vale para o texto inteiro,
+  nunca linha a linha — o formato `15 - Título` acha 640 hinos com letra; o
+  `15. Título` acharia só estrofes de 1 a 6.
+- Por número, fica o trecho de letra MAIS comprida: é o que faz um sumário
+  perder para o hino de verdade. O corte de cada hino é o PRÓXIMO candidato de
+  qualquer número, então um rodapé "2024 - Editora" encerra o último hino.
+- Limites: letra com menos de 20 caracteres não entra; com mais de 6.000 não
+  entra (quase sempre o hino seguinte não foi reconhecido e o último levou o
+  índice do livro junto); linha com mais de 90 não é título; número acima do
+  hinário é ignorado e contado.
+- `faltando` só conta ENTRE o primeiro e o último achados: colar o hinário em
+  partes é o jeito normal, e "590 faltando" sobre 50 colados seria alarme falso.
+- Título todo em maiúsculas vira "Chuvas de Graça". Formato forçado vale mesmo
+  sem achar nada (a tela precisa dizer "neste formato não achei", e não
+  "formato nenhum").
+
+**A tela**: quatro passos numerados (hinário → colar → conferir → importar),
+porque são uma sequência de verdade. **Nada é gravado antes de conferir**: a
+prévia traz a frase ("Achei 638 hinos, do 1 ao 640. Faltam o 4 e o 17."),
+avisos que dizem o que ACONTECE com cada hino citado ("não entram", "entram
+como Hino N") e a letra do primeiro, do meio e do último. Colar é um botão que
+lê a área de transferência — o texto NÃO fica num campo, porque um campo com o
+hinário inteiro trava; "Colar à mão" é o plano B, multilinha (campo de uma
+linha descarta as quebras do que se cola no navegador). Confirma antes de
+gravar, e importar de novo não duplica.
+
+**A tela rola sozinha até o resultado.** A conferência nasce abaixo do que cabe
+num celular, e sem isso a pessoa acharia que o botão não funcionou — a falha
+silenciosa que este app não aceita. Foi achado por teste de widget: um
+`ListView` preguiçoso nem constrói o que está fora da tela, então o teste não
+via o resultado. Virou `SingleChildScrollView` + rolagem por `GlobalKey`.
+
+**O teclado**: o número vai ao repertório; fora dele, à biblioteca; se também
+não está lá, o "ainda não está no repertório" de sempre. **Erro (sem internet)
+e "não tem" são recados DIFERENTES**: o erro não oferece "Cadastrar agora" nem
+"Peça a um líder", que respondem a outra pergunta. A resposta de uma busca
+velha não abre por cima do que a pessoa digitou depois. A busca pelo nome acha
+TÍTULOS da biblioteca (a letra não está em memória) e só mostra a biblioteca
+quando a pessoa procura — sem busca, uma frase diz quantos hinos há; no máximo
+30 linhas. Escolher para um culto (só líder) registra a música ANTES de
+devolver, porque o culto guarda o id da música.
+
+**Os testes que contam chamadas** valem mais que os comentários: o provider
+aceita leitores e relógio trocáveis (`BibliotecaProvider(lerIndice: …)`), só
+para os testes provarem o custo em vez de acreditar na leitura do código. E um
+teste que não pode falhar não prova nada: o do recado de erro passava para o
+líder sem testar a metade do levita; só rodando como levita e QUEBRANDO o
+código de propósito ele passou a pegar o defeito.
+
+**O pacote web cresceu: +59.021 bytes** (3.742.326 → 3.801.347 neste contêiner,
+mesmas flags da CI, mesmo Flutter — a DIFERENÇA é comparável; o número absoluto
+não é, porque o motor daqui é antigo e dá ~199 KB a menos que a CI). Com a
+folga de 100 KB já curta, **a trava de tamanho da CI deve ficar vermelha na
+primeira entrega**. É esperado, e o conserto é um número só — mas tem de ser
+trocado nos DOIS workflows (`ci.yml` e `web-preview.yml`) no mesmo commit, ou a
+CI fica verde e a publicação vermelha, que é exatamente o incidente descrito em
+"A trava do tamanho reprovou TODO deploy por dias". O valor certo é o que a CI
+imprimir (`main.dart.js: N bytes`), nunca o meu palpite.
+
+**O que NÃO foi verificado** (leia antes de dizer que está pronto):
+
+1. **O formato do texto REAL.** Todos os testes usam texto inventado nos
+   formatos que eu previ. Se o arquivo da igreja for outro (PDF copiado com
+   quebras no meio, páginas numeradas, duas colunas), a PRÉVIA mostra o
+   problema — mas pode ser preciso ajustar o motor, e para isso é preciso um
+   trecho (10 a 20 linhas) do texto de verdade.
+2. **A tela num navegador de verdade a 375 px.** Só há testes de widget, com a
+   fonte de teste (mais larga que a Poppins) e sem estouro de layout. Rodar o
+   app e fotografar, como na rodada de 19/11, ainda falta.
+3. **A gravação no Firestore de verdade pelo Dart.** O formato dos documentos é
+   conferido contra as regras (teste de contrato) e as regras foram provadas no
+   emulador com o SDK de JavaScript; o `WriteBatch` do Dart em si não foi
+   exercitado contra o emulador.
+4. **O manual do administrador** (fora do repositório) não tem o passo
+   "Importar hinário". O guia de dentro do app, que está aqui, tem.
+5. **"Últimos abertos"** só lista hinos do repertório: o hino lido da
+   biblioteca não aparece ali.
 
 ### O manual e o guia dentro do app
 
