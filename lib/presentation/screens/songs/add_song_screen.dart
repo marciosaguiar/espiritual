@@ -54,6 +54,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameCtrl = TextEditingController();
   final _artistCtrl = TextEditingController();
+
   /// Campo único: cifra do Cifra Club como veio, ou só a letra.
   final _cifraCtrl = TextEditingController();
   final _youtubeCtrl = TextEditingController();
@@ -191,8 +192,8 @@ class _AddSongScreenState extends State<AddSongScreen> {
     final songs = context.read<SongsProvider>();
     // Compara com TUDO, inclusive o que está fora do repertório: avisar que
     // a música existe arquivada é melhor que deixar criar a segunda.
-    final parecidas = nomesParecidos(
-        _nameCtrl.text, songs.allSongs.map((s) => s.name));
+    final parecidas =
+        nomesParecidos(_nameCtrl.text, songs.allSongs.map((s) => s.name));
     if (parecidas.isNotEmpty) {
       final seguir = await _seguirApesarDaParecida(parecidas);
       if (!seguir || !mounted) return;
@@ -265,7 +266,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
       appBar: AppBar(
         title: Text(_ehHino
             ? 'Hino ${widget.numero} · ${widget.hinario!.sigla}'
-            : 'Nova Música'),
+            : 'Nova música'),
       ),
       body: Form(
         key: _formKey,
@@ -288,7 +289,8 @@ class _AddSongScreenState extends State<AddSongScreen> {
                 controller: _nameCtrl,
                 textInputAction: TextInputAction.next,
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty) return 'Nome é obrigatório';
+                  if (v == null || v.trim().isEmpty)
+                    return 'Nome é obrigatório';
                   return null;
                 },
               ),
@@ -299,7 +301,8 @@ class _AddSongScreenState extends State<AddSongScreen> {
                 controller: _artistCtrl,
                 textInputAction: TextInputAction.next,
                 validator: (v) {
-                  if (v == null || v.trim().isEmpty) return 'Artista é obrigatório';
+                  if (v == null || v.trim().isEmpty)
+                    return 'Artista é obrigatório';
                   return null;
                 },
               ),
@@ -319,7 +322,7 @@ class _AddSongScreenState extends State<AddSongScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const Text(
-                    'Tom Original',
+                    'Tom original',
                     style: TextStyle(
                       fontFamily: 'Poppins',
                       fontSize: 13,
@@ -331,10 +334,13 @@ class _AddSongScreenState extends State<AddSongScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14),
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.grey.shade900 : Colors.grey.shade100,
+                      color:
+                          isDark ? Colors.grey.shade900 : Colors.grey.shade100,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: isDark ? Colors.grey.shade700 : Colors.grey.shade200,
+                        color: isDark
+                            ? Colors.grey.shade700
+                            : Colors.grey.shade200,
                       ),
                     ),
                     child: DropdownButton<String>(
@@ -404,10 +410,11 @@ class _AddSongScreenState extends State<AddSongScreen> {
               ),
               const SizedBox(height: 32),
               AppButton(
-                label: 'Salvar Música',
+                label: 'Salvar música',
                 isLoading: _isSaving,
                 onPressed: _save,
-                icon: const Icon(Icons.save_rounded, size: 18, color: Colors.white),
+                icon: const Icon(Icons.save_rounded,
+                    size: 18, color: Colors.white),
               ),
               const SizedBox(height: 40),
             ],

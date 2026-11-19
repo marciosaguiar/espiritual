@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../providers/auth_provider.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/texto.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/firestore_service.dart';
@@ -11,8 +12,15 @@ import '../../providers/scale_provider.dart';
 
 /// Ministry roster. Leaders use this to promote or step someone down —
 /// the sign-up form no longer lets people pick their own role.
-class MembersScreen extends StatelessWidget {
+class MembersScreen extends StatefulWidget {
   const MembersScreen({super.key});
+
+  @override
+  State<MembersScreen> createState() => _MembersScreenState();
+}
+
+class _MembersScreenState extends State<MembersScreen> {
+  String _busca = '';
 
   @override
   Widget build(BuildContext context) {
@@ -59,11 +67,31 @@ class MembersScreen extends StatelessWidget {
           final nomes = {for (final m in members) m.id: m.name};
           final gente = members.where((m) => !m.bot).toList();
 
-          final pendentes = gente.where((m) => m.isPendente).toList();
-          final equipe = gente.where((m) => m.aprovado).toList();
-          final removidos = gente.where((m) => m.isRemovido).toList();
-          final robos = members.where((m) => m.bot && m.aprovado).toList();
-          final leaders = equipe.where((m) => m.isAdmin).length;
+          // A BUSCA é por nome e ignora acento, como a do repertório: ninguém
+          // digita acento no celular com pressa.
+          //
+          // Ela filtra as quatro seções, mas NÃO o `nomes` acima (que traduz
+          // id em "saiu em 14/11, por Fulano") nem as contagens do ministério:
+          // "3 líderes · 5 membros" e "2 pessoas não conseguem recuperar a
+          // senha" são o tamanho da equipe, não o tamanho da busca.
+          final busca = _busca.trim();
+          final procurando = busca.isNotEmpty;
+          bool achou(UserModel m) => combina(busca, [m.name]);
+
+          final equipeToda = gente.where((m) => m.aprovado).toList();
+          final pendentes =
+              gente.where((m) => m.isPendente && achou(m)).toList();
+          final equipe = equipeToda.where(achou).toList();
+          final removidos =
+              gente.where((m) => m.isRemovido && achou(m)).toList();
+          final robos =
+              members.where((m) => m.bot && m.aprovado && achou(m)).toList();
+          final leaders = equipeToda.where((m) => m.isAdmin).length;
+          final ninguem = procurando &&
+              pendentes.isEmpty &&
+              equipe.isEmpty &&
+              removidos.isEmpty &&
+              robos.isEmpty;
 
           Widget linha(UserModel m) => _MemberRow(
                 member: m,
@@ -75,6 +103,36 @@ class MembersScreen extends StatelessWidget {
           return ListView(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 110),
             children: [
+              // A busca só aparece quando a lista é grande o bastante para
+              // valer: um campo de texto sobre seis nomes é um campo a mais
+              // na tela. Acima disso, aprovar alguém virava rolar quatro
+              // seções procurando um nome no meio.
+              if (members.length > 8) ...[
+                TextField(
+                  onChanged: (v) => setState(() => _busca = v),
+                  decoration: InputDecoration(
+                    hintText: 'Procurar pessoa',
+                    prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                    isDense: true,
+                    filled: true,
+                    fillColor: isDark
+                        ? Colors.white.withValues(alpha: 0.06)
+                        : Colors.white.withValues(alpha: 0.6),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                      borderSide: BorderSide.none,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+              if (ninguem)
+                _Message(
+                  icon: Icons.search_off_rounded,
+                  title: 'Ninguém com esse nome',
+                  detail: 'Confira como está escrito, ou apague a busca '
+                      'para ver todos.',
+                ),
               if (pendentes.isNotEmpty && auth.isAdmin) ...[
                 _Secao(
                   titulo: pendentes.length == 1
@@ -85,39 +143,48 @@ class MembersScreen extends StatelessWidget {
                   destaque: true,
                   isDark: isDark,
                 ),
-                ...pendentes.map((m) => _PendenteRow(member: m, isDark: isDark)),
+                ...pendentes
+                    .map((m) => _PendenteRow(member: m, isDark: isDark)),
                 const SizedBox(height: 22),
               ],
-              _Secao(
-                titulo: 'Equipe',
-                detalhe: '$leaders ${leaders == 1 ? 'líder' : 'líderes'} · '
-                    '${equipe.length} ${equipe.length == 1 ? 'membro' : 'membros'}',
-                isDark: isDark,
-              ),
-              // QUEM AINDA NÃO PODE RECUPERAR A SENHA.
-              //
-              // Isto fica aqui, e não escondido num menu, porque é a única
-              // coisa deste app que não tem conserto depois: conta sem e-mail
-              // cadastrado, com a senha perdida, é acesso perdido — trocar a
-              // senha de outra pessoa exige chave de administrador, que este
-              // projeto não tem, e o console do Firebase também não faz isso.
-              //
-              // Só vale enquanto a pessoa ainda entra, porque cadastrar o
-              // e-mail pede a senha atual. Por isso o líder precisa ver a
-              // lista ANTES de alguém esquecer.
-              if (auth.isAdmin)
-                _SemRecuperacao(
-                  quantos: equipe.where((m) => !m.recuperacaoPorEmail).length,
+              // Durante a busca a seção da Equipe só aparece se alguém dela
+              // casou: o cabeçalho "Equipe" acima de uma lista vazia, com um
+              // "Removidos" logo abaixo trazendo o nome procurado, faria o
+              // líder ler que a pessoa não está na equipe.
+              if (!procurando || equipe.isNotEmpty) ...[
+                _Secao(
+                  titulo: 'Equipe',
+                  detalhe: '$leaders ${leaders == 1 ? 'líder' : 'líderes'} · '
+                      '${equipeToda.length} '
+                      '${equipeToda.length == 1 ? 'membro' : 'membros'}',
                   isDark: isDark,
                 ),
-              if (equipe.isEmpty)
-                _Message(
-                  icon: Icons.people_outline_rounded,
-                  title: 'Ninguém aprovado ainda',
-                  detail: 'Aprove alguém acima para montar a equipe.',
-                )
-              else
-                ...equipe.map(linha),
+                // QUEM AINDA NÃO PODE RECUPERAR A SENHA.
+                //
+                // Isto fica aqui, e não escondido num menu, porque é a única
+                // coisa deste app que não tem conserto depois: conta sem e-mail
+                // cadastrado, com a senha perdida, é acesso perdido — trocar a
+                // senha de outra pessoa exige chave de administrador, que este
+                // projeto não tem, e o console do Firebase também não faz isso.
+                //
+                // Só vale enquanto a pessoa ainda entra, porque cadastrar o
+                // e-mail pede a senha atual. Por isso o líder precisa ver a
+                // lista ANTES de alguém esquecer.
+                if (auth.isAdmin)
+                  _SemRecuperacao(
+                    quantos:
+                        equipeToda.where((m) => !m.recuperacaoPorEmail).length,
+                    isDark: isDark,
+                  ),
+                if (equipe.isEmpty)
+                  _Message(
+                    icon: Icons.people_outline_rounded,
+                    title: 'Ninguém aprovado ainda',
+                    detail: 'Aprove alguém acima para montar a equipe.',
+                  )
+                else
+                  ...equipe.map(linha),
+              ],
               if (robos.isNotEmpty && auth.isAdmin) ...[
                 const SizedBox(height: 22),
                 _SecaoRecolhida(
@@ -409,7 +476,8 @@ class _MemberRowState extends State<_MemberRow> {
           ElevatedButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: ElevatedButton.styleFrom(
-                backgroundColor: virarRobo ? AppColors.blue : AppColors.success),
+                backgroundColor:
+                    virarRobo ? AppColors.blue : AppColors.success),
             child: Text(virarRobo ? 'É um robô' : 'É uma pessoa'),
           ),
         ],
@@ -659,9 +727,8 @@ class _SecaoRecolhidaState extends State<_SecaoRecolhida> {
 
   @override
   Widget build(BuildContext context) {
-    final cor = widget.isDark
-        ? AppColors.textPrimaryDark
-        : AppColors.textPrimaryLight;
+    final cor =
+        widget.isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -746,9 +813,8 @@ class _RemovidoRowState extends State<_RemovidoRow> {
   Widget build(BuildContext context) {
     final m = widget.member;
     final isDark = widget.isDark;
-    final fraca = isDark
-        ? AppColors.textSecondaryDark
-        : AppColors.textSecondaryLight;
+    final fraca =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -1076,8 +1142,7 @@ class _Message extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(icon,
-                size: 46,
-                color: isDark ? Colors.white24 : Colors.black26),
+                size: 46, color: isDark ? Colors.white24 : Colors.black26),
             const SizedBox(height: 14),
             Text(
               title,

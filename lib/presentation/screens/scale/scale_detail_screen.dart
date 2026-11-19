@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/scale_provider.dart';
 import '../../providers/songs_provider.dart';
+import '../../../core/utils/texto.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/scale_model.dart';
 import '../../../data/models/user_model.dart';
@@ -87,8 +88,9 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
 
     final novo =
         DateTime(data.year, data.month, data.day, hora.hour, hora.minute);
-    final error =
-        await context.read<ScaleProvider>().updateDetails(_scale.id, date: novo);
+    final error = await context
+        .read<ScaleProvider>()
+        .updateDetails(_scale.id, date: novo);
 
     if (!mounted) return;
     if (error == null) setState(() => _scale = _scale.copyWith(date: novo));
@@ -137,12 +139,13 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
     final erro =
         await context.read<ScaleProvider>().setCanceled(_scale.id, cancelar);
     if (!mounted) return;
-    if (erro == null) setState(() => _scale = _scale.copyWith(canceled: cancelar));
+    if (erro == null)
+      setState(() => _scale = _scale.copyWith(canceled: cancelar));
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(erro ??
-            (cancelar ? 'Culto cancelado.' : 'Culto reativado.')),
+        content:
+            Text(erro ?? (cancelar ? 'Culto cancelado.' : 'Culto reativado.')),
         backgroundColor: erro == null ? AppColors.success : AppColors.red,
       ),
     );
@@ -220,8 +223,7 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
   }
 
   Future<void> _showAddLevitaDialog() async {
-    final List<UserModel> allUsers =
-        await AuthService.watchEscalaveis().first;
+    final List<UserModel> allUsers = await AuthService.watchEscalaveis().first;
 
     if (!mounted) return;
 
@@ -237,107 +239,153 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
         final funcaoNoCulto = <String, String>{
           for (final l in _scale.levitas) l.userId: l.instrument,
         };
+        var busca = '';
         return StatefulBuilder(builder: (ctx2, setDialog) {
+          // A busca ignora acento, como a do repertório. Num ministério de
+          // trinta pessoas, escalar virava rolar a lista inteira procurando
+          // um nome — e a lista cabe em 400 px de altura, uns sete nomes.
+          final mostrados =
+              allUsers.where((u) => combina(busca, [u.name])).toList();
           return AlertDialog(
-            title: const Text('Definir Levitas',
+            title: const Text('Quem toca neste culto',
                 style: TextStyle(fontFamily: 'Poppins', fontSize: 16)),
             content: SizedBox(
               width: double.maxFinite,
               height: 400,
-              child: ListView.builder(
-                itemCount: allUsers.length,
-                itemBuilder: (_, i) {
-                  final u = allUsers[i];
-                  final checked = currentIds.contains(u.id);
-                  final escolhida = funcaoNoCulto[u.id] ??
-                      u.instrument.name;
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      CheckboxListTile(
-                        secondary: CircleAvatar(
-                          radius: 16,
-                          backgroundColor: AppColors.blue.withOpacity(0.15),
-                          child: Text(
-                            u.name[0].toUpperCase(),
-                            style: const TextStyle(
-                              color: AppColors.blue,
-                              fontFamily: 'Poppins',
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+              child: Column(
+                children: [
+                  if (allUsers.length > 8) ...[
+                    TextField(
+                      onChanged: (v) => setDialog(() => busca = v),
+                      decoration: InputDecoration(
+                        hintText: 'Procurar pessoa',
+                        prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                        isDense: true,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        title: Text(u.name,
-                            style: const TextStyle(
-                                fontFamily: 'Poppins', fontSize: 13)),
-                        subtitle: Text(
-                            u.instruments
-                                .map((f) => '${f.emoji} ${f.label}')
-                                .join(' · '),
-                            style: const TextStyle(
-                                fontFamily: 'Poppins', fontSize: 11)),
-                        value: checked,
-                        activeColor: AppColors.blue,
-                        onChanged: (v) {
-                          setDialog(() {
-                            if (v == true) {
-                              currentIds.add(u.id);
-                              funcaoNoCulto[u.id] ??= u.instrument.name;
-                            } else {
-                              currentIds.remove(u.id);
-                            }
-                          });
-                        },
                       ),
-                      // Só para quem faz mais de uma coisa, e só quando está
-                      // escalada: perguntar antes de escalar seria perguntar
-                      // à toa.
-                      if (checked && u.temVariasFuncoes)
-                        Padding(
-                          padding:
-                              const EdgeInsets.only(left: 72, bottom: 10),
-                          child: Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: u.instruments.map((f) {
-                              final ativa = escolhida == f.name;
-                              return GestureDetector(
-                                onTap: () => setDialog(
-                                    () => funcaoNoCulto[u.id] = f.name),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                      horizontal: 9, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: ativa
-                                        ? AppColors.blue
-                                        : Colors.transparent,
-                                    borderRadius: BorderRadius.circular(999),
-                                    border: Border.all(
-                                        color: ativa
-                                            ? AppColors.blue
-                                            : Colors.grey.shade400),
-                                  ),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  if (mostrados.isEmpty)
+                    const Expanded(
+                      child: Center(
+                        child: Text(
+                          'Ninguém com esse nome.',
+                          style: TextStyle(fontFamily: 'Poppins', fontSize: 13),
+                        ),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: mostrados.length,
+                        itemBuilder: (_, i) {
+                          final u = mostrados[i];
+                          final checked = currentIds.contains(u.id);
+                          final escolhida =
+                              funcaoNoCulto[u.id] ?? u.instrument.name;
+                          return Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              CheckboxListTile(
+                                secondary: CircleAvatar(
+                                  radius: 16,
+                                  backgroundColor:
+                                      AppColors.blue.withValues(alpha: 0.15),
                                   child: Text(
-                                    '${f.emoji} ${f.label}',
-                                    style: TextStyle(
+                                    // NUNCA indexa texto vazio: `''[0]` LANÇA, e um
+                                    // cadastro com o nome em branco derrubaria o
+                                    // diálogo inteiro no meio da lista. É a mesma
+                                    // armadilha que já custou a tela do culto.
+                                    u.name.trim().isEmpty
+                                        ? '?'
+                                        : u.name.trim()[0].toUpperCase(),
+                                    style: const TextStyle(
+                                      color: AppColors.blue,
                                       fontFamily: 'Poppins',
-                                      fontSize: 11,
-                                      fontWeight: ativa
-                                          ? FontWeight.w600
-                                          : FontWeight.w400,
-                                      color: ativa
-                                          ? Colors.white
-                                          : AppColors.textSecondaryLight,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   ),
                                 ),
-                              );
-                            }).toList(),
-                          ),
-                        ),
-                    ],
-                  );
-                },
+                                title: Text(
+                                    u.name.trim().isEmpty ? 'Alguém' : u.name,
+                                    style: const TextStyle(
+                                        fontFamily: 'Poppins', fontSize: 13)),
+                                subtitle: Text(
+                                    u.instruments
+                                        .map((f) => '${f.emoji} ${f.label}')
+                                        .join(' · '),
+                                    style: const TextStyle(
+                                        fontFamily: 'Poppins', fontSize: 11)),
+                                value: checked,
+                                activeColor: AppColors.blue,
+                                onChanged: (v) {
+                                  setDialog(() {
+                                    if (v == true) {
+                                      currentIds.add(u.id);
+                                      funcaoNoCulto[u.id] ??= u.instrument.name;
+                                    } else {
+                                      currentIds.remove(u.id);
+                                    }
+                                  });
+                                },
+                              ),
+                              // Só para quem faz mais de uma coisa, e só quando está
+                              // escalada: perguntar antes de escalar seria perguntar
+                              // à toa.
+                              if (checked && u.temVariasFuncoes)
+                                Padding(
+                                  padding: const EdgeInsets.only(
+                                      left: 72, bottom: 10),
+                                  child: Wrap(
+                                    spacing: 6,
+                                    runSpacing: 6,
+                                    children: u.instruments.map((f) {
+                                      final ativa = escolhida == f.name;
+                                      return GestureDetector(
+                                        onTap: () => setDialog(
+                                            () => funcaoNoCulto[u.id] = f.name),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 9, vertical: 4),
+                                          decoration: BoxDecoration(
+                                            color: ativa
+                                                ? AppColors.blue
+                                                : Colors.transparent,
+                                            borderRadius:
+                                                BorderRadius.circular(999),
+                                            border: Border.all(
+                                                color: ativa
+                                                    ? AppColors.blue
+                                                    : Colors.grey.shade400),
+                                          ),
+                                          child: Text(
+                                            '${f.emoji} ${f.label}',
+                                            style: TextStyle(
+                                              fontFamily: 'Poppins',
+                                              fontSize: 11,
+                                              fontWeight: ativa
+                                                  ? FontWeight.w600
+                                                  : FontWeight.w400,
+                                              color: ativa
+                                                  ? Colors.white
+                                                  : AppColors
+                                                      .textSecondaryLight,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    }).toList(),
+                                  ),
+                                ),
+                            ],
+                          );
+                        },
+                      ),
+                    ),
+                ],
               ),
             ),
             actions: [
@@ -453,9 +501,8 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                             ? Icons.event_available_rounded
                             : Icons.event_busy_rounded,
                         size: 18,
-                        color: _scale.canceled
-                            ? AppColors.success
-                            : AppColors.red,
+                        color:
+                            _scale.canceled ? AppColors.success : AppColors.red,
                       ),
                       const SizedBox(width: 8),
                       // O menu DIZ que dá para voltar. Antes, as duas opções
@@ -501,8 +548,8 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
               Container(
                 width: double.infinity,
                 margin: const EdgeInsets.only(bottom: 14),
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 11),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
                 decoration: BoxDecoration(
                   color: AppColors.red.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(10),
@@ -579,7 +626,8 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                         style: TextStyle(
                           fontFamily: 'Poppins',
                           fontSize: 13,
-                          color: isConfirmed ? AppColors.success : AppColors.blue,
+                          color:
+                              isConfirmed ? AppColors.success : AppColors.blue,
                         ),
                       ),
                     ),
@@ -589,7 +637,8 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: isConfirmed ? AppColors.success : AppColors.blue,
+                          color:
+                              isConfirmed ? AppColors.success : AppColors.blue,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Text(
@@ -644,8 +693,8 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                           fontSize: 15,
                           fontWeight: FontWeight.w700),
                     ),
-                    style: FilledButton.styleFrom(
-                        backgroundColor: AppColors.blue),
+                    style:
+                        FilledButton.styleFrom(backgroundColor: AppColors.blue),
                   ),
                 ),
               ),
@@ -727,8 +776,8 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                 decoration: BoxDecoration(
                   color: Colors.orange.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                      color: Colors.orange.withValues(alpha: 0.45)),
+                  border:
+                      Border.all(color: Colors.orange.withValues(alpha: 0.45)),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -827,52 +876,57 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
             // uma caixa de texto que não aceitava texto, o que parece defeito.
             // Quem não é líder lê as observações no topo da tela.
             if (auth.isAdmin) ...[
-            // "Observações do culto", e não "Observações": a música tem as
-            // dela ("Anotações da música"), e as duas apareciam com o mesmo
-            // nome em telas diferentes.
-            Text(
-              'Observações do culto',
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: isDark
-                    ? AppColors.textPrimaryDark
-                    : AppColors.textPrimaryLight,
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _observationsCtrl,
-              maxLines: 4,
-              readOnly: !auth.isAdmin,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 14,
-                color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
-              ),
-              decoration: InputDecoration(
-                hintText: 'Adicione observações sobre o culto...',
-                hintStyle: const TextStyle(
+              // "Observações do culto", e não "Observações": a música tem as
+              // dela ("Anotações da música"), e as duas apareciam com o mesmo
+              // nome em telas diferentes.
+              Text(
+                'Observações do culto',
+                style: TextStyle(
                   fontFamily: 'Poppins',
-                  color: AppColors.textSecondaryLight,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimaryLight,
                 ),
-                filled: true,
-                fillColor: isDark ? Colors.grey.shade900 : Colors.grey.shade50,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: isDark ? Colors.grey.shade700 : Colors.grey.shade200,
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: _observationsCtrl,
+                maxLines: 4,
+                readOnly: !auth.isAdmin,
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 14,
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimaryLight,
+                ),
+                decoration: InputDecoration(
+                  hintText: 'Adicione observações sobre o culto...',
+                  hintStyle: const TextStyle(
+                    fontFamily: 'Poppins',
+                    color: AppColors.textSecondaryLight,
                   ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                  borderSide: BorderSide(
-                    color: isDark ? Colors.grey.shade700 : Colors.grey.shade200,
+                  filled: true,
+                  fillColor:
+                      isDark ? Colors.grey.shade900 : Colors.grey.shade50,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color:
+                          isDark ? Colors.grey.shade700 : Colors.grey.shade200,
+                    ),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(
+                      color:
+                          isDark ? Colors.grey.shade700 : Colors.grey.shade200,
+                    ),
                   ),
                 ),
               ),
-            ),
               const SizedBox(height: 12),
               SizedBox(
                 width: double.infinity,
@@ -926,8 +980,7 @@ class _ObservacoesDoCulto extends StatelessWidget {
         children: [
           const Row(
             children: [
-              Icon(Icons.event_note_outlined, size: 16,
-                  color: AppColors.blue),
+              Icon(Icons.event_note_outlined, size: 16, color: AppColors.blue),
               SizedBox(width: 8),
               Text(
                 'Observações do culto',
@@ -996,7 +1049,9 @@ class _SectionHeader extends StatelessWidget {
                   fontFamily: 'Poppins',
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimaryLight,
                 ),
               ),
               Text(
@@ -1050,94 +1105,94 @@ class _SongRow extends StatelessWidget {
                 ),
               ),
       child: Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: isDark ? AppColors.cardDark : AppColors.cardLight,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(
-          color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.cardDark : AppColors.cardLight,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+          ),
         ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 28,
-            height: 28,
-            decoration: BoxDecoration(
-              color: AppColors.blue.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
+        child: Row(
+          children: [
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: AppColors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Center(
+                child: Text(
+                  '$index',
+                  style: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.blue,
+                  ),
+                ),
+              ),
             ),
-            child: Center(
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    songs.nameOf(song),
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      fontStyle: missing ? FontStyle.italic : FontStyle.normal,
+                      color: missing
+                          ? AppColors.textSecondaryLight
+                          : (isDark
+                              ? AppColors.textPrimaryDark
+                              : AppColors.textPrimaryLight),
+                    ),
+                  ),
+                  Text(
+                    songs.artistOf(song),
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 11,
+                      color: AppColors.textSecondaryLight,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // O vídeo, aqui no culto, é para ensaiar antes — abrir a música
+            // inteira só para achar o link era um caminho a mais no celular,
+            // em cima do horário.
+            if (video != null)
+              IconButton(
+                tooltip: 'Abrir no YouTube',
+                icon: const Icon(Icons.play_circle_outline_rounded,
+                    size: 22, color: AppColors.red),
+                onPressed: () => abrirLink(context, video),
+                visualDensity: VisualDensity.compact,
+              ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: AppColors.blue.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(6),
+              ),
               child: Text(
-                '$index',
+                songs.keyOf(song),
                 style: const TextStyle(
                   fontFamily: 'Poppins',
-                  fontSize: 12,
+                  fontSize: 11,
                   fontWeight: FontWeight.w700,
                   color: AppColors.blue,
                 ),
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  songs.nameOf(song),
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    fontStyle: missing ? FontStyle.italic : FontStyle.normal,
-                    color: missing
-                        ? AppColors.textSecondaryLight
-                        : (isDark
-                            ? AppColors.textPrimaryDark
-                            : AppColors.textPrimaryLight),
-                  ),
-                ),
-                Text(
-                  songs.artistOf(song),
-                  style: const TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 11,
-                    color: AppColors.textSecondaryLight,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // O vídeo, aqui no culto, é para ensaiar antes — abrir a música
-          // inteira só para achar o link era um caminho a mais no celular,
-          // em cima do horário.
-          if (video != null)
-            IconButton(
-              tooltip: 'Abrir no YouTube',
-              icon: const Icon(Icons.play_circle_outline_rounded,
-                  size: 22, color: AppColors.red),
-              onPressed: () => abrirLink(context, video),
-              visualDensity: VisualDensity.compact,
-            ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: AppColors.blue.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(
-              songs.keyOf(song),
-              style: const TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: AppColors.blue,
-              ),
-            ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -1244,8 +1299,7 @@ class _LevitaRow extends StatelessWidget {
                     fontFamily: 'Poppins',
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
-                    color:
-                        levita.confirmed ? AppColors.success : Colors.orange,
+                    color: levita.confirmed ? AppColors.success : Colors.orange,
                   ),
                 ),
               ],
@@ -1280,7 +1334,9 @@ class _EmptyState extends StatelessWidget {
             style: TextStyle(
               fontFamily: 'Poppins',
               fontSize: 13,
-              color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
             ),
           ),
         ],

@@ -53,17 +53,46 @@ class _ProfileScreenState extends State<ProfileScreen> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
+        // O guia das cinco abas, com a navegação NOVA.
+        //
+        // O texto antigo mandava a pessoa procurar o versículo e os atalhos
+        // no Início, e a Bíblia no Perfil — as três coisas mudaram de lugar
+        // nesta rodada. Guia que descreve a tela de antes é pior que guia
+        // nenhum: ele faz a pessoa achar que o app está quebrado.
+        //
+        // E "offline" saiu daqui também: para quem só usa WhatsApp é palavra
+        // de técnico, e é justamente o recurso que serve ao culto sem
+        // internet.
         const items = [
-          (Icons.home_rounded, 'Início',
-              'Versículo do dia, próximo culto e atalhos rápidos.'),
-          (Icons.music_note_rounded, 'Músicas',
-              'Busque cifras, transponha o tom e salve offline.'),
-          (Icons.calendar_month_rounded, 'Escala',
-              'Veja os cultos, confirme presença e monte o repertório.'),
-          (Icons.chat_bubble_rounded, 'Chat',
-              'Converse com o ministério e compartilhe músicas.'),
-          (Icons.person_rounded, 'Perfil',
-              'Seu instrumento, favoritas, tons salvos e o tema.'),
+          (
+            Icons.home_rounded,
+            'Início',
+            'O que você precisa fazer agora: o seu próximo culto, as '
+                'músicas dele e o que está esperando por você.'
+          ),
+          (
+            Icons.music_note_rounded,
+            'Músicas',
+            'O repertório da igreja, os hinários (hino pelo número) e a '
+                'Bíblia. Dá para mudar o tom e guardar no celular.'
+          ),
+          (
+            Icons.calendar_month_rounded,
+            'Escala',
+            'Todos os cultos, confirmar presença e montar o repertório.'
+          ),
+          (
+            Icons.chat_bubble_rounded,
+            'Chat',
+            'Converse com o ministério, mande áudio e compartilhe '
+                'músicas.'
+          ),
+          (
+            Icons.person_rounded,
+            'Perfil',
+            'Se você canta ou toca, suas favoritas, seus tons e os '
+                'avisos.'
+          ),
         ];
         return SafeArea(
           child: Padding(
@@ -119,8 +148,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             color: AppColors.blue.withOpacity(0.12),
                             borderRadius: BorderRadius.circular(10),
                           ),
-                          child:
-                              Icon(it.$1, color: AppColors.blue, size: 20),
+                          child: Icon(it.$1, color: AppColors.blue, size: 20),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
@@ -339,10 +367,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _abrirAvisos() => _abrirEm('Avisos', (_) => const Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [_AvisosDoApp()],
-      ));
+  void _abrirAvisos() => _abrirEm(
+      'Avisos',
+      (_) => const Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [_AvisosDoApp()],
+          ));
 
   void _abrirConta() {
     final user = context.read<AuthProvider>().user;
@@ -399,8 +429,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   context: ctx,
                   builder: (_) => AlertDialog(
                     title: const Text('Sair da conta'),
-                    content:
-                        const Text('Deseja realmente sair da sua conta?'),
+                    content: const Text('Deseja realmente sair da sua conta?'),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(ctx, false),
@@ -443,67 +472,71 @@ class _ProfileScreenState extends State<ProfileScreen> {
     });
   }
 
-  void _abrirAjuda() => _abrirEm('Ajuda', (ctx) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _SettingRow(
-            icon: Icons.menu_book_rounded,
-            label: 'Como usar o app',
-            trailing: const Icon(Icons.chevron_right_rounded,
-                color: AppColors.textSecondaryLight),
-            onTap: () => _showHelpSheet(ctx),
-          ),
-          const SizedBox(height: 8),
-          _SettingRow(
-            icon: Icons.info_outline_rounded,
-            label: 'Sobre o ${AppStrings.appName}',
-            trailing: const Icon(Icons.chevron_right_rounded,
-                color: AppColors.textSecondaryLight),
-            onTap: () => _showAboutSheet(ctx),
-          ),
-        ],
-      ));
+  void _abrirAjuda() => _abrirEm(
+      'Ajuda',
+      (ctx) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _SettingRow(
+                icon: Icons.menu_book_rounded,
+                label: 'Como usar o app',
+                trailing: const Icon(Icons.chevron_right_rounded,
+                    color: AppColors.textSecondaryLight),
+                onTap: () => _showHelpSheet(ctx),
+              ),
+              const SizedBox(height: 8),
+              _SettingRow(
+                icon: Icons.info_outline_rounded,
+                label: 'Sobre o ${AppStrings.appName}',
+                trailing: const Icon(Icons.chevron_right_rounded,
+                    color: AppColors.textSecondaryLight),
+                onTap: () => _showAboutSheet(ctx),
+              ),
+            ],
+          ));
 
-  void _abrirPainelDoLider() => _abrirEm('Painel do líder', (ctx) => Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // A saúde do sistema vem PRIMEIRO: é a única coisa aqui que pode
-          // estar quebrada agora.
-          const CartaoSaude(),
-          const SizedBox(height: 14),
-          _SettingRow(
-            icon: Icons.groups_rounded,
-            label: 'Membros e pedidos de entrada',
-            trailing: const _SeloPendentes(),
-            onTap: () => Navigator.push(
-              ctx,
-              GlassPageRoute(builder: (_) => const MembersScreen()),
-            ),
-          ),
-          const SizedBox(height: 8),
-          _SettingRow(
-            icon: Icons.diversity_3_rounded,
-            label: 'Equipes',
-            trailing: const Icon(Icons.chevron_right_rounded,
-                color: AppColors.textSecondaryLight),
-            onTap: () => Navigator.push(
-              ctx,
-              GlassPageRoute(builder: (_) => const TeamsScreen()),
-            ),
-          ),
-          const SizedBox(height: 8),
-          _SettingRow(
-            icon: Icons.event_repeat_rounded,
-            label: 'Agenda fixa',
-            trailing: const Icon(Icons.chevron_right_rounded,
-                color: AppColors.textSecondaryLight),
-            onTap: () => Navigator.push(
-              ctx,
-              GlassPageRoute(builder: (_) => const FixedScheduleScreen()),
-            ),
-          ),
-        ],
-      ));
+  void _abrirPainelDoLider() => _abrirEm(
+      'Painel do líder',
+      (ctx) => Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // A saúde do sistema vem PRIMEIRO: é a única coisa aqui que pode
+              // estar quebrada agora.
+              const CartaoSaude(),
+              const SizedBox(height: 14),
+              _SettingRow(
+                icon: Icons.groups_rounded,
+                label: 'Membros e pedidos de entrada',
+                trailing: const _SeloPendentes(),
+                onTap: () => Navigator.push(
+                  ctx,
+                  GlassPageRoute(builder: (_) => const MembersScreen()),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _SettingRow(
+                icon: Icons.diversity_3_rounded,
+                label: 'Equipes',
+                trailing: const Icon(Icons.chevron_right_rounded,
+                    color: AppColors.textSecondaryLight),
+                onTap: () => Navigator.push(
+                  ctx,
+                  GlassPageRoute(builder: (_) => const TeamsScreen()),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _SettingRow(
+                icon: Icons.event_repeat_rounded,
+                label: 'Agenda fixa',
+                trailing: const Icon(Icons.chevron_right_rounded,
+                    color: AppColors.textSecondaryLight),
+                onTap: () => Navigator.push(
+                  ctx,
+                  GlassPageRoute(builder: (_) => const FixedScheduleScreen()),
+                ),
+              ),
+            ],
+          ));
 
   /// "Tons salvos": o tom em que EU toco cada música.
   ///
@@ -561,8 +594,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 9, vertical: 4),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                   decoration: BoxDecoration(
                     color: AppColors.blue.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(6),
@@ -624,95 +657,104 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
                 FlexibleSpaceBar(
-              background: Container(
-                decoration: const BoxDecoration(
-                  gradient: AppColors.primaryGradient,
-                ),
-                child: SafeArea(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const SizedBox(height: 20),
-                      // Avatar
-                      Stack(
-                        children: [
-                          CircleAvatar(
-                            radius: 48,
-                            backgroundColor: Colors.white.withOpacity(0.3),
-                            child: Text(
-                              user.name[0].toUpperCase(),
-                              style: const TextStyle(
-                                fontFamily: 'Poppins',
-                                fontSize: 36,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        user.name,
-                        style: const TextStyle(
-                          fontFamily: 'Poppins',
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
+                  background: Container(
+                    decoration: const BoxDecoration(
+                      gradient: AppColors.primaryGradient,
+                    ),
+                    child: SafeArea(
+                      child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              user.isAdmin ? '👑 ${user.role.label}' : '🎵 ${user.role.label}',
-                              style: const TextStyle(
-                                fontFamily: 'Poppins',
-                                fontSize: 12,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w500,
+                          const SizedBox(height: 20),
+                          // Avatar
+                          Stack(
+                            children: [
+                              CircleAvatar(
+                                radius: 48,
+                                backgroundColor: Colors.white.withOpacity(0.3),
+                                child: Text(
+                                  // `''[0]` LANÇA, e aqui derrubaria a aba Perfil
+                                  // inteira — um cadastro com o nome em branco
+                                  // (mexido no console, ou gravado pela metade)
+                                  // não pode fazer isso. Mesma armadilha do culto.
+                                  user.name.trim().isEmpty
+                                      ? '?'
+                                      : user.name.trim()[0].toUpperCase(),
+                                  style: const TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 36,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
                               ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            user.name,
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 20,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              '${user.instrument.emoji} ${user.instrument.label}',
-                              style: const TextStyle(
-                                fontFamily: 'Poppins',
-                                fontSize: 12,
-                                color: Colors.white,
-                                fontWeight: FontWeight.w500,
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  user.isAdmin
+                                      ? '👑 ${user.role.label}'
+                                      : '🎵 ${user.role.label}',
+                                  style: const TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 12,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
                               ),
-                            ),
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  '${user.instrument.emoji} ${user.instrument.label}',
+                                  style: const TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 12,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
               ],
             ),
             actions: [
               IconButton(
                 tooltip: _isEditing ? 'Salvar alterações' : 'Editar perfil',
-                icon: Icon(_isEditing ? Icons.check_rounded : Icons.edit_rounded),
+                icon:
+                    Icon(_isEditing ? Icons.check_rounded : Icons.edit_rounded),
                 color: isDark ? Colors.white : AppColors.textPrimaryLight,
                 onPressed: () async {
                   if (_isEditing && _editFuncoes != null) {
@@ -1195,7 +1237,9 @@ class _SettingRow extends StatelessWidget {
                 style: TextStyle(
                   fontFamily: 'Poppins',
                   fontSize: 14,
-                  color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+                  color: isDark
+                      ? AppColors.textPrimaryDark
+                      : AppColors.textPrimaryLight,
                 ),
               ),
             ),
@@ -1206,7 +1250,6 @@ class _SettingRow extends StatelessWidget {
     );
   }
 }
-
 
 /// "Eu canto" ou "Eu toco": quem canta abre a música e vê só a letra, em
 /// fonte grande; quem toca vê a cifra no tom salvo.
@@ -1280,7 +1323,8 @@ class _EscolhaLeitura extends StatelessWidget {
             fontFamily: 'Poppins',
             fontSize: 15,
             fontWeight: FontWeight.w600,
-            color: isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
+            color:
+                isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight,
           ),
         ),
         const SizedBox(height: 10),
@@ -1385,16 +1429,18 @@ class _AvisosDoAppState extends State<_AvisosDoApp> {
       );
     }
 
-    final corFraca = isDark
-        ? AppColors.textSecondaryDark
-        : AppColors.textSecondaryLight;
+    final corFraca =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
 
     Widget explicacao(String texto) => Padding(
           padding: const EdgeInsets.only(top: 8),
           child: Text(
             texto,
-            style: TextStyle(fontFamily: 'Poppins', fontSize: 12.5,
-                height: 1.45, color: corFraca),
+            style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 12.5,
+                height: 1.45,
+                color: corFraca),
           ),
         );
 
@@ -1402,9 +1448,16 @@ class _AvisosDoAppState extends State<_AvisosDoApp> {
 
     switch (estado) {
       case EstadoDosAvisos.naoConfigurado:
+        // ISTO É LIDO POR QUEM NÃO É LÍDER TAMBÉM.
+        //
+        // O texto antigo dizia "falta publicar o mini-servidor e colar as
+        // duas linhas em avisos_config.dart". Para quem só usa WhatsApp isso
+        // é tão útil quanto um código de erro: não dá nem para saber se é
+        // problema do celular dele. Agora a frase diz de quem é a tarefa, e o
+        // detalhe técnico fica onde serve — no Painel do líder.
         miolo.add(explicacao(
-          'Os avisos ainda não foram configurados neste app. Falta publicar '
-          'o mini-servidor e colar as duas linhas em avisos_config.dart.',
+          'Os avisos ainda não estão ligados neste ministério. Isso é '
+          'configuração do líder, não do seu celular.',
         ));
 
       case EstadoDosAvisos.precisaInstalar:
@@ -1535,8 +1588,8 @@ class _AvisosDoAppState extends State<_AvisosDoApp> {
         }
     }
 
-    final podeAlternar = estado == EstadoDosAvisos.ligado ||
-        estado == EstadoDosAvisos.desligado;
+    final podeAlternar =
+        estado == EstadoDosAvisos.ligado || estado == EstadoDosAvisos.desligado;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
