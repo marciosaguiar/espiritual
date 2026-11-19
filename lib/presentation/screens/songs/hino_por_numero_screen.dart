@@ -9,6 +9,7 @@ import '../../../core/constants/hinarios.dart';
 import '../../../data/models/song_model.dart';
 import '../../../data/services/local_storage_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/scale_provider.dart';
 import '../../providers/songs_provider.dart';
 import '../../widgets/common/glass.dart';
 import '../../widgets/songs/colar_cifra.dart';
@@ -65,6 +66,8 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
   static const _espera = Duration(milliseconds: 600);
 
   late Hinario _hinario;
+  late List<Hinario> _ordemDosHinarios;
+  late OrdemDosHinos _ordem;
   String _digitado = '';
   String _recado = '';
   final _buscaCtrl = TextEditingController();
@@ -74,8 +77,134 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
   @override
   void initState() {
     super.initState();
-    _hinario = hinarioPorId(LocalStorageService.ultimoHinario) ??
-        hinariosDisponiveis.first;
+    _ordemDosHinarios = hinariosNaOrdem(LocalStorageService.ordemDosHinarios);
+    _ordem = ordemPorId(LocalStorageService.ordemDosHinos);
+    // QUEM ABRE É O PRIMEIRO DA LISTA, e não o último usado.
+    //
+    // Duas fontes para a mesma decisão seria a pessoa arrastar o Cantor para
+    // cima e o app continuar abrindo na Harpa, sem nada que explicasse.
+    // Então a ordem manda — e, para quem nunca arrastou nada, o último
+    // hinário usado ainda vale, porque aí a lista gravada está vazia e este
+    // `??` é o que preserva o costume de hoje.
+    _hinario = LocalStorageService.ordemDosHinarios.isEmpty
+        ? (hinarioPorId(LocalStorageService.ultimoHinario) ??
+            _ordemDosHinarios.first)
+        : _ordemDosHinarios.first;
+  }
+
+  Future<void> _reordenar(int de, int para) async {
+    // O ReorderableListView entrega o destino contando a linha que saiu, e
+    // sem este ajuste arrastar para baixo erra uma posição.
+    if (para > de) para -= 1;
+    final lista = List<Hinario>.from(_ordemDosHinarios);
+    final h = lista.removeAt(de);
+    lista.insert(para, h);
+    await _gravarOrdem(lista);
+  }
+
+  Future<void> _mover(Hinario h, int passos) async {
+    final ids =
+        movido(_ordemDosHinarios.map((x) => x.id).toList(), h.id, passos);
+    await _gravarOrdem(hinariosNaOrdem(ids));
+  }
+
+  Future<void> _gravarOrdem(List<Hinario> lista) async {
+    setState(() {
+      _ordemDosHinarios = lista;
+      // Reordenar não troca de hinário: quem arrasta está organizando a
+      // lista, não escolhendo o que ler agora. O primeiro só passa a mandar
+      // na PRÓXIMA abertura — e é isso que "abre aqui" promete.
+    });
+    await LocalStorageService.salvarOrdemDosHinarios(
+        lista.map((h) => h.id).toList());
+  }
+
+  Future<void> _escolherOrdem(OrdemDosHinos o) async {
+    setState(() => _ordem = o);
+    await LocalStorageService.salvarOrdemDosHinos(o.id);
+  }
+
+  /// A lista de ordens, com uma marca na que está valendo.
+  ///
+  /// É uma folha simples, sem explicação nenhuma: quatro linhas que a pessoa
+  /// lê de uma vez. O que precisava de explicação — "mais tocados de quando?"
+  /// — fica na própria tela, embaixo da busca, onde a lista está à vista.
+  void _abrirOrdenar() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: isDark ? AppColors.surfaceDark : Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade400,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Row(
+                children: [
+                  Text(
+                    'Ordenar os hinos',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 6),
+            ...OrdemDosHinos.values.map((o) {
+              final marcada = o == _ordem;
+              return ListTile(
+                leading: Icon(
+                  marcada
+                      ? Icons.radio_button_checked_rounded
+                      : Icons.radio_button_unchecked_rounded,
+                  color: marcada
+                      ? AppColors.blue
+                      : (isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondaryLight),
+                ),
+                title: Text(
+                  o.rotulo,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 14.5,
+                    fontWeight: marcada ? FontWeight.w600 : FontWeight.w400,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _escolherOrdem(o);
+                },
+              );
+            }),
+            const SizedBox(height: 10),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -161,8 +290,7 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
 
   void _irPara(SongModel hino) {
     _relogio?.cancel();
-    LocalStorageService.salvarHinoAberto(
-        hino.hinario, hino.numero ?? 0);
+    LocalStorageService.salvarHinoAberto(hino.hinario, hino.numero ?? 0);
     setState(() {
       _digitado = '';
       _recado = '';
@@ -207,110 +335,180 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final songs = context.watch<SongsProvider>();
     final auth = context.watch<AuthProvider>();
-    final achados = songs.hinosDe(_hinario.id, busca: _busca);
     final numeroDigitado = int.tryParse(_digitado);
 
+    // A contagem sai dos cultos que o app já tem em memória — sem coleção
+    // nova e sem leitura nova. A janela são 60 dias, e é por isso que a tela
+    // diz "nos últimos 2 meses" em vez de prometer o histórico inteiro.
+    final vezes = _ordem == OrdemDosHinos.maisTocados
+        ? ScaleProvider.vezesTocadas(
+            context.watch<ScaleProvider>().scales, DateTime.now())
+        : const <String, int>{};
+    // Escolher "mais tocados" num ministério que ainda não tem culto nenhum
+    // registrado devolveria uma lista em ordem de número sem explicação
+    // nenhuma. Então a tela avisa, numa frase, e diz em que ordem ficou.
+    final semDados = _ordem == OrdemDosHinos.maisTocados && vezes.isEmpty;
+    final ordemValendo = semDados ? OrdemDosHinos.numero : _ordem;
+
+    final achados = SongsProvider.hinosOrdenados(
+      songs.hinosDe(_hinario.id, busca: _busca),
+      ordemValendo,
+      vezesTocadas: vezes,
+      favoritas: auth.user?.favoriteSongs.toSet() ?? const {},
+    );
+
     final corpo = ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
-        children: [
-          _SeletorDeHinario(
-            escolhido: _hinario,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
+      children: [
+        _SeletorDeHinario(
+          ordem: _ordemDosHinarios,
+          escolhido: _hinario,
+          isDark: isDark,
+          onEscolher: _trocarHinario,
+          onReordenar: _reordenar,
+          onMover: _mover,
+        ),
+        const SizedBox(height: 18),
+        _Mostrador(
+          sigla: _hinario.sigla,
+          digitado: _digitado,
+          isDark: isDark,
+        ),
+        if (_recado.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          _Recado(
+            texto: _recado,
             isDark: isDark,
-            onEscolher: _trocarHinario,
+            // O botão só aparece para quem o banco deixa cadastrar. Para um
+            // levita ele falharia com erro de permissão, que não explica
+            // nada — então a frase diz o que fazer em vez de oferecer um
+            // caminho fechado.
+            acao: (auth.isAdmin &&
+                    numeroDigitado != null &&
+                    _hinario.existe(numeroDigitado) &&
+                    songs.hinoCadastrado(_hinario.id, numeroDigitado) == null)
+                ? 'Cadastrar agora'
+                : null,
+            onAcao: numeroDigitado == null
+                ? null
+                : () => _cadastrar(numeroDigitado),
+            rodape: auth.isAdmin
+                ? null
+                : 'Peça a um líder para cadastrar este hino.',
+            // O atalho para achar a cifra do hino, com o nome do hinário
+            // já no texto da busca: "Harpa Cristã 15" é o que acha o hino
+            // certo no Cifra Club.
+            acaoExtra: (auth.isAdmin &&
+                    numeroDigitado != null &&
+                    _hinario.existe(numeroDigitado))
+                ? 'Buscar no Cifra Club'
+                : null,
+            onAcaoExtra: numeroDigitado == null
+                ? null
+                : () => abrirBuscaCifraClub(
+                    context, '${_hinario.nome} $numeroDigitado'),
           ),
-          const SizedBox(height: 18),
-          _Mostrador(
-            sigla: _hinario.sigla,
-            digitado: _digitado,
-            isDark: isDark,
+        ],
+        const SizedBox(height: 18),
+        _Teclado(
+          isDark: isDark,
+          onDigito: _digitar,
+          onApagar: _apagar,
+          onLimpar: _limpar,
+          podeApagar: _digitado.isNotEmpty,
+        ),
+        const SizedBox(height: 26),
+        _UltimosAbertos(isDark: isDark, onAbrir: _irPara),
+        const SizedBox(height: 26),
+        Text(
+          'Ou procure pelo nome ou por um trecho',
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+            color: isDark
+                ? AppColors.textSecondaryDark
+                : AppColors.textSecondaryLight,
           ),
-          if (_recado.isNotEmpty) ...[
-            const SizedBox(height: 12),
-            _Recado(
-              texto: _recado,
-              isDark: isDark,
-              // O botão só aparece para quem o banco deixa cadastrar. Para um
-              // levita ele falharia com erro de permissão, que não explica
-              // nada — então a frase diz o que fazer em vez de oferecer um
-              // caminho fechado.
-              acao: (auth.isAdmin &&
-                      numeroDigitado != null &&
-                      _hinario.existe(numeroDigitado) &&
-                      songs.hinoCadastrado(_hinario.id, numeroDigitado) == null)
-                  ? 'Cadastrar agora'
-                  : null,
-              onAcao: numeroDigitado == null
-                  ? null
-                  : () => _cadastrar(numeroDigitado),
-              rodape: auth.isAdmin
-                  ? null
-                  : 'Peça a um líder para cadastrar este hino.',
-              // O atalho para achar a cifra do hino, com o nome do hinário
-              // já no texto da busca: "Harpa Cristã 15" é o que acha o hino
-              // certo no Cifra Club.
-              acaoExtra: (auth.isAdmin &&
-                      numeroDigitado != null &&
-                      _hinario.existe(numeroDigitado))
-                  ? 'Buscar no Cifra Club'
-                  : null,
-              onAcaoExtra: numeroDigitado == null
-                  ? null
-                  : () => abrirBuscaCifraClub(
-                      context, '${_hinario.nome} $numeroDigitado'),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _buscaCtrl,
+                onChanged: (v) => setState(() => _busca = v),
+                decoration: InputDecoration(
+                  hintText: 'Ex: grato, 15, firme nas promessas',
+                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
+                  isDense: true,
+                  filled: true,
+                  fillColor: isDark
+                      ? Colors.white10
+                      : Colors.black.withValues(alpha: 0.04),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 6),
+            // DISCRETO, e ao lado da busca de propósito: é aqui que a
+            // pessoa está olhando a lista. A busca continua valendo em
+            // qualquer ordem — filtrar e ordenar são coisas separadas.
+            IconButton(
+              icon: const Icon(Icons.swap_vert_rounded),
+              tooltip: 'Ordenar',
+              onPressed: _abrirOrdenar,
             ),
           ],
-          const SizedBox(height: 18),
-          _Teclado(
-            isDark: isDark,
-            onDigito: _digitar,
-            onApagar: _apagar,
-            onLimpar: _limpar,
-            podeApagar: _digitado.isNotEmpty,
-          ),
-          const SizedBox(height: 26),
-          _UltimosAbertos(isDark: isDark, onAbrir: _irPara),
-          const SizedBox(height: 26),
+        ),
+        if (semDados) ...[
+          const SizedBox(height: 6),
           Text(
-            'Ou procure pelo nome ou por um trecho',
+            'Nenhum culto com repertório nos últimos 2 meses, então ainda '
+            'não dá para dizer o que é mais tocado. A lista está pelo '
+            'número.',
             style: TextStyle(
               fontFamily: 'Poppins',
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
+              fontSize: 12,
+              height: 1.4,
               color: isDark
                   ? AppColors.textSecondaryDark
                   : AppColors.textSecondaryLight,
             ),
           ),
-          const SizedBox(height: 8),
-          TextField(
-            controller: _buscaCtrl,
-            onChanged: (v) => setState(() => _busca = v),
-            decoration: InputDecoration(
-              hintText: 'Ex: grato, 15, firme nas promessas',
-              prefixIcon: const Icon(Icons.search_rounded, size: 20),
-              filled: true,
-              fillColor: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
-              ),
+        ] else if (_ordem != OrdemDosHinos.numero) ...[
+          const SizedBox(height: 6),
+          Text(
+            _ordem == OrdemDosHinos.maisTocados
+                ? 'Mais tocados nos últimos 2 meses, primeiro.'
+                : '${_ordem.rotulo}.',
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 12,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
             ),
           ),
-          const SizedBox(height: 10),
-          if (achados.isEmpty)
-            _Vazio(
-              busca: _busca,
-              hinario: _hinario,
-              total: songs.hinosDe(_hinario.id).length,
-              isDark: isDark,
-            )
-          else
-            ...achados.map((h) => _LinhaDeHino(
-                  hino: h,
-                  hinario: _hinario,
-                  isDark: isDark,
-                  onAbrir: () => _irPara(h),
-                )),
+        ],
+        const SizedBox(height: 10),
+        if (achados.isEmpty)
+          _Vazio(
+            busca: _busca,
+            hinario: _hinario,
+            total: songs.hinosDe(_hinario.id).length,
+            isDark: isDark,
+          )
+        else
+          ...achados.map((h) => _LinhaDeHino(
+                hino: h,
+                hinario: _hinario,
+                isDark: isDark,
+                onAbrir: () => _irPara(h),
+              )),
       ],
     );
 
@@ -329,55 +527,158 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
 
 // ─── Peças da tela ────────────────────────────────────────────────────────
 
+/// Os hinários, na ordem da pessoa — e é ela quem arrasta.
+///
+/// POR QUE ISTO VIROU UMA LISTA DE PÉ
+///
+/// Eram duas pastilhas lado a lado, e lado a lado não há "arrastar para
+/// cima". O preço são uns 50 px a mais antes do teclado, numa tela de 375 px;
+/// o que se ganha é a igreja que canta do Cantor Cristão poder deixá-lo em
+/// primeiro **e o app abrir nele**, em vez de tocar na pastilha certa toda
+/// vez que abre a tela, sempre com a igreja esperando.
+///
+/// A alça fica visível, e o mesmo movimento está no menu de cada linha:
+/// arrastar exige firmeza na mão, e metade deste ministério tem mais de
+/// sessenta anos.
 class _SeletorDeHinario extends StatelessWidget {
+  final List<Hinario> ordem;
   final Hinario escolhido;
   final bool isDark;
   final ValueChanged<Hinario> onEscolher;
+  final void Function(int de, int para) onReordenar;
+  final void Function(Hinario h, int passos) onMover;
 
   const _SeletorDeHinario({
+    required this.ordem,
     required this.escolhido,
     required this.isDark,
     required this.onEscolher,
+    required this.onReordenar,
+    required this.onMover,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: hinariosDisponiveis.map((h) {
+    return ReorderableListView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      // Lista rolável aninhada diz o próprio recuo, senão herda o do
+      // MediaQuery — que aqui é a barra inteira da aba Músicas, e abriria um
+      // buraco de 110 px no meio da tela. Já aconteceu, na Bíblia.
+      padding: EdgeInsets.zero,
+      buildDefaultDragHandles: false,
+      itemCount: ordem.length,
+      onReorder: onReordenar,
+      itemBuilder: (context, i) {
+        final h = ordem[i];
         final ativo = h.id == escolhido.id;
-        return Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Material(
-              color: ativo
-                  ? AppColors.blue
-                  : (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05)),
+        return Padding(
+          key: ValueKey(h.id),
+          padding: const EdgeInsets.only(bottom: 8),
+          child: Material(
+            color: ativo
+                ? AppColors.blue
+                : (isDark
+                    ? Colors.white10
+                    : Colors.black.withValues(alpha: 0.05)),
+            borderRadius: BorderRadius.circular(12),
+            child: InkWell(
               borderRadius: BorderRadius.circular(12),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => onEscolher(h),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 13),
-                  child: Text(
-                    h.nome,
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
-                      color: ativo
-                          ? Colors.white
-                          : (isDark
-                              ? AppColors.textPrimaryDark
-                              : AppColors.textPrimaryLight),
+              onTap: () => onEscolher(h),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(6, 4, 4, 4),
+                child: Row(
+                  children: [
+                    ReorderableDragStartListener(
+                      index: i,
+                      child: Padding(
+                        padding: const EdgeInsets.all(8),
+                        child: Icon(
+                          Icons.drag_indicator_rounded,
+                          size: 20,
+                          color: ativo
+                              ? Colors.white70
+                              : (isDark
+                                  ? AppColors.textSecondaryDark
+                                  : AppColors.textSecondaryLight),
+                        ),
+                      ),
                     ),
-                  ),
+                    Expanded(
+                      child: Text(
+                        h.nome,
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: ativo
+                              ? Colors.white
+                              : (isDark
+                                  ? AppColors.textPrimaryDark
+                                  : AppColors.textPrimaryLight),
+                        ),
+                      ),
+                    ),
+                    if (i == 0)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 4),
+                        child: Text(
+                          'abre aqui',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: ativo
+                                ? Colors.white70
+                                : (isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondaryLight),
+                          ),
+                        ),
+                      ),
+                    PopupMenuButton<int>(
+                      icon: Icon(
+                        Icons.more_vert_rounded,
+                        size: 19,
+                        color: ativo
+                            ? Colors.white70
+                            : (isDark
+                                ? AppColors.textSecondaryDark
+                                : AppColors.textSecondaryLight),
+                      ),
+                      tooltip: 'Mover ${h.nome}',
+                      onSelected: (passos) => onMover(h, passos),
+                      itemBuilder: (_) => [
+                        // A opção que não tem para onde ir some, em vez de
+                        // aparecer e não fazer nada — toque que não responde
+                        // é o jeito de a pessoa achar que o app travou.
+                        if (i > 0)
+                          const PopupMenuItem(
+                            value: -1,
+                            child: Row(children: [
+                              Icon(Icons.arrow_upward_rounded, size: 18),
+                              SizedBox(width: 10),
+                              Text('Mover para cima'),
+                            ]),
+                          ),
+                        if (i < ordem.length - 1)
+                          const PopupMenuItem(
+                            value: 1,
+                            child: Row(children: [
+                              Icon(Icons.arrow_downward_rounded, size: 18),
+                              SizedBox(width: 10),
+                              Text('Mover para baixo'),
+                            ]),
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
             ),
           ),
         );
-      }).toList(),
+      },
     );
   }
 }
