@@ -252,6 +252,12 @@ class _Grade extends StatelessWidget {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
+      // `EdgeInsets.zero` NÃO é enfeite: uma lista rolável sem `padding`
+      // herda o recuo do MediaQuery, e dentro da aba Músicas esse recuo é a
+      // barra inteira (56 da barra + 54 do seletor). Medido: 110 px de vazio
+      // entre "Antigo Testamento" e o primeiro livro — um buraco no meio da
+      // tela que parecia a Bíblia não ter carregado.
+      padding: EdgeInsets.zero,
       gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
         maxCrossAxisExtent: 130,
         childAspectRatio: 2.1,
