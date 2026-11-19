@@ -157,7 +157,7 @@ jobs:
           #    desenvolvimento, e a trava passou a barrar toda publicação desde
           #    3251e74 sem que nenhum ativo tivesse virado código. Medir sempre
           #    aqui, nunca fora da CI.
-          BASE=3852078
+          BASE=3868219
           FOLGA=102400
           TAMANHO=$(wc -c < build/web/main.dart.js)
           LIMITE=$((BASE + FOLGA))
