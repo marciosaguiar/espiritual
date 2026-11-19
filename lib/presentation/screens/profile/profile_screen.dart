@@ -17,6 +17,7 @@ import '../../providers/agenda_provider.dart';
 import '../../providers/scale_provider.dart';
 import '../../widgets/profile/cartao_saude.dart';
 import 'fixed_schedule_screen.dart';
+import 'importar_hinario_screen.dart';
 import 'members_screen.dart';
 import 'teams_screen.dart';
 import '../../widgets/common/glass.dart';
@@ -75,8 +76,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
             'Músicas',
             'O repertório da igreja, os hinários (hino pelo número) e a '
                 'Bíblia. Dá para mudar o tom e guardar no celular. Nos '
-                'hinários, o botão ao lado da busca muda a ordem da lista, '
-                'e dá para arrastar os hinários: o primeiro é o que abre.'
+                'hinários, digite o número para abrir o hino, ou procure '
+                'pelo nome; o botão ao lado da busca muda a ordem da lista, '
+                'e dá para arrastar os hinários: o primeiro é o que abre. '
+                'Quem é líder coloca o texto dos hinários em Perfil → '
+                'Painel do líder → Importar hinário.'
           ),
           (
             Icons.calendar_month_rounded,
@@ -535,6 +539,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 onTap: () => Navigator.push(
                   ctx,
                   GlassPageRoute(builder: (_) => const FixedScheduleScreen()),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _SettingRow(
+                icon: Icons.library_books_rounded,
+                label: 'Importar hinário',
+                trailing: const Icon(Icons.chevron_right_rounded,
+                    color: AppColors.textSecondaryLight),
+                onTap: () => Navigator.push(
+                  ctx,
+                  GlassPageRoute(
+                      builder: (_) => const ImportarHinarioScreen()),
                 ),
               ),
             ],
