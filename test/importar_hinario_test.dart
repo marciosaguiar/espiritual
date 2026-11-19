@@ -658,4 +658,340 @@ void main() {
       }
     });
   });
+
+  // O texto do Cantor Cristão colado de um site: o nome do site no começo, o
+  // mesmo nome e uma lista de endereços no FIM. Sem o corte, tudo isso entrava
+  // na letra do último hino — e a prévia, que mostra só o começo de cada
+  // amostra, não deixava ver.
+  group('rodapé de site no fim do texto', () {
+    const nome = 'Site de Mentira - Publicações';
+    const rodape = '$nome\n'
+        'http://exemplo-um.example/\n'
+        'http://exemplo-dois.example/\n'
+        'BAIXE AQUI>>>\n'
+        'Adicione os sites ao seu favorito [Gmail\n'
+        'deve estar aberto]';
+
+    test('o rodapé NÃO entra na letra do último hino', () {
+      final texto = '$nome\n[www.exemplo.example/](https://www.exemplo.example/)\n'
+          '${_hinario(1, 3)}\n$rodape';
+      final r = ImportarHinario.analisar(texto, cantorCristao);
+
+      expect(r.hinos.map((h) => h.numero), [1, 2, 3]);
+      final ultima = r.hinos.last.letra;
+      expect(ultima, endsWith('deste hino de teste'));
+      expect(ultima, isNot(contains('exemplo')));
+      expect(ultima, isNot(contains(nome)));
+      expect(ultima, isNot(contains('BAIXE')));
+    });
+
+    test('o corte é DECLARADO: quantas linhas, a partir de qual, de que hino',
+        () {
+      final texto = '$nome\n${_hinario(1, 3)}\n$rodape';
+      final r = ImportarHinario.analisar(texto, cantorCristao);
+
+      expect(r.rodape, isNotNull);
+      expect(r.rodape!.hino, 3);
+      expect(r.rodape!.linhas, 6);
+      expect(r.rodape!.primeira, nome);
+    });
+
+    test('sem o nome do site no começo, o corte começa no primeiro endereço',
+        () {
+      final texto = '${_hinario(1, 3)}\n$rodape';
+      final r = ImportarHinario.analisar(texto, cantorCristao);
+
+      // O nome do site não se repete do começo: não há como saber que aquela
+      // linha é rodapé, então só o que é endereço sai — e a linha que sobra
+      // aparece na prévia, no fim da letra, em vez de ficar escondida.
+      expect(r.rodape!.primeira, 'http://exemplo-um.example/');
+      expect(r.rodape!.linhas, 5);
+      expect(r.hinos.last.letra, isNot(contains('exemplo')));
+      expect(r.hinos.last.letra, isNot(contains('Adicione')));
+    });
+
+    test('texto sem rodapé: nada é cortado e nada é declarado', () {
+      final r = ImportarHinario.analisar(_hinario(1, 3), cantorCristao);
+      expect(r.rodape, isNull);
+      expect(r.hinos.last.letra, endsWith('deste hino de teste'));
+    });
+
+    test('endereço no MEIO do texto não corta nada: só o fim é rodapé', () {
+      final texto = [
+        _hino(1),
+        '${_hino(2)}http://exemplo-no-meio.example/\n',
+        _hino(3),
+      ].join('\n');
+      final r = ImportarHinario.analisar(texto, cantorCristao);
+
+      expect(r.rodape, isNull);
+      expect(r.hinos[1].letra, contains('exemplo-no-meio'));
+      expect(r.hinos.last.letra, endsWith('deste hino de teste'));
+    });
+
+    test('o corte não derruba o último hino nem muda os outros', () {
+      final sem = ImportarHinario.analisar(_hinario(1, 3), cantorCristao);
+      final com = ImportarHinario.analisar(
+          '$nome\n${_hinario(1, 3)}\n$rodape', cantorCristao);
+
+      expect(com.hinos.length, sem.hinos.length);
+      for (var i = 0; i < sem.hinos.length; i++) {
+        expect(com.hinos[i].letra, sem.hinos[i].letra);
+        expect(com.hinos[i].titulo, sem.hinos[i].titulo);
+      }
+      expect(com.frase, sem.frase);
+    });
+
+    test('hinos 1 a 581, com rodapé: o último fica limpo', () {
+      final texto = '$nome\n${_hinario(1, 581)}\n$rodape';
+      final r = ImportarHinario.analisar(texto, cantorCristao);
+
+      expect(r.frase, 'Achei 581 hinos, do 1 ao 581.');
+      expect(r.hinos.last.letra, isNot(contains('http')));
+    });
+  });
+
+  // 520 dos 581 hinos do Cantor vêm com a letra TODA EM MAIÚSCULAS. Na tela do
+  // culto isso grita, e é difícil de ler de longe.
+  group('letra toda em maiúsculas', () {
+    /// Um hino de mentira com a letra escrita em maiúsculas, marcadores de
+    /// estrofe como a fonte os traz.
+    String gritado(int n, String letra) => '$n - Título $n\n$letra\n';
+
+    String converter(String letra) {
+      final r = ImportarHinario.analisar(
+        gritado(1, letra),
+        cantorCristao,
+        converterCaixaAlta: true,
+      );
+      return r.hinos.single.letra;
+    }
+
+    test('vira letra normal: inicial só onde a frase começa', () {
+      expect(
+        converter('[1]\n'
+            'A MINHA ALMA CANTA AO SOM,\n'
+            'POIS HOJE TEM FESTA NA CASA.\n'
+            'TODOS VÃO CANTAR!'),
+        '[1]\n'
+        'A minha alma canta ao som,\n'
+        'pois hoje tem festa na casa.\n'
+        'Todos vão cantar!',
+      );
+    });
+
+    test('os marcadores [1] e [côro] ficam exatamente como estão', () {
+      final saida = converter('[1]\nPALAVRAS INVENTADAS DO COMEÇO\n[côro]\n'
+          'PALAVRAS INVENTADAS DO REFRÃO\n[2]\nMAIS PALAVRAS INVENTADAS');
+      expect(saida, contains('[1]'));
+      expect(saida, contains('[côro]'));
+      expect(saida, contains('[2]'));
+    });
+
+    test('cada estrofe começa com maiúscula, mesmo depois de uma vírgula', () {
+      final saida = converter('[1]\nPRIMEIRA PARTE DA ESTROFE,\n'
+          'SEGUNDA PARTE\n[2]\nOUTRA ESTROFE INVENTADA');
+      expect(saida, contains('[2]\nOutra estrofe inventada'));
+      // Vírgula não abre frase: a linha de baixo continua minúscula.
+      expect(saida, contains('Primeira parte da estrofe,\nsegunda parte'));
+    });
+
+    test('Deus, Jesus, Cristo e Senhor ficam com inicial maiúscula', () {
+      final saida = converter('[1]\n'
+          'LOUVAI A DEUS E A JESUS CRISTO,\n'
+          'POIS O SENHOR É BOM E O SALVADOR NOS GUARDA');
+      expect(saida, contains('a Deus e a Jesus Cristo,'));
+      expect(saida, contains('pois o Senhor é bom e o Salvador nos guarda'));
+    });
+
+    test('nomes de lugar e de gente também', () {
+      final saida = converter('[1]\n'
+          'A VOZ SAIU DE SIÃO E DE JERUSALÉM,\n'
+          'DO BRASIL ATÉ O JORDÃO');
+      expect(saida, contains('de Sião e de Jerusalém,'));
+      expect(saida, contains('do Brasil até o Jordão'));
+    });
+
+    test('Espírito Santo e Todo-Poderoso, só quando são esses nomes', () {
+      final saida = converter('[1]\n'
+          'VEM, ESPÍRITO SANTO, VEM,\n'
+          'DEUS TODO-PODEROSO, VEM\n[2]\n'
+          'MEU ESPÍRITO CANTA');
+      expect(saida, contains('Vem, Espírito Santo, vem,'));
+      expect(saida, contains('Deus Todo-Poderoso, vem'));
+      // "espírito" sozinho é a alma de quem canta, não o Espírito Santo.
+      expect(saida, contains('Meu espírito canta'));
+    });
+
+    test('Filho só é maiúsculo quando é o Filho de Deus', () {
+      final saida = converter('[1]\n'
+          'A TI, DEUS FILHO, LOUVOR,\n'
+          'O FILHO MAU VOLTOU PRA CASA,\n'
+          'COM O FILHO DE DEUS SEMPRE,\n'
+          'DIZ O FILHO DO SANTO DEUS,\n'
+          'O SEU QUERIDO FILHO ME DEU,\n'
+          'VEM, FILHO, VEM!');
+      expect(saida, contains('A ti, Deus Filho, louvor,'));
+      expect(saida, contains('o filho mau voltou pra casa,'));
+      expect(saida, contains('com o Filho de Deus sempre,'));
+      expect(saida, contains('diz o Filho do santo Deus,'));
+      expect(saida, contains('o seu querido Filho me deu,'));
+      // O pródigo e o pecador chamado de "filho" não são o Filho.
+      expect(saida, contains('vem, filho, vem!'));
+    });
+
+    test('"espírito" sozinho é o Espírito Santo — menos em "meu espírito"', () {
+      final saida = converter('[1]\n'
+          'O DOM DO ESPÍRITO NOS DEU\n'
+          'TEU ESPÍRITO DOMINE O CORAÇÃO\n'
+          'SEU BOM E SANTO ESPÍRITO\n'
+          'MEU ESPÍRITO SE ALEGRA');
+      expect(saida, contains('O dom do Espírito nos deu'));
+      expect(saida, contains('teu Espírito domine o coração'));
+      expect(saida, contains('seu bom e Santo Espírito'));
+      // A alma de quem canta não é o Espírito Santo.
+      expect(saida, contains('meu espírito se alegra'));
+    });
+
+    test('"santo" sozinho é adjetivo e fica minúsculo', () {
+      final saida = converter('[1]\nQUE SANTO AMOR, QUE SANTO LAR\n'
+          'DEUS DE ISRAEL, O SANTO DE ISRAEL');
+      expect(saida, contains('Que santo amor, que santo lar'));
+      expect(saida, contains('o Santo de Israel'));
+    });
+
+    test('ponto de exclamação e de interrogação abrem frase; reticências não',
+        () {
+      final saida = converter('[1]\n'
+          'ALELUIA! ALELUIA! QUEM SOU EU? SOU FILHO.\n'
+          'NOVAS TENHO... DAR-VOS VENHO');
+      expect(saida, contains('Aleluia! Aleluia! Quem sou eu? Sou filho.'));
+      // O ponto da linha de cima fecha a frase: "Novas" é início de frase.
+      expect(saida, contains('Novas tenho... dar-vos venho'));
+    });
+
+    test('acento e cedilha: AÇÃO vira ação, e "Ó" no começo continua "Ó"', () {
+      final saida = converter('[1]\nÓ AÇÃO DE GRAÇAS, É CERTO');
+      expect(saida, '[1]\nÓ ação de graças, é certo');
+    });
+
+    test('depois de dois-pontos com aspas, a fala começa com maiúscula', () {
+      final saida = converter('[1]\nDISSE O MESTRE: "VEM A MIM"');
+      expect(saida, '[1]\nDisse o Mestre: "Vem a mim"');
+    });
+
+    test('aspas que fecham com o sinal errado (!“ .“) também fecham a frase',
+        () {
+      // Na fonte de verdade o fecha-aspas vem como “ (de abrir). Sem tratar,
+      // a frase seguinte ficava em minúscula, e a de cima de uma fala também.
+      final saida = converter('[1]\n'
+          'O MESTRE DIZ:\n'
+          '"VEM! VEM, BEBE DESSA ÁGUA!“\n'
+          'RESPONDA, POIS, QUEM TEM SEDE:\n'
+          '"À FONTE DE CRISTO JÁ VOU.“\n'
+          'SIM, A ÁGUA CORRE');
+      expect(
+        saida,
+        '[1]\n'
+        'O Mestre diz:\n'
+        '"Vem! Vem, bebe dessa água!“\n'
+        'Responda, pois, quem tem sede:\n'
+        '"À fonte de Cristo já vou.“\n'
+        'Sim, a água corre',
+      );
+    });
+
+    test('hífen no meio da palavra não abre frase', () {
+      final saida = converter('[1]\nVEM, BEM-AMADO, DAR-TE-EI LOUVOR');
+      expect(saida, '[1]\nVem, bem-amado, dar-te-ei louvor');
+    });
+
+    test('hino que já vem em maiúsculas e minúsculas fica EXATAMENTE como veio',
+        () {
+      // Um "AMÉM!" gritado no fim de um hino normal não é o hino gritando.
+      const original = '[1]\nSanto, santo, santo, Deus onipotente!\n'
+          'Cedo de manhã cantaremos teu louvor.\nAMÉM! AMÉM!';
+      expect(converter(original), original);
+    });
+
+    test('linha já em minúsculas, no meio de um hino gritado, não é mexida', () {
+      // Cinco linhas gritadas e uma mista: o hino é gritado (passa de 80%), e
+      // a linha mista fica como veio.
+      final saida = converter('[1]\nPRIMEIRA LINHA INVENTADA DO HINO\n'
+          'SEGUNDA LINHA INVENTADA DO HINO\n'
+          'Linha Mista Que Já Veio Assim\n'
+          'QUARTA LINHA INVENTADA DO HINO\n'
+          'QUINTA LINHA INVENTADA DO HINO\n'
+          'SEXTA LINHA INVENTADA DO HINO');
+      expect(saida, contains('Linha Mista Que Já Veio Assim'));
+      expect(saida, contains('Primeira linha inventada do hino'));
+      // Sem ponto final na linha de cima, a de baixo não abre frase.
+      expect(saida, contains('\nsexta linha inventada do hino'));
+    });
+
+    test('converter duas vezes dá o mesmo que converter uma', () {
+      const original = '[1]\nLOUVAI A DEUS, TODOS OS POVOS!\n'
+          'ELE É O SENHOR DE TUDO.\n[côro]\nALELUIA!';
+      final uma = converter(original);
+      expect(converter(uma), uma);
+    });
+
+    test('o título não é tocado pela conversão da letra', () {
+      final r = ImportarHinario.analisar(
+        '1 - Cristo, o Bom Pastor\n[1]\nPALAVRAS INVENTADAS DO HINO TODO\n',
+        cantorCristao,
+        converterCaixaAlta: true,
+      );
+      expect(r.hinos.single.titulo, 'Cristo, o Bom Pastor');
+    });
+
+    test('sem pedir, a letra NÃO é mexida — mas o app conta quantos gritam',
+        () {
+      final texto = [
+        gritado(1, '[1]\nPALAVRAS INVENTADAS DO HINO UM'),
+        gritado(2, '[1]\nPALAVRAS INVENTADAS DO HINO DOIS'),
+        gritado(3, '[1]\nPalavras inventadas do hino três'),
+      ].join('\n');
+      final r = ImportarHinario.analisar(texto, cantorCristao);
+
+      expect(r.emCaixaAlta, 2);
+      expect(r.convertida, isFalse);
+      expect(r.hinos[0].letra, contains('PALAVRAS INVENTADAS DO HINO UM'));
+      expect(r.hinos[2].letra, contains('Palavras inventadas do hino três'));
+    });
+
+    test('pedindo: converte só os que gritam, e diz que converteu', () {
+      final texto = [
+        gritado(1, '[1]\nPALAVRAS INVENTADAS DO HINO UM'),
+        gritado(2, '[1]\nPalavras inventadas do hino dois'),
+      ].join('\n');
+      final r = ImportarHinario.analisar(texto, cantorCristao,
+          converterCaixaAlta: true);
+
+      expect(r.emCaixaAlta, 1);
+      expect(r.convertida, isTrue);
+      expect(r.hinos[0].letra, '[1]\nPalavras inventadas do hino um');
+      expect(r.hinos[1].letra, '[1]\nPalavras inventadas do hino dois');
+    });
+
+    test('nenhum hino gritando: pedir a conversão não muda nada nem avisa', () {
+      final r = ImportarHinario.analisar(_hinario(1, 3), cantorCristao,
+          converterCaixaAlta: true);
+      expect(r.emCaixaAlta, 0);
+      expect(r.convertida, isFalse);
+    });
+
+    test('a quantidade de hinos e o resto da leitura não dependem da conversão',
+        () {
+      final texto = [
+        for (var n = 1; n <= 20; n++)
+          gritado(n, '[1]\nPALAVRAS INVENTADAS DO HINO $n DE TESTE'),
+      ].join('\n');
+      final a = ImportarHinario.analisar(texto, cantorCristao);
+      final b = ImportarHinario.analisar(texto, cantorCristao,
+          converterCaixaAlta: true);
+      expect(b.hinos.map((h) => h.numero), a.hinos.map((h) => h.numero));
+      expect(b.frase, a.frase);
+    });
+  });
 }

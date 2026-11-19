@@ -123,6 +123,31 @@ class LinhaPerdida {
   });
 }
 
+/// O rodapé de site que veio colado depois do último hino, e que o app TIROU.
+///
+/// Quem copia um hinário de um site leva junto o que está em volta: o nome do
+/// site no começo e, no fim, o nome de novo e uma lista de endereços. Sem o
+/// corte, tudo isso entrava na letra do último hino — e a prévia, que mostra
+/// o começo de cada amostra, não deixava ver. O corte é DECLARADO (a tela diz
+/// quantas linhas e a partir de qual), porque tirar texto em silêncio é o
+/// mesmo erro de deixar entrar: a pessoa precisa poder conferir.
+class RodapeTirado {
+  /// O hino em cuja letra o rodapé teria entrado: o último do texto.
+  final int hino;
+
+  /// Quantas linhas (não vazias) saíram.
+  final int linhas;
+
+  /// A primeira delas, como está no texto.
+  final String primeira;
+
+  const RodapeTirado({
+    required this.hino,
+    required this.linhas,
+    required this.primeira,
+  });
+}
+
 /// O que o app entendeu do texto colado.
 class ResultadoDaLeitura {
   /// O formato que achou mais hinos. Nulo quando não achou nenhum.
@@ -163,6 +188,18 @@ class ResultadoDaLeitura {
   /// Linhas que pareciam começo de hino com um número que o hinário não tem.
   final int foraDoLimite;
 
+  /// O rodapé de site que saiu do fim do último hino, se havia.
+  final RodapeTirado? rodape;
+
+  /// Quantos dos hinos que entram vieram com a letra TODA EM MAIÚSCULAS.
+  /// Conta o que veio no texto, antes de qualquer conversão: é o que a tela
+  /// precisa para oferecer a conversão e dizer de quantos hinos se trata.
+  final int emCaixaAlta;
+
+  /// A letra desses hinos já foi convertida para maiúsculas e minúsculas.
+  /// Só é verdade se alguém pediu E havia o que converter.
+  final bool convertida;
+
   const ResultadoDaLeitura({
     required this.formato,
     required this.hinos,
@@ -174,6 +211,9 @@ class ResultadoDaLeitura {
     this.grandes = const [],
     this.semTitulo = const [],
     this.foraDoLimite = 0,
+    this.rodape,
+    this.emCaixaAlta = 0,
+    this.convertida = false,
   });
 
   /// O resultado de um texto em que nada foi reconhecido.
@@ -230,10 +270,16 @@ class ImportarHinario {
   ///
   /// [formato] força um formato, para quem viu que o app escolheu o errado.
   /// Sem ele, vale o que achou mais hinos.
+  ///
+  /// [converterCaixaAlta] passa para maiúsculas e minúsculas a letra dos hinos
+  /// que vieram TODA EM MAIÚSCULAS ([letraEmMinusculas]). Desligado por padrão
+  /// aqui, que é a função pura: quem pede é a tela, que mostra o resultado
+  /// antes de gravar e deixa desligar.
   static ResultadoDaLeitura analisar(
     String texto,
     Hinario hinario, {
     FormatoDoHinario? formato,
+    bool converterCaixaAlta = false,
   }) {
     final linhas = _linhasLimpas(texto);
 
@@ -241,6 +287,7 @@ class ImportarHinario {
     List<_Candidato> candidatosEscolhidos = const [];
     Map<int, _Trecho> melhores = const {};
     var melhorPontos = 0;
+    int? rodapeEscolhido;
 
     final opcoes = formato != null
         ? <FormatoDoHinario>[formato]
@@ -248,7 +295,10 @@ class ImportarHinario {
     var trechosEscolhidos = const <_Trecho>[];
     for (final f in opcoes) {
       final candidatos = _candidatos(linhas, f);
-      final trechos = _trechos(linhas, candidatos, hinario);
+      // O rodapé depende de onde o ÚLTIMO hino começa, que muda com o formato.
+      final rodapeDesde = _rodapeDesde(linhas, candidatos);
+      final trechos = _trechos(linhas, candidatos, hinario,
+          fimDoTexto: rodapeDesde ?? linhas.length);
       final melhoresDeste = _melhoresPorNumero(trechos, hinario);
       // Só conta letra que SERVE: um formato que "acha" hino com 12 mil
       // caracteres de letra achou o hino seguinte colado, não um hino.
@@ -262,6 +312,7 @@ class ImportarHinario {
         candidatosEscolhidos = candidatos;
         trechosEscolhidos = trechos;
         melhores = melhoresDeste;
+        rodapeEscolhido = rodapeDesde;
       }
     }
 
@@ -279,6 +330,7 @@ class ImportarHinario {
     final curtos = <int>[];
     final grandes = <int>[];
     final semTitulo = <int>[];
+    var emCaixaAlta = 0;
     final numeros = melhores.keys.toList()..sort();
     for (final n in numeros) {
       final t = melhores[n]!;
@@ -295,7 +347,25 @@ class ImportarHinario {
         titulo = 'Hino $n';
         semTitulo.add(n);
       }
-      hinos.add(HinoLido(numero: n, titulo: titulo, letra: _letraLimpa(t.corpo)));
+      var letra = _letraLimpa(t.corpo);
+      if (letraGritada(letra)) {
+        emCaixaAlta++;
+        if (converterCaixaAlta) letra = letraEmMinusculas(letra);
+      }
+      hinos.add(HinoLido(numero: n, titulo: titulo, letra: letra));
+    }
+
+    // O que saiu do fim do texto, para a tela DIZER que saiu.
+    RodapeTirado? rodape;
+    if (rodapeEscolhido != null && candidatosEscolhidos.isNotEmpty) {
+      final fora = linhas.sublist(rodapeEscolhido).where((l) => l.isNotEmpty);
+      if (fora.isNotEmpty) {
+        rodape = RodapeTirado(
+          hino: candidatosEscolhidos.last.numero,
+          linhas: fora.length,
+          primeira: fora.first,
+        );
+      }
     }
 
     // Só o que está ENTRE o primeiro e o último achados pode "faltar".
@@ -373,6 +443,9 @@ class ImportarHinario {
       grandes: grandes,
       semTitulo: semTitulo,
       foraDoLimite: foraDoLimite,
+      rodape: rodape,
+      emCaixaAlta: emCaixaAlta,
+      convertida: converterCaixaAlta && emCaixaAlta > 0,
     );
   }
 
@@ -422,7 +495,7 @@ class ImportarHinario {
   /// o texto dele inteiro, sem erro nenhum. 80% separa o título (quase tudo
   /// maiúsculo) de uma frase de estrofe, que tem uma maiúscula no começo e o
   /// resto em minúscula.
-  static bool _quaseTodoMaiusculo(String s) {
+  static bool _quaseTodoMaiusculo(String s, {int minimoDeLetras = 3}) {
     var letras = 0;
     var maiusculas = 0;
     for (final r in s.runes) {
@@ -431,7 +504,224 @@ class ImportarHinario {
       letras++;
       if (c == c.toUpperCase()) maiusculas++;
     }
-    return letras >= 3 && maiusculas / letras >= 0.8;
+    return letras >= minimoDeLetras && maiusculas / letras >= 0.8;
+  }
+
+  // ── Letra toda em maiúsculas ──────────────────────────────────────────────
+
+  /// "[1]", "[côro]": o marcador de estrofe, sozinho na linha.
+  static final _reMarcador = RegExp(r'^\[[^\]]*\]$');
+
+  /// A letra veio TODA EM MAIÚSCULAS?
+  ///
+  /// Decide pelo HINO, não pela linha: um "AMÉM! AMÉM!" gritado no fim de um
+  /// hino normal não é o hino gritando, e converter só aquela linha a deixaria
+  /// diferente das de cima. Passando de 80% das linhas (as que têm pelo menos
+  /// três letras; marcadores de estrofe não contam), o hino é gritado.
+  static bool letraGritada(String letra) {
+    var total = 0;
+    var gritadas = 0;
+    for (final l in letra.split('\n')) {
+      final t = l.trim();
+      if (t.isEmpty || _reMarcador.hasMatch(t)) continue;
+      var letras = 0;
+      for (final r in t.runes) {
+        final c = String.fromCharCode(r);
+        if (c.toLowerCase() != c.toUpperCase()) letras++;
+      }
+      if (letras < 3) continue;
+      total++;
+      if (_quaseTodoMaiusculo(t)) gritadas++;
+    }
+    return total > 0 && gritadas / total >= 0.8;
+  }
+
+  /// Nomes que levam inicial maiúscula em qualquer lugar da frase.
+  ///
+  /// Só entram palavras que, num hinário, quase nunca são outra coisa. Fica de
+  /// fora o que também é palavra comum ("santo", "amigo", "guia", "luz") e o
+  /// que se escreve minúsculo em português (judeus, fariseus, brasileiro,
+  /// céu). Um nome que não esteja aqui sai em minúscula — é o erro possível
+  /// desta conversão, e por isso ela é opcional e a tela mostra o resultado
+  /// antes de gravar.
+  static const _nomes = {
+    // Deus e Cristo
+    'deus', 'jesus', 'cristo', 'jeová', 'emanuel', 'messias', 'senhor', 'pai',
+    'rei', 'salvador', 'redentor', 'criador', 'benfeitor', 'consolador',
+    'libertador', 'mestre', 'cordeiro', 'pastor', 'advogado', 'mediador',
+    'capitão', 'trindade', 'nazareno', 'bíblia', 'sustentador', 'defensor',
+    'instruidor', 'santificador', 'sacerdote', 'príncipe', 'autor',
+    // Gente e lugares da Bíblia
+    'satanás', 'satã', 'sião', 'jerusalém', 'belém', 'calvário', 'gólgota',
+    'israel', 'jordão', 'canaã', 'babilônia', 'egito', 'sinai', 'getsêmani',
+    'nazaré', 'galileia', 'jericó', 'judá', 'adão', 'eva', 'abraão', 'isaque',
+    'jacó', 'josé', 'moisés', 'davi', 'salomão', 'elias', 'daniel', 'samuel',
+    'belsazar', 'pilatos', 'lázaro', 'ebenézer',
+    // O Brasil, que os hinos cantam
+    'brasil', 'tiradentes', 'ipiranga', 'amapá', 'recife', 'cuiabá', 'ceará',
+    'pará', 'amazonas', 'minas', 'acre', 'brasília', 'panamá', 'canadá',
+    'china', 'japão', 'europa',
+  };
+
+  /// Expressões em que cada palavra (menos as miúdas) leva maiúscula: "santo"
+  /// sozinho é adjetivo ("santo amor") e continua minúsculo, mas em "Espírito
+  /// Santo" não.
+  static const _expressoes = [
+    ['espírito', 'santo'],
+    ['santo', 'espírito'],
+    ['todo', 'poderoso'],
+    ['deus', 'homem'],
+    ['santo', 'de', 'israel'],
+    ['são', 'paulo'],
+    ['rio', 'grande'],
+    ['mato', 'grosso'],
+    ['grão', 'pará'],
+  ];
+
+  static const _particulas = {'de', 'da', 'do', 'dos', 'das'};
+
+  /// "Filho" é o Filho de Deus ou é gente? Num hinário as duas coisas se
+  /// escrevem igual: "o filho do glorioso Deus" e "vem, filho, vem!" (o
+  /// pródigo). Só vira maiúscula com um sinal claro — "Deus Filho", "querido
+  /// filho", "filho de Deus". Sem sinal fica minúscula: errar para este lado é
+  /// o erro mais barato, e a pessoa corrige em Editar música.
+  static bool _filhoDeDeus(List<String> p, int i) {
+    if (i > 0 && const {'deus', 'querido', 'amado', 'bendito', 'único',
+        'unigênito', 'próprio'}.contains(p[i - 1])) {
+      return true;
+    }
+    if (i + 1 < p.length &&
+        const {'amado', 'bendito', 'eterno', 'querido', 'unigênito', 'único',
+            'divino'}.contains(p[i + 1])) {
+      return true;
+    }
+    // "filho de Deus", "filho do santo Deus": "de/do" e, até duas palavras
+    // depois, "Deus".
+    if (i + 2 < p.length && (p[i + 1] == 'de' || p[i + 1] == 'do')) {
+      return p.skip(i + 2).take(2).contains('deus');
+    }
+    return false;
+  }
+
+  /// "Espírito" é o Espírito Santo em quase todo hino ("o dom do Espírito",
+  /// "teu Espírito"). A exceção é a alma de quem canta: "meu espírito".
+  static bool _espiritoSanto(List<String> p, int i) =>
+      !(i > 0 && const {'meu', 'nosso', 'vosso', 'este', 'esse', 'um'}
+          .contains(p[i - 1]));
+
+  static final _rePalavra = RegExp(r'\p{L}+', unicode: true);
+
+  /// Letra gritada em maiúsculas e minúsculas: "VEM, SENHOR JESUS!" →
+  /// "Vem, Senhor Jesus!".
+  ///
+  /// A inicial maiúscula vai no começo de cada estrofe, depois de ponto final,
+  /// de exclamação e de interrogação, e nos nomes de [_nomes] e de
+  /// [_expressoes]. Vírgula e reticências NÃO abrem frase: a linha de baixo de
+  /// "pois hoje tem festa," continua minúscula, como num hino impresso.
+  ///
+  /// Mexe SÓ no que é gritado: marcadores de estrofe ("[1]", "[côro]") e
+  /// linhas que já vieram em maiúsculas e minúsculas ficam exatamente como
+  /// estão, e um hino que não é gritado volta igual. Por isso converter duas
+  /// vezes dá o mesmo que converter uma.
+  static String letraEmMinusculas(String letra) {
+    if (!letraGritada(letra)) return letra;
+    final saida = <String>[];
+    var abreFrase = true;
+    var vemFala = false; // a linha de cima terminou em dois-pontos
+    for (final bruta in letra.split('\n')) {
+      final t = bruta.trim();
+      if (t.isEmpty || _reMarcador.hasMatch(t)) {
+        saida.add(bruta);
+        abreFrase = true; // estrofe nova
+        vemFala = false;
+        continue;
+      }
+      // "O Mestre diz:" e, na linha de baixo, a fala entre aspas: a fala
+      // começa com maiúscula, como se a frase tivesse fechado.
+      final abre = abreFrase || (vemFala && _reAspasDeAbrir.hasMatch(t));
+      if (!_quaseTodoMaiusculo(t, minimoDeLetras: 1)) {
+        saida.add(bruta);
+        abreFrase = _fechaFrase(t);
+      } else {
+        final convertida = _fraseEmMinusculas(t, abre);
+        saida.add(convertida);
+        abreFrase = _fechaFrase(convertida);
+      }
+      vemFala = _terminaEmDoisPontos(t);
+    }
+    return saida.join('\n');
+  }
+
+  static final _reAspasDeAbrir = RegExp(r'^["“‘]');
+
+  /// Qualquer aspas, de abrir ou de fechar: na fonte de verdade o fecha-aspas
+  /// vem como “ (`vou.“`), e tratar só o ” deixava a frase seguinte em
+  /// minúscula.
+  static final _reAspasNoFim = RegExp(r'["“”‘’»«)\s]+$');
+
+  static bool _terminaEmDoisPontos(String linha) =>
+      linha.replaceFirst(_reAspasNoFim, '').endsWith(':');
+
+  /// A linha termina uma frase? ("." "!" "?", e não "...")
+  static bool _fechaFrase(String linha) {
+    final s = linha.replaceFirst(_reAspasNoFim, '');
+    if (s.endsWith('..')) return false;
+    return s.endsWith('.') || s.endsWith('!') || s.endsWith('?');
+  }
+
+  /// Entre duas palavras há o fim de uma frase? Reticências não valem; dois
+  /// pontos só valem quando abrem uma fala entre aspas.
+  static bool _abreFraseEntre(String intervalo) {
+    final sem = intervalo.replaceAll(RegExp(r'\.{2,}'), '');
+    return RegExp(r'[.!?]').hasMatch(sem) ||
+        RegExp(r':\s*["“‘]').hasMatch(intervalo);
+  }
+
+  static String _fraseEmMinusculas(String linha, bool abreFrase) {
+    final baixa = linha.toLowerCase();
+    final ms = _rePalavra.allMatches(baixa).toList();
+    final palavras = [for (final m in ms) m.group(0)!];
+
+    // Palavras de expressão ("Espírito Santo"): só se coladas, com espaço ou
+    // hífen no meio — "espírito" e "santo" em lugares diferentes não contam.
+    final deExpressao = <int>{};
+    for (final ex in _expressoes) {
+      for (var i = 0; i + ex.length <= palavras.length; i++) {
+        var casa = true;
+        for (var j = 0; j < ex.length && casa; j++) {
+          if (palavras[i + j] != ex[j]) casa = false;
+          if (casa && j > 0) {
+            final entre = baixa.substring(ms[i + j - 1].end, ms[i + j].start);
+            if (!RegExp(r'^[\s-]+$').hasMatch(entre)) casa = false;
+          }
+        }
+        if (!casa) continue;
+        for (var j = 0; j < ex.length; j++) {
+          if (!_particulas.contains(ex[j])) deExpressao.add(i + j);
+        }
+      }
+    }
+
+    final sb = StringBuffer();
+    var fim = 0;
+    var abre = abreFrase;
+    for (var i = 0; i < ms.length; i++) {
+      final m = ms[i];
+      final entre = baixa.substring(fim, m.start);
+      sb.write(entre);
+      if (i > 0 && _abreFraseEntre(entre)) abre = true;
+      final w = palavras[i];
+      final maiuscula = abre ||
+          _nomes.contains(w) ||
+          deExpressao.contains(i) ||
+          (w == 'filho' && _filhoDeDeus(palavras, i)) ||
+          (w == 'espírito' && _espiritoSanto(palavras, i));
+      sb.write(maiuscula ? '${w[0].toUpperCase()}${w.substring(1)}' : w);
+      abre = false;
+      fim = m.end;
+    }
+    sb.write(baixa.substring(fim));
+    return sb.toString();
   }
 
   /// Palavras que, no meio do título, ficam em minúscula: "Grande é o Senhor",
@@ -564,6 +854,48 @@ class ImportarHinario {
   static bool _tituloPlausivel(String s) =>
       s.length <= maximoDoTitulo && _temLetra(s);
 
+  /// Endereço de site: "http://…", "https://…" ou "www.…" em qualquer ponto da
+  /// linha (inclusive dentro de um link de Markdown). Verso de hino não tem.
+  static final _reEndereco =
+      RegExp(r'(?:https?://|www\.)\S', caseSensitive: false);
+
+  /// De que linha em diante o texto é rodapé de site, ou nulo.
+  ///
+  /// O rodapé começa no primeiro endereço DEPOIS do começo do último hino. Se a
+  /// linha logo acima dele repete uma linha de antes do primeiro hino (o nome
+  /// do site, que abre e fecha a página), o rodapé começa nela: sem isso o nome
+  /// ficaria na letra do último hino, sozinho, sem nada que o explique.
+  ///
+  /// Só o FIM do texto conta. Um endereço no meio de um hino não corta nada:
+  /// cortar do meio até o fim apagaria hinos de verdade.
+  static int? _rodapeDesde(List<String> linhas, List<_Candidato> cands) {
+    if (cands.isEmpty) return null;
+    final ultima = cands.last.linha;
+    int? endereco;
+    for (var i = ultima + 1; i < linhas.length; i++) {
+      if (_reEndereco.hasMatch(linhas[i])) {
+        endereco = i;
+        break;
+      }
+    }
+    if (endereco == null) return null;
+
+    String chave(String s) =>
+        s.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+    final abertura = {
+      for (var i = 0; i < cands.first.linha; i++)
+        if (linhas[i].length >= 8) chave(linhas[i]),
+    };
+    var acima = endereco - 1;
+    while (acima > ultima && linhas[acima].isEmpty) {
+      acima--;
+    }
+    if (acima > ultima && abertura.contains(chave(linhas[acima]))) {
+      return acima;
+    }
+    return endereco;
+  }
+
   /// Corta o texto em trechos: cada um vai do começo de um hino ao começo do
   /// seguinte — QUALQUER seguinte do mesmo formato, mesmo de número que o
   /// hinário não tem. Assim um rodapé "2024 - CPAD" encerra o último hino em
@@ -571,8 +903,9 @@ class ImportarHinario {
   static List<_Trecho> _trechos(
     List<String> linhas,
     List<_Candidato> cands,
-    Hinario hinario,
-  ) {
+    Hinario hinario, {
+    required int fimDoTexto,
+  }) {
     // Os vizinhos de cada candidato, só entre os que têm número de hinário:
     // um rodapé "2024 - EDITORA" corta o último hino, mas não conta como
     // vizinho de ninguém na ordem dos números.
@@ -592,7 +925,8 @@ class ImportarHinario {
     final saida = <_Trecho>[];
     for (var k = 0; k < cands.length; k++) {
       final c = cands[k];
-      final fim = k + 1 < cands.length ? cands[k + 1].linha : linhas.length;
+      // O último hino vai até o fim do texto — menos o rodapé do site.
+      final fim = k + 1 < cands.length ? cands[k + 1].linha : fimDoTexto;
       var inicio = c.linha + 1;
       var titulo = c.titulo ?? '';
 

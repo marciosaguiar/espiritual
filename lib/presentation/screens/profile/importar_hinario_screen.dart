@@ -50,6 +50,12 @@ class _ImportarHinarioScreenState extends State<ImportarHinarioScreen> {
   /// Formato escolhido à mão; nulo é "o app decide".
   FormatoDoHinario? _formato;
 
+  /// Passar a letra que veio TODA EM MAIÚSCULAS para letras normais. Ligado
+  /// desde o começo: quem não mexer em nada recebe a letra legível, e o
+  /// cartão da conferência diz o que foi feito e deixa desligar. Vale a escolha
+  /// da pessoa até fechar a tela.
+  bool _converterCaixaAlta = true;
+
   bool _lendo = false;
   bool _importando = false;
   int _feitos = 0;
@@ -143,12 +149,37 @@ class _ImportarHinarioScreenState extends State<ImportarHinarioScreen> {
     // ela leva um instante, e a tela parada parece travada.
     await Future<void>.delayed(const Duration(milliseconds: 40));
     if (!mounted) return;
-    final r = ImportarHinario.analisar(texto, _hinario, formato: _formato);
+    final r = ImportarHinario.analisar(
+      texto,
+      _hinario,
+      formato: _formato,
+      converterCaixaAlta: _converterCaixaAlta,
+    );
     setState(() {
       _resultado = r;
       _lendo = false;
     });
     _rolarPara(_chaveDaConferencia);
+  }
+
+  /// Liga ou desliga a conversão das letras em maiúsculas.
+  ///
+  /// Refaz a leitura NA HORA, sem o "Lendo o texto…" nem a rolagem: a pessoa
+  /// está olhando as amostras para ver como ficou, e fazer o resultado sumir
+  /// e voltar mudaria a tela debaixo do dedo dela.
+  void _trocarConversao(bool ligada) {
+    if (_importando) return;
+    setState(() {
+      _converterCaixaAlta = ligada;
+      if (_texto.isNotEmpty) {
+        _resultado = ImportarHinario.analisar(
+          _texto,
+          _hinario,
+          formato: _formato,
+          converterCaixaAlta: ligada,
+        );
+      }
+    });
   }
 
   void _trocarHinario(Hinario h) {
@@ -351,6 +382,8 @@ class _ImportarHinarioScreenState extends State<ImportarHinarioScreen> {
                               isDark: isDark,
                               desligado: _importando,
                               onFormato: _trocarFormato,
+                              converter: _converterCaixaAlta,
+                              onConverter: _trocarConversao,
                             ),
                           )),
                     if (_erro != null)
@@ -644,6 +677,8 @@ class _Conferencia extends StatelessWidget {
   final bool isDark;
   final bool desligado;
   final ValueChanged<FormatoDoHinario?> onFormato;
+  final bool converter;
+  final ValueChanged<bool> onConverter;
 
   const _Conferencia({
     required this.resultado,
@@ -652,6 +687,8 @@ class _Conferencia extends StatelessWidget {
     required this.isDark,
     required this.desligado,
     required this.onFormato,
+    required this.converter,
+    required this.onConverter,
   });
 
   /// As linhas de aviso, em português, só as que têm o que dizer.
@@ -674,6 +711,19 @@ class _Conferencia extends StatelessWidget {
     if (r.semTitulo.isNotEmpty) {
       saida.add('Sem título reconhecido, entram como "Hino N": '
           '${ResultadoDaLeitura.listaDeNumeros(r.semTitulo)}.');
+    }
+    // Diz o que SAIU do texto: tirar em silêncio seria o mesmo erro de deixar
+    // entrar, e a amostra mostra só o começo/fim de três hinos.
+    final rodape = r.rodape;
+    if (rodape != null) {
+      final primeira = rodape.primeira.length > 50
+          ? '${rodape.primeira.substring(0, 50)}…'
+          : rodape.primeira;
+      final quantas = rodape.linhas == 1
+          ? '1 linha que parecia'
+          : '${rodape.linhas} linhas que pareciam';
+      saida.add('Tirei do fim do texto $quantas rodapé do site (a primeira: '
+          '"$primeira"). Não entram na letra do hino ${rodape.hino}.');
     }
     // No máximo cinco: se o texto estiver muito estragado, uma parede de
     // avisos não se lê, e a frase de cima já diz que faltam muitos.
@@ -712,10 +762,20 @@ class _Conferencia extends StatelessWidget {
 
   /// Primeiro, do meio e último: o suficiente para ver se o começo e o fim
   /// da letra estão onde deveriam, sem rolar 640 hinos.
-  List<HinoLido> _amostra() {
+  ///
+  /// O ÚLTIMO mostra o FIM da letra, não o começo: tudo o que sobra do texto
+  /// (rodapé, índice, o nome do site) cai no fim do último hino. Olhar só o
+  /// começo dele é olhar para o único lugar onde nunca há problema.
+  List<({HinoLido hino, bool fim})> _amostra() {
     final h = resultado.hinos;
-    if (h.length <= 3) return h;
-    return [h.first, h[h.length ~/ 2], h.last];
+    final escolhidos = h.length <= 3 ? h : [h.first, h[h.length ~/ 2], h.last];
+    return [
+      for (var i = 0; i < escolhidos.length; i++)
+        (
+          hino: escolhidos[i],
+          fim: escolhidos.length > 1 && i == escolhidos.length - 1,
+        ),
+    ];
   }
 
   @override
@@ -756,12 +816,23 @@ class _Conferencia extends StatelessWidget {
             ),
           ),
         ],
+        if (r.emCaixaAlta > 0) ...[
+          const SizedBox(height: 12),
+          _CartaoCaixaAlta(
+            quantos: r.emCaixaAlta,
+            ligado: converter,
+            desligado: desligado,
+            isDark: isDark,
+            onMudar: onConverter,
+          ),
+        ],
         if (r.achouAlgo) ...[
           const SizedBox(height: 14),
           _Texto('Veja se a letra está certa:',
               isDark: isDark, forte: true, tamanho: 13),
           const SizedBox(height: 6),
-          for (final h in _amostra()) _AmostraDeHino(hino: h, isDark: isDark),
+          for (final a in _amostra())
+            _AmostraDeHino(hino: a.hino, fim: a.fim, isDark: isDark),
         ],
         const SizedBox(height: 4),
         _EscolhaDeFormato(
@@ -776,14 +847,106 @@ class _Conferencia extends StatelessWidget {
   }
 }
 
-class _AmostraDeHino extends StatelessWidget {
-  final HinoLido hino;
+/// "Letra em maiúsculas": quantos hinos vieram gritando, e a chave que converte.
+///
+/// O Cantor Cristão colado de um site traz 520 dos 581 hinos TODOS EM
+/// MAIÚSCULAS — na tela do culto isso cansa a vista e é difícil de ler de
+/// longe. A conversão é opcional e as amostras logo abaixo mostram o
+/// resultado: o app acerta Deus, Jesus e Senhor, mas pode deixar em minúscula
+/// um nome que não conheça, e a pessoa precisa poder ver antes de aceitar.
+class _CartaoCaixaAlta extends StatelessWidget {
+  final int quantos;
+  final bool ligado;
+  final bool desligado;
   final bool isDark;
+  final ValueChanged<bool> onMudar;
 
-  const _AmostraDeHino({required this.hino, required this.isDark});
+  const _CartaoCaixaAlta({
+    required this.quantos,
+    required this.ligado,
+    required this.desligado,
+    required this.isDark,
+    required this.onMudar,
+  });
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 4, 4),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.05)
+            : Colors.black.withValues(alpha: 0.04),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _Texto('Letra em maiúsculas',
+              isDark: isDark, forte: true, tamanho: 13.5),
+          const SizedBox(height: 2),
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: _Texto(
+              quantos == 1
+                  ? '1 hino veio com a letra TODA EM MAIÚSCULAS.'
+                  : '$quantos hinos vieram com a letra TODA EM MAIÚSCULAS.',
+              isDark: isDark,
+              tamanho: 13,
+            ),
+          ),
+          // O Material TRANSPARENTE no meio, como em _EscolhaDeFormato: o
+          // efeito do toque é pintado no Material mais próximo, e a caixa
+          // colorida de cima o esconderia.
+          Material(
+            type: MaterialType.transparency,
+            child: SwitchListTile(
+              contentPadding: const EdgeInsets.only(right: 4),
+              dense: true,
+              value: ligado,
+              onChanged: desligado ? null : onMudar,
+              title: const Text('Escrever em letras normais',
+                  style: TextStyle(fontFamily: 'Poppins', fontSize: 13.5)),
+              subtitle: Text(
+                ligado
+                    ? 'Deus, Jesus e Senhor ficam com inicial maiúscula. Se '
+                        'um nome sair errado, dá para corrigir depois em '
+                        'Editar música.'
+                    : 'Desligado: a letra entra do jeito que veio, toda em '
+                        'maiúsculas.',
+                style: const TextStyle(fontFamily: 'Poppins', fontSize: 12),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AmostraDeHino extends StatelessWidget {
+  final HinoLido hino;
+
+  /// Mostra o FIM da letra, em vez do começo. Ver [_Conferencia._amostra].
+  final bool fim;
+  final bool isDark;
+
+  const _AmostraDeHino({
+    required this.hino,
+    required this.fim,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final linhas = hino.letra.split('\n');
+    // Só diz "fim da letra" quando há começo escondido: numa letra curta o
+    // que se vê já é o hino inteiro.
+    final cortada = fim && linhas.length > 4;
+    final texto = cortada
+        ? '…\n${linhas.sublist(linhas.length - 4).join('\n')}'
+        : hino.letra;
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 8),
@@ -797,12 +960,20 @@ class _AmostraDeHino extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _Texto('${hino.numero} · ${hino.titulo}',
-              isDark: isDark, forte: true, tamanho: 13.5),
+          Row(
+            children: [
+              Expanded(
+                child: _Texto('${hino.numero} · ${hino.titulo}',
+                    isDark: isDark, forte: true, tamanho: 13.5),
+              ),
+              if (cortada)
+                _Texto('fim da letra', isDark: isDark, muted: true, tamanho: 12),
+            ],
+          ),
           const SizedBox(height: 4),
           Text(
-            hino.letra,
-            maxLines: 4,
+            texto,
+            maxLines: cortada ? 5 : 4,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               fontFamily: 'Poppins',

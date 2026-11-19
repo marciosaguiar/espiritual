@@ -217,6 +217,84 @@ void main() {
       expect(find.textContaining('NÃO importar assim'), findsOneWidget);
     });
 
+    testWidgets('rodapé de site no fim: a tela diz que tirou, e quantas linhas',
+        (t) async {
+      // A prévia só mostrava o COMEÇO de cada amostra, então um rodapé no fim
+      // do último hino passava despercebido — e entrava na letra.
+      const nome = 'Site de Mentira - Publicações';
+      final texto = '$nome\n${[_hino(1), _hino(2), _hino(3)].join('\n')}\n'
+          '$nome\nhttp://exemplo-um.example/\nhttp://exemplo-dois.example/\n';
+      await _montar(t, copiado: texto);
+      await _colar(t);
+
+      expect(find.text('Achei 3 hinos, do 1 ao 3.'), findsOneWidget);
+      expect(
+          find.textContaining('Tirei do fim do texto 3 linhas que pareciam '
+              'rodapé do site (a primeira: "$nome")'),
+          findsOneWidget);
+      expect(find.textContaining('Não entram na letra do hino 3'),
+          findsOneWidget);
+      expect(find.textContaining('exemplo-um'), findsNothing);
+    });
+
+    testWidgets('sem rodapé, a tela não fala em rodapé', (t) async {
+      await _montar(t, copiado: [_hino(1), _hino(2), _hino(3)].join('\n'));
+      await _colar(t);
+      expect(find.textContaining('rodapé'), findsNothing);
+    });
+
+    testWidgets('a amostra do ÚLTIMO hino mostra o fim da letra, não o começo',
+        (t) async {
+      // Tudo o que sobra do texto cai no fim do último hino. Olhar só o
+      // começo dele é olhar para onde nunca há problema.
+      String longo(int n) => '$n - Título $n\n'
+          '${[for (var i = 1; i <= 8; i++) 'linha $i do hino $n inventado'].join('\n')}\n';
+      await _montar(t, copiado: [for (var n = 1; n <= 4; n++) longo(n)].join('\n'));
+      await _colar(t);
+
+      expect(find.textContaining('linha 8 do hino 4'), findsOneWidget);
+      expect(find.textContaining('linha 1 do hino 4'), findsNothing);
+      expect(find.text('fim da letra'), findsOneWidget);
+      // E o primeiro continua mostrando o começo.
+      expect(find.textContaining('linha 1 do hino 1'), findsOneWidget);
+    });
+
+    testWidgets('letras em maiúsculas: a tela avisa, converte e deixa desligar',
+        (t) async {
+      String gritado(int n) => '$n - Título $n\n[1]\n'
+          'LOUVAI A DEUS COM O HINO $n\nSEMPRE E POR TODA A VIDA\n';
+      await _montar(t, copiado: [for (var n = 1; n <= 3; n++) gritado(n)].join('\n'));
+      await _colar(t);
+
+      expect(find.text('Letra em maiúsculas'), findsOneWidget);
+      expect(find.textContaining('3 hinos vieram com a letra TODA EM MAIÚSCULAS'),
+          findsOneWidget);
+
+      // Ligado desde o começo: quem não mexer em nada recebe a letra legível.
+      expect(t.widget<SwitchListTile>(find.byType(SwitchListTile)).value, isTrue);
+      expect(find.textContaining('Louvai a Deus com o hino 2'), findsOneWidget);
+      expect(find.textContaining('LOUVAI A DEUS'), findsNothing);
+
+      await t.ensureVisible(find.byType(SwitchListTile));
+      await t.tap(find.byType(SwitchListTile));
+      await t.pumpAndSettle();
+
+      expect(t.widget<SwitchListTile>(find.byType(SwitchListTile)).value,
+          isFalse);
+      expect(find.textContaining('LOUVAI A DEUS COM O HINO 2'), findsOneWidget);
+      expect(find.textContaining('Louvai a Deus'), findsNothing);
+      // Desligar não muda quantos hinos entram.
+      expect(find.text('Importar 3 hinos'), findsOneWidget);
+    });
+
+    testWidgets('letras que já estão normais: nenhum cartão de maiúsculas',
+        (t) async {
+      await _montar(t, copiado: [_hino(1), _hino(2), _hino(3)].join('\n'));
+      await _colar(t);
+      expect(find.text('Letra em maiúsculas'), findsNothing);
+      expect(find.byType(SwitchListTile), findsNothing);
+    });
+
     testWidgets('texto que não é hinário: avisa e NÃO oferece Importar',
         (t) async {
       await _montar(t, copiado: 'só uma conversa qualquer, sem hino nenhum');
@@ -319,16 +397,7 @@ void main() {
     // sinal nenhum. A CI usa um Flutter que ainda não faz essa checagem, então
     // ela passava verde enquanto o Mac, com outro Flutter, reprovava 12 testes.
     // Este teste refaz a conta da checagem, em qualquer versão.
-    testWidgets('todo ListTile tem um Material entre ele e a caixa colorida',
-        (t) async {
-      await _montar(t, copiado: [_hino(1), _hino(2)].join('\n'));
-      await _colar(t);
-
-      // Abre "Não está certo?", para as opções (RadioListTile) existirem.
-      await t.ensureVisible(find.textContaining('Não está certo?'));
-      await t.tap(find.textContaining('Não está certo?'));
-      await t.pumpAndSettle();
-
+    void conferirMaterial() {
       final tiles = find.byType(ListTile).evaluate().toList();
       expect(tiles, isNotEmpty, reason: 'o teste precisa ter o que conferir');
 
@@ -350,6 +419,33 @@ void main() {
             reason: 'um ListTile fica atrás de um $escondidoPor, sem um '
                 'Material no meio: o toque não mostra efeito nenhum');
       }
+    }
+
+    testWidgets('todo ListTile tem um Material entre ele e a caixa colorida',
+        (t) async {
+      await _montar(t, copiado: [_hino(1), _hino(2)].join('\n'));
+      await _colar(t);
+
+      // Abre "Não está certo?", para as opções (RadioListTile) existirem.
+      await t.ensureVisible(find.textContaining('Não está certo?'));
+      await t.tap(find.textContaining('Não está certo?'));
+      await t.pumpAndSettle();
+
+      conferirMaterial();
+    });
+
+    testWidgets('a chave das letras em maiúsculas também (SwitchListTile)',
+        (t) async {
+      await _montar(
+        t,
+        copiado: '1 - Título 1\n[1]\nLOUVAI A DEUS COM O HINO UM\n'
+            '2 - Título 2\n[1]\nLOUVAI A DEUS COM O HINO DOIS\n',
+      );
+      await _colar(t);
+      expect(find.byType(SwitchListTile), findsOneWidget,
+          reason: 'o teste precisa ter a chave na tela');
+
+      conferirMaterial();
     });
   });
 

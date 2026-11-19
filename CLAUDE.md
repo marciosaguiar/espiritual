@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 675 testes
+flutter test                   # 710 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -2078,7 +2078,7 @@ hinário e conferir a prévia. Foi provado quebrando de propósito: com um campo
 mais no app, o teste falha. O lote é de 400 hinos + o índice por commit, e o
 teste de regras prova que isso passa pelo limite de consultas por requisição.
 
-**O motor de leitura** (`core/utils/importar_hinario.dart`, função pura, 57
+**O motor de leitura** (`core/utils/importar_hinario.dart`, função pura, 86
 testes):
 
 - O app NÃO SABE como é o arquivo da pessoa. Tenta cinco formatos (`Hino 15`,
@@ -2167,7 +2167,8 @@ passar:
   data zero, que em Brasília é 31/12/1969. Passava no GitHub e no contêiner
   (UTC) e reprovava no Mac do dono. O defeito era do TESTE (agora `toUtc()`).
   A suíte inteira foi rodada em `TZ=America/Sao_Paulo` e em UTC: 656 nos dois
-  (675 depois de ler o texto real da Harpa — ver a seção abaixo).
+  (675 depois de ler o texto real da Harpa; 710 depois do Cantor Cristão —
+  ver as seções abaixo).
   **Ao mexer em data, rode também `TZ=America/Sao_Paulo flutter test`.**
 
 Os dois dizem a mesma coisa: o computador do dono é o ambiente que mais difere
@@ -2175,17 +2176,13 @@ da CI, e um teste que só passa na CI não prova que passa onde se publica.
 
 **O que NÃO foi verificado** (leia antes de dizer que está pronto):
 
-1. **O texto REAL da Harpa foi LIDO, mas não EXECUTADO aqui.** O dono colou os
-   640 hinos no chat e a forma foi reproduzida em teste (ver "O que o texto real
-   ensinou"). O texto em si não entrou no contêiner — são ~300 KB que não cabem
-   num arquivo escrito à mão e não podem morar no repositório —, então a prova
-   final é a PRÉVIA no app. **O que eu espero, lendo o texto à mão (palpite,
-   não medida): "Achei 639 hinos, do 1 ao 640. Falta o 542.", com o aviso do
-   número suspeito (442 → 542) e os repetidos 200, 201 e 442.** Um ou outro
-   número a mais nos avisos é plausível — a fonte tem erros de digitação que eu
-   posso não ter visto, e a prévia os nomeia. Centenas de "sem letra", ou o
-   intervalo errado, seriam defeito do motor. O Cantor Cristão ainda não teve
-   texto real lido.
+1. **A Harpa foi conferida no app; o Cantor, só no motor.** Harpa: o dono colou
+   os 640 hinos, a prévia disse "Achei 626 hinos, do 15 ao 640." (1 a 14 já
+   estavam), importou, e conferiu no celular os hinos 583, 584, 200 e 201.
+   Cantor: o texto colado pelo dono ficou no histórico da sessão, então foi
+   **EXECUTADO de verdade** contra o motor (ver "O texto do Cantor Cristão") —
+   581 hinos, do 1 ao 581. **Ainda não foi para o app:** a prévia na tela com
+   esse texto e a gravação do lote no Firestore.
 2. **A tela num navegador de verdade a 375 px.** Só há testes de widget, com a
    fonte de teste (mais larga que a Poppins) e sem estouro de layout. Rodar o
    app e fotografar, como na rodada de 19/11, ainda falta.
@@ -2256,6 +2253,105 @@ Medido quebrando de propósito: sem a regra da ordem o teste do 442 reprova; com
 "zero minúsculas" o teste do `CRElO` reprova; exigindo de novo o espaço depois
 do ponto o teste do 584 reprova, e tirando o limite de 10 o teste da estrofe
 "4." reprova; e 6 dos 12 primeiros testes reprovam no motor de antes.
+
+### O texto do Cantor Cristão: rodapé de site e letra em maiúsculas (19/11/2026)
+
+O dono colou o Cantor (581 hinos, copiado de um site) pedindo "confira se tem
+algo para mudarmos antes de importar". **Dessa vez o texto REAL foi executado,
+não só lido:** ele ficou no histórico da sessão (`~/.claude/projects/…/*.jsonl`),
+foi extraído para a pasta temporária — nunca para o repositório — e passou pelo
+motor. Com o motor de antes o resultado era "Achei 581 hinos, do 1 ao 581.",
+sem nenhum aviso, **e três coisas que a frase não diz**:
+
+1. **Rodapé de site dentro do hino 581.** O texto termina com 20 linhas: o nome
+   do site de novo, 16 endereços, `BÍBLIAS ELETRÔNICAS STORAGE>>>` e "Adicione
+   os sites… [Gmail deve estar aberto]". O último hino vai até o fim do
+   arquivo, então tudo isso entrava na letra dele. **A prévia não deixava ver**:
+   cada amostra mostrava só as 4 PRIMEIRAS linhas, e o problema está nas últimas.
+2. **520 dos 581 hinos com a letra TODA EM MAIÚSCULAS** (do 51 ao 581, menos o
+   328, 424, 425, 428, 438, 441, 445, 449, 556 e 564). Na tela do culto isso
+   cansa a vista e é difícil de ler de longe.
+3. **18 hinos com o marcador de estrofe repetido ou pulado** (`[1] [3] [4]` no
+   28, `[1] [3] [3]` no 197, `[1] [1] [2]` no 422…). É erro de digitação da
+   fonte, e **fica como está** — pelo mesmo motivo das iniciais do autor e dos
+   erros de OCR da Harpa: o app não reescreve a fonte às cegas. Os marcadores
+   `[1]` e `[côro]` também ficam na letra: o Modo ao vivo os lê como "parte da
+   música".
+
+**O rodapé** (`RodapeTirado`, `_rodapeDesde`):
+
+- **Só o FIM do texto conta.** O rodapé começa no primeiro endereço (`http://`,
+  `https://` ou `www.`) depois do começo do último hino, e vai até o fim. Um
+  endereço no meio de um hino não corta nada: cortar dali até o fim apagaria
+  hinos de verdade.
+- **O nome do site sobe junto** quando a linha logo acima do primeiro endereço
+  repete uma linha de ANTES do primeiro hino (o site abre e fecha a página com o
+  mesmo nome). Sem esse nome no começo do texto, não há como saber que aquela
+  linha é rodapé: ela **fica** na letra, e é por isso que o último hino agora
+  mostra o fim.
+- **O corte é DECLARADO**, não silencioso: "Tirei do fim do texto 20 linhas que
+  pareciam rodapé do site (a primeira: "Cultura Evangélica…"). Não entram na
+  letra do hino 581." Tirar texto em silêncio seria o mesmo erro de deixar
+  entrar.
+- **A amostra do ÚLTIMO hino mostra o fim da letra**, com "fim da letra" ao
+  lado do título. Tudo o que sobra do texto cai no fim do último hino; olhar só
+  o começo dele é olhar para o único lugar onde nunca há problema.
+
+**As letras em maiúsculas** (`letraGritada`, `letraEmMinusculas`):
+
+- **Opcional, ligada por padrão, com o resultado à vista.** O cartão "Letra em
+  maiúsculas" diz quantos hinos vieram assim, a chave "Escrever em letras
+  normais" liga e desliga na hora (sem o "Lendo…": o resultado sumir e voltar
+  mudaria a tela debaixo do dedo), e as amostras logo abaixo mostram como ficou.
+  O motor (`analisar`) a recebe DESLIGADA: quem liga é a tela.
+- **Decide pelo HINO, não pela linha.** Passando de 80% das linhas em
+  maiúsculas o hino é "gritado" e só então se converte. Um `AMÉM! AMÉM!`
+  gritado no fim de um hino normal não é o hino gritando, e converter só aquela
+  linha a deixaria diferente das de cima.
+- **A inicial maiúscula vai** no começo de cada estrofe, depois de `.` `!` `?`,
+  e na fala entre aspas que vem depois de dois-pontos. **Não vai** depois de
+  vírgula, ponto-e-vírgula nem reticências: "pois hoje tem festa,\nna casa" é
+  como um hino impresso se escreve. Marcadores, linhas já mistas e hinos que não
+  são gritados ficam **exatamente** como vieram; converter duas vezes dá o
+  mesmo que uma.
+- **Nomes** (`_nomes`): Deus, Jesus, Cristo, Senhor, Pai, Rei, Salvador,
+  Redentor, Mestre, Cordeiro, Pastor… e lugares da Bíblia e do Brasil. Só entra
+  palavra que num hinário quase nunca é outra coisa. Fora ficam as que também
+  são palavra comum ("santo", "amigo", "guia", "luz") e as que se escrevem
+  minúsculas em português (judeus, fariseus, brasileiro, céu).
+- **"Filho" e "espírito" dependem do contexto** — e foi o texto real que mostrou
+  isso. "Filho" é o Filho de Deus em "o filho do santo Deus" e é o pecador em
+  "vem, filho, vem!"; só vira maiúscula com sinal claro (`Deus Filho`, `querido
+  filho`, `filho de Deus`). "Espírito" é o Espírito Santo em quase todo hino ("o
+  dom do Espírito"), menos em "meu espírito". "Santo" sozinho é adjetivo.
+- **O erro possível é um nome que a lista não conhece sair em minúscula** — e é
+  por isso que a conversão é opcional e a amostra fica à vista. Esse é o lado
+  barato de errar: corrige-se em Editar música, e re-importar regrava a
+  biblioteca por cima sem tocar nas músicas que já foram para o repertório.
+  **Pronomes** (Ele, Teu, Tu) ficam minúsculos: a própria fonte não é
+  consistente neles.
+- **O defeito que só o texto real mostrou:** a fonte fecha aspas com `“` (a de
+  abrir) em `vou.“` e `!“`. Reconhecendo só o `”`, a frase seguinte ficava em
+  minúscula (`responda, pois…`, `sim, a água…`), e a fala depois de "diz:" também.
+
+**Medido no texto real, com a conversão ligada:** 521 hinos convertidos (os 520
+mais o 581, que só ficou gritado depois de o rodapé sair); 0 linhas em minúscula
+logo depois de fim de frase; 0 sobras em maiúsculas; e **toda palavra com
+maiúscula no meio de uma frase é um nome** (Jesus, Cristo, Deus, Senhor,
+Salvador, Rei, Redentor, Mestre, Pai, Brasil, Espírito, Cordeiro…). Para o motor
+inteiro, ~200 ms — numa máquina de desenvolvimento; num celular, bem mais, e é
+por isso que ligar e desligar a chave não passa por um spinner.
+
+**Provado quebrando de propósito (sete vezes):** sem cortar o fim do texto, 5
+testes reprovam; sem subir o nome do site, 4; estrofe nova sem maiúscula, 13;
+hino de uma linha gritada passando por gritado, o do "AMÉM!"; reticências
+abrindo frase, o das reticências; a amostra do último mostrando o começo, o da
+amostra; e a conversão desligada por padrão, o da tela.
+
+**Limites conhecidos:** sem o nome do site repetido no começo, a linha do nome
+fica no fim do último hino (a amostra mostra); um nome próprio que a lista não
+tem sai em minúscula; um parêntese que ocupa a linha inteira
+(`(Aos anjos escutei)`) não abre frase na linha de baixo.
 
 ### O manual e o guia dentro do app
 
