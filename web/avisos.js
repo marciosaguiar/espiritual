@@ -126,6 +126,23 @@
   ///
   /// Passa por aqui, e não por um pacote Dart, para o app não ganhar uma
   /// dependência nova por causa de um POST — é a mesma escolha do audio.js.
+  // Um GET sem login. Serve à rota /saude do Worker, que não pede token de
+  // propósito: quem precisa dela é um job de madrugada e um líder leigo
+  // abrindo um endereço no celular.
+  window.levitaBuscarJson = function (url) {
+    return fetch(url).then(function (r) {
+      return r.text().then(function (texto) {
+        return JSON.stringify({ status: r.status, corpo: texto });
+      });
+    }).catch(function (e) {
+      // Status 0 é "não saiu daqui": sem rede, DNS errado, CORS recusado. A
+      // tela precisa distinguir isso de "o servidor respondeu que está
+      // quebrado" — um é a internet da pessoa, o outro é conserto de
+      // verdade.
+      return JSON.stringify({ status: 0, corpo: String(e && e.message || e) });
+    });
+  };
+
   window.levitaChamarWorker = function (url, token, corpo) {
     return fetch(url, {
       method: 'POST',

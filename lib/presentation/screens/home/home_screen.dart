@@ -14,6 +14,7 @@ import '../scale/scale_detail_screen.dart';
 import '../songs/song_detail_screen.dart';
 import '../biblia/biblia_screen.dart';
 import '../songs/hino_por_numero_screen.dart';
+import '../../widgets/home/aviso_de_saude.dart';
 import '../../widgets/common/glass.dart';
 import '../../widgets/common/recuperacao_por_email.dart';
 import '../../widgets/common/minhas_proximas_musicas.dart';
@@ -170,6 +171,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   // seguinte, e era a razão de a pessoa abrir o app. Para
                   // chegar à cifra do domingo ela saía do Início, ia na
                   // Escala, abria o culto, achava a música e tocava nela.
+                  // O aviso de robô parado vem ANTES de tudo: é o único
+                  // cartão desta tela que ninguém mais vai ver se não for
+                  // agora, e cada dia de silêncio é um culto sem escala ou
+                  // um lembrete que não chegou.
+                  AvisoDeSaude(onAbrir: widget.onAbrirPerfil ?? () {}),
+
                   const MinhasProximasMusicas(),
 
                   // O hino pelo número fica ALTO na tela, acima do versículo

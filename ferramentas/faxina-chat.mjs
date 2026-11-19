@@ -116,4 +116,16 @@ const mensagens = await limpar('messages');
 console.log(audios + mensagens === 0
   ? 'Nada vencido. Conversa em dia.'
   : `${mensagens} mensagens e ${audios} áudios apagados.`);
+
+// O carimbo de "rodou", para o cartão "Saúde do sistema" no app. O token sai
+// do próprio login do SDK, que já aconteceu acima — nenhum segredo novo.
+const { carimbarEDizer } = await import('./carimbo.mjs');
+await carimbarEDizer({
+  projectId: CONFIG.projectId,
+  idToken: await auth.currentUser.getIdToken(),
+  qual: 'faxina',
+  ok: true,
+  detalhe: `${mensagens} mensagem(ns) e ${audios} áudio(s)`,
+});
+
 process.exit(0);

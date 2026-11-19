@@ -634,6 +634,39 @@ service cloud.firestore {
     // Quem está pendente NÃO lê nem escreve isto: saber se o líder já foi
     // avisado não é assunto de quem está esperando, e deixar escrever seria
     // deixar apagar a marca para avisar de novo.
+    // ── Saúde do sistema ───────────────────────────────────────────────────
+    //
+    // "Rodou às tantas horas", um documento por rotina. Existe porque os
+    // robôs falharam em silêncio por dias: a rotina diária batia num 403, o
+    // motivo ficava no log do Worker, e ninguém abre log de Worker. Com o
+    // carimbo, o app sabe dizer "o lembrete da véspera não roda há três
+    // dias", e o cartão no Perfil do líder fica vermelho.
+    match /saude/{qual} {
+      // Todo aprovado LÊ. O cartão é só do líder, mas esconder a leitura não
+      // protegeria nada: não há aqui nada além de datas e "deu certo".
+      allow read: if aprovado();
+
+      // Escreve quem é líder — e os robôs são líderes comuns. Leitura e
+      // escrita em linhas separadas, pelo mesmo motivo das coleções acima:
+      // `tamanhoRazoavel()` lê `request.resource`, que não existe na leitura.
+      //
+      // A HORA É DO SERVIDOR, e aqui isso não é zelo: com a hora do runner do
+      // GitHub, um relógio torto faria o carimbo parecer mais novo do que é,
+      // e a tela diria "rodou hoje" sobre uma rotina parada há uma semana.
+      // Alarme que mente é pior que alarme nenhum.
+      allow create, update: if ehLider()
+        && qual in ['cultos', 'vespera', 'faxina']
+        && tamanhoRazoavel()
+        && request.resource.data.keys().hasOnly(['em', 'ok', 'detalhe'])
+        && request.resource.data.em == request.time
+        && request.resource.data.ok is bool
+        && texto('detalhe', 300);
+
+      // Apagar o carimbo faria a rotina parecer "sem registro" em vez de
+      // parada — exatamente o silêncio que isto veio quebrar.
+      allow delete: if false;
+    }
+
     match /pedidosAvisados/{userId} {
       // Leitura e escrita em linhas separadas, pelo mesmo motivo de
       // `avisosDaVespera`: `tamanhoRazoavel()` lê `request.resource`, que não

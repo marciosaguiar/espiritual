@@ -27,6 +27,9 @@ external JSFunction? get _pediuAbrir;
 @JS('levitaChamarWorker')
 external JSFunction? get _chamarWorker;
 
+@JS('levitaBuscarJson')
+external JSFunction? get _buscarJson;
+
 /// Este aparelho sabe receber aviso?
 ///
 /// Falso no Safari do iPhone quando o app NÃO está instalado na tela de
@@ -114,6 +117,24 @@ Future<({int status, String corpo})> chamarWorker(
   try {
     final r = await (f.callAsFunction(null, url.toJS, token.toJS, corpo.toJS)
         as JSPromise).toDart;
+    final bruto = r.dartify();
+    if (bruto is! String) return (status: 0, corpo: 'resposta estranha');
+    final m = jsonDecode(bruto) as Map<String, dynamic>;
+    return (
+      status: (m['status'] as num?)?.toInt() ?? 0,
+      corpo: (m['corpo'] as String?) ?? '',
+    );
+  } catch (e) {
+    return (status: 0, corpo: '$e');
+  }
+}
+
+/// Um GET simples, sem login. Usado pela rota `/saude` do Worker.
+Future<({int status, String corpo})> buscarJson(String url) async {
+  final f = _buscarJson;
+  if (f == null) return (status: 0, corpo: 'página sem o avisos.js');
+  try {
+    final r = await (f.callAsFunction(null, url.toJS) as JSPromise).toDart;
     final bruto = r.dartify();
     if (bruto is! String) return (status: 0, corpo: 'resposta estranha');
     final m = jsonDecode(bruto) as Map<String, dynamic>;

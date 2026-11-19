@@ -1511,6 +1511,59 @@ await teste('levita NÃO apaga a marca para ser avisado de novo', () =>
 await teste('levita NÃO lê a marca', () =>
   assertFails(getDoc(doc(levita(), 'pedidosAvisados', LEVITA))));
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Saúde do sistema
+//
+// O carimbo de "rodou às tantas horas". A parte que erra em silêncio é a
+// hora: com a hora do runner, um relógio torto faria o cartão dizer "rodou
+// hoje" sobre uma rotina parada há uma semana — e alarme que mente é pior
+// que alarme nenhum.
+// ─────────────────────────────────────────────────────────────────────────────
+
+console.log('\n── saúde do sistema ──');
+
+await teste('o robô (líder) carimba que a rotina rodou', () =>
+  assertSucceeds(setDoc(doc(lider(), 'saude', 'vespera'),
+    { em: serverTimestamp(), ok: true, detalhe: '2 cultos, 8 avisos' })));
+
+await teste('o levita LÊ a saúde', () =>
+  assertSucceeds(getDoc(doc(levita(), 'saude', 'vespera'))));
+
+await teste('o levita NÃO carimba', () =>
+  assertFails(setDoc(doc(levita(), 'saude', 'vespera'),
+    { em: serverTimestamp(), ok: true, detalhe: '' })));
+
+await teste('pendente não lê a saúde', () =>
+  assertFails(getDoc(doc(pendente(), 'saude', 'vespera'))));
+
+await teste('a hora do APARELHO é recusada no carimbo', () =>
+  assertFails(setDoc(doc(lider(), 'saude', 'vespera'),
+    { em: new Date(), ok: true, detalhe: '' })));
+
+await teste('rotina com nome desconhecido é recusada', () =>
+  assertFails(setDoc(doc(lider(), 'saude', 'qualquer-coisa'),
+    { em: serverTimestamp(), ok: true, detalhe: '' })));
+
+await teste('campo a mais no carimbo é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'saude', 'faxina'),
+    { em: serverTimestamp(), ok: true, detalhe: '', extra: 1 })));
+
+await teste('ok com tipo errado é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'saude', 'faxina'),
+    { em: serverTimestamp(), ok: 'sim', detalhe: '' })));
+
+await teste('detalhe gigante é recusado', () =>
+  assertFails(setDoc(doc(lider(), 'saude', 'faxina'),
+    { em: serverTimestamp(), ok: true, detalhe: 'x'.repeat(301) })));
+
+await teste('o carimbo de FALHA também é aceito', () =>
+  // É ele que faz o cartão ficar vermelho em vez de só envelhecer.
+  assertSucceeds(setDoc(doc(lider(), 'saude', 'cultos'),
+    { em: serverTimestamp(), ok: false, detalhe: 'o Worker respondeu 403' })));
+
+await teste('NEM O LÍDER apaga o carimbo', () =>
+  assertFails(deleteDoc(doc(lider(), 'saude', 'cultos'))));
+
 console.log('\n── coleção desconhecida ──');
 await teste('coleção sem regra fica bloqueada', () =>
   assertFails(setDoc(doc(lider(), 'qualquerCoisa', 'x'), { a: 1 })));

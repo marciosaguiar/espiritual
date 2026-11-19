@@ -17,6 +17,7 @@ import '../../providers/agenda_provider.dart';
 import '../../providers/scale_provider.dart';
 import '../songs/song_detail_screen.dart';
 import '../biblia/biblia_screen.dart';
+import '../../widgets/profile/cartao_saude.dart';
 import 'fixed_schedule_screen.dart';
 import 'members_screen.dart';
 import 'teams_screen.dart';
@@ -596,6 +597,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ),
                   if (auth.isAdmin) ...[
+                    const SizedBox(height: 10),
+                    // Em cima das linhas de líder de propósito: é a única
+                    // tela em que dá para ver se os robôs estão rodando, e
+                    // eles já falharam em silêncio por dias.
+                    const CartaoSaude(),
                     const SizedBox(height: 8),
                     _SettingRow(
                       icon: Icons.groups_rounded,

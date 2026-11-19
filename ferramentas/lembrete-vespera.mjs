@@ -27,8 +27,10 @@
 
 import { readFileSync } from 'node:fs';
 import { explicarFalha } from './diagnostico.mjs';
+import { carimbarEDizer } from './carimbo.mjs';
 
 const API_KEY = process.env.FIREBASE_API_KEY ?? '';
+const PROJETO = process.env.FIREBASE_PROJECT_ID ?? '';
 const EMAIL = process.env.FAXINA_EMAIL ?? '';
 const SENHA = process.env.FAXINA_SENHA ?? '';
 
@@ -98,6 +100,13 @@ if (!resposta.ok) {
   // Status não é diagnóstico: cada número tem uma causa e um conserto
   // diferentes, nenhum deles no código do app.
   await explicarFalha(worker, resposta.status, texto);
+  await carimbarEDizer({
+    projectId: PROJETO,
+    idToken,
+    qual: 'vespera',
+    ok: false,
+    detalhe: `o Worker respondeu ${resposta.status}`,
+  });
   process.exit(1);
 }
 
@@ -110,3 +119,15 @@ if (r.jaEnviado) {
     + `${r.pessoas ?? 0} pessoa(s), ${r.enviados ?? 0} aviso(s) entregue(s), `
     + `${r.falharam ?? 0} falha(s), ${r.mortos ?? 0} inscrição(ões) morta(s).`);
 }
+
+// O carimbo de "rodou", para o cartão "Saúde do sistema" no app. Vai depois
+// do log, e uma falha dele não derruba o job: o aviso já foi entregue.
+await carimbarEDizer({
+  projectId: PROJETO,
+  idToken,
+  qual: 'vespera',
+  ok: true,
+  detalhe: r.jaEnviado
+    ? `já enviado hoje (${r.dia})`
+    : `${r.cultos ?? 0} culto(s), ${r.enviados ?? 0} aviso(s)`,
+});

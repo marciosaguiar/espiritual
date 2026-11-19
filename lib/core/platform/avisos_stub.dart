@@ -19,4 +19,7 @@ Future<({int status, String corpo})> chamarWorker(
         String url, String token, String corpo) async =>
     (status: 0, corpo: 'sem-suporte');
 
+Future<({int status, String corpo})> buscarJson(String url) async =>
+    (status: 0, corpo: 'sem-suporte');
+
 ({String onde, String cultoId})? pediuAbrir() => null;

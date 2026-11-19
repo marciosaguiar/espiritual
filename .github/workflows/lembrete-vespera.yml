@@ -57,6 +57,9 @@ jobs:
           FIREBASE_API_KEY: ${{ secrets.FIREBASE_API_KEY }}
           FAXINA_EMAIL: ${{ secrets.FAXINA_EMAIL }}
           FAXINA_SENHA: ${{ secrets.FAXINA_SENHA }}
+          # Para gravar o carimbo de "rodou" em `saude/cultos`. Segredo que
+          # JÁ EXISTE: é o mesmo que a faxina do chat usa.
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
         run: node gerar-agenda.mjs
 
       - name: Avisar quem está escalado para amanhã
@@ -68,5 +71,7 @@ jobs:
           # MESMA da faxina do chat.
           FAXINA_EMAIL: ${{ secrets.FAXINA_EMAIL }}
           FAXINA_SENHA: ${{ secrets.FAXINA_SENHA }}
+          # Para o carimbo em `saude/vespera`. Segredo que já existe.
+          FIREBASE_PROJECT_ID: ${{ secrets.FIREBASE_PROJECT_ID }}
         # Sem dependências: só `fetch`, que o Node 20 já tem.
         run: node lembrete-vespera.mjs

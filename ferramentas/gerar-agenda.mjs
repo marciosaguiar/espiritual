@@ -29,8 +29,10 @@
 
 import { readFileSync } from 'node:fs';
 import { explicarFalha } from './diagnostico.mjs';
+import { carimbarEDizer } from './carimbo.mjs';
 
 const API_KEY = process.env.FIREBASE_API_KEY ?? '';
+const PROJETO = process.env.FIREBASE_PROJECT_ID ?? '';
 const EMAIL = process.env.FAXINA_EMAIL ?? '';
 const SENHA = process.env.FAXINA_SENHA ?? '';
 
@@ -100,6 +102,16 @@ if (!resposta.ok) {
   // Status não é diagnóstico: cada número tem uma causa e um conserto
   // diferentes, nenhum deles no código do app.
   await explicarFalha(worker, resposta.status, texto);
+  // O carimbo de FALHA é o que faz o cartão de saúde ficar vermelho em vez
+  // de só envelhecer: sem ele, uma rotina que falha todo dia na mesma hora
+  // pareceria "rodou ontem" para sempre.
+  await carimbarEDizer({
+    projectId: PROJETO,
+    idToken,
+    qual: 'cultos',
+    ok: false,
+    detalhe: `o Worker respondeu ${resposta.status}`,
+  });
   process.exit(1);
 }
 
@@ -111,6 +123,13 @@ if (r.semSlots) {
   console.log(`Agenda fixa: ${r.criados ?? 0} culto(s) criado(s), `
     + `${r.jaExistiam ?? 0} já existia(m), de ${r.pretendidos ?? 0} `
     + 'previsto(s).');
+  await carimbarEDizer({
+    projectId: PROJETO,
+    idToken,
+    qual: 'cultos',
+    ok: !(r.falhas?.length),
+    detalhe: `${r.criados ?? 0} criado(s), ${r.jaExistiam ?? 0} já existia(m)`,
+  });
   if (r.falhas?.length) {
     // Falha de um culto não derruba o job: amanhã tenta de novo, e os que
     // deram certo já estão lá. Mas fica no log para dar para investigar.
