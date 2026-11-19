@@ -5,6 +5,7 @@ import '../../data/models/scale_model.dart';
 import '../../data/models/song_model.dart';
 import '../../data/services/firestore_service.dart';
 import '../../data/services/local_storage_service.dart';
+import '../../core/constants/hinarios.dart';
 import '../../core/utils/texto.dart';
 
 enum SongsFilter { all, favorites, offline, arquivadas }
@@ -21,6 +22,7 @@ class SongsProvider extends ChangeNotifier {
   StreamSubscription<List<SongModel>>? _songsSub;
 
   List<SongModel> get songs => _filteredSongs;
+
   /// TUDO, arquivadas incluídas. Serve para RESOLVER por id — é o que faz um
   /// culto antigo continuar mostrando o nome da música em vez de "Música
   /// removida". Nunca use para oferecer músicas a escolher.
@@ -29,8 +31,7 @@ class SongsProvider extends ChangeNotifier {
   /// O repertório de hoje: o que se pode escolher, escalar, buscar.
   /// Tirar do repertório não serviria de nada se a música continuasse
   /// aparecendo na hora de montar o culto.
-  List<SongModel> get repertorio =>
-      _songs.where((s) => !s.archived).toList();
+  List<SongModel> get repertorio => _songs.where((s) => !s.archived).toList();
   SongsFilter get filter => _filter;
   String get searchQuery => _searchQuery;
   bool get isLoading => _isLoading;
@@ -272,20 +273,69 @@ class SongsProvider extends ChangeNotifier {
     return null;
   }
 
-  /// Os hinos daquele hinário que combinam com a busca, em ordem de número.
+  /// Os hinos daquele hinário que combinam com a busca.
   ///
   /// A busca ignora acento e alcança o número, o nome, o artista e a LETRA —
   /// é o "lembro do trecho mas não do número", que é como a maioria das
-  /// pessoas procura hino.
+  /// pessoas procura hino. **Filtrar e ordenar são coisas separadas**: a
+  /// busca funciona igual em qualquer ordem, porque a ordem é aplicada depois
+  /// (ver [hinosOrdenados]).
   static List<SongModel> hinosFiltrados(
       List<SongModel> musicas, String hinario, String busca) {
     final achados = musicas
         .where((m) => m.hinario == hinario && m.numero != null)
-        .where((m) =>
-            combina(busca, [m.name, m.artist, m.lyrics, '${m.numero}']))
+        .where(
+            (m) => combina(busca, [m.name, m.artist, m.lyrics, '${m.numero}']))
         .toList();
     achados.sort((a, b) => a.numero!.compareTo(b.numero!));
     return achados;
+  }
+
+  /// Os mesmos hinos, na ordem que a pessoa escolheu.
+  ///
+  /// Recebe tudo de fora (a contagem dos cultos, a lista de favoritas) e não
+  /// lê provider nenhum: é a parte que erra em silêncio — uma lista fora de
+  /// ordem não dá erro, só faz a pessoa não achar o hino — e por isso tem de
+  /// ser testável sem app.
+  ///
+  /// **O número é sempre o desempate.** Em "mais tocados", dois hinos com a
+  /// mesma contagem (o caso comum: zero) sairiam em ordem indefinida, e a
+  /// lista dançaria a cada abertura. Mesma regra do repertório, em "Escolher
+  /// as músicas do culto".
+  static List<SongModel> hinosOrdenados(
+    List<SongModel> hinos,
+    OrdemDosHinos ordem, {
+    Map<String, int> vezesTocadas = const {},
+    Set<String> favoritas = const {},
+  }) {
+    final saida = List<SongModel>.from(hinos);
+    int porNumero(SongModel a, SongModel b) =>
+        (a.numero ?? 0).compareTo(b.numero ?? 0);
+
+    switch (ordem) {
+      case OrdemDosHinos.numero:
+        saida.sort(porNumero);
+      case OrdemDosHinos.nome:
+        // Sem acento e sem maiúscula: senão "Ó Vem" cairia depois de "Zelo",
+        // porque o código do "Ó" é maior que o de qualquer letra comum.
+        saida.sort((a, b) {
+          final c = nomeComparavel(a.name).compareTo(nomeComparavel(b.name));
+          return c != 0 ? c : porNumero(a, b);
+        });
+      case OrdemDosHinos.maisTocados:
+        saida.sort((a, b) {
+          final c =
+              (vezesTocadas[b.id] ?? 0).compareTo(vezesTocadas[a.id] ?? 0);
+          return c != 0 ? c : porNumero(a, b);
+        });
+      case OrdemDosHinos.favoritos:
+        saida.sort((a, b) {
+          final fa = favoritas.contains(a.id) ? 0 : 1;
+          final fb = favoritas.contains(b.id) ? 0 : 1;
+          return fa != fb ? fa.compareTo(fb) : porNumero(a, b);
+        });
+    }
+    return saida;
   }
 
   /// O hino do repertório de hoje, ou nulo.

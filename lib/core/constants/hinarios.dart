@@ -96,8 +96,94 @@ const cantorCristao = Hinario(
   ultimo: 581,
 );
 
-/// Os hinários que a tela oferece, na ordem em que aparecem.
+/// Os hinários que existem, na ordem em que foram acrescentados ao app.
+///
+/// Esta NÃO é a ordem da tela: quem decide isso é cada pessoa, arrastando os
+/// cartões (ver [hinariosNaOrdem]). Aqui é só a lista de quem existe, e a
+/// ordem de fábrica para quem nunca arrastou nada.
 const hinariosDisponiveis = <Hinario>[harpaCrista, cantorCristao];
+
+/// Os hinários na ordem escolhida pela pessoa.
+///
+/// POR QUE ISTO É UMA FUNÇÃO PURA, E NÃO A LISTA GRAVADA
+///
+/// O que fica no aparelho é só uma lista de ids, e ela envelhece de dois
+/// jeitos — os dois silenciosos, que é o que torna isto perigoso:
+///
+/// 1. **Um hinário novo entra no app.** Ele não está na lista gravada, e se
+///    esta função devolvesse apenas o que está gravado, o hinário novo
+///    simplesmente NÃO APARECERIA para quem já tinha arrastado os cartões
+///    uma vez. Ninguém ligaria uma coisa à outra. Por isso o que não está na
+///    lista entra no fim, na ordem de fábrica.
+/// 2. **Um id gravado não existe mais** (escrito errado, hinário retirado).
+///    Ele é descartado, em vez de virar um cartão que não abre nada.
+///
+/// O primeiro da lista é o que a tela abre por padrão — é isso que faz
+/// arrastar "Cantor Cristão" para cima valer como "eu uso o Cantor".
+List<Hinario> hinariosNaOrdem(List<String> salva) {
+  final saida = <Hinario>[];
+  for (final id in salva) {
+    final h = hinarioPorId(id);
+    if (h != null && !saida.any((x) => x.id == h.id)) saida.add(h);
+  }
+  for (final h in hinariosDisponiveis) {
+    if (!saida.any((x) => x.id == h.id)) saida.add(h);
+  }
+  return saida;
+}
+
+/// A lista com [id] movido [passos] para cima (negativo) ou para baixo.
+///
+/// Existe para o menu "Mover para cima/baixo", que é o caminho de quem não
+/// consegue arrastar — e arrastar é um gesto que exige firmeza na mão. A
+/// conta é pura porque errar aqui embaralha a lista de alguém sem erro
+/// nenhum na tela; o índice é preso nas bordas, então "subir" no primeiro
+/// devolve a mesma lista em vez de dar a volta.
+List<String> movido(List<String> ordem, String id, int passos) {
+  final i = ordem.indexOf(id);
+  if (i < 0) return List<String>.from(ordem);
+  var destino = i + passos;
+  if (destino < 0) destino = 0;
+  if (destino > ordem.length - 1) destino = ordem.length - 1;
+  if (destino == i) return List<String>.from(ordem);
+  final saida = List<String>.from(ordem);
+  saida.removeAt(i);
+  saida.insert(destino, id);
+  return saida;
+}
+
+/// Em que ordem a lista de hinos de um hinário aparece.
+///
+/// É a mesma escolha para TODOS os hinários, de propósito: quem gosta de ver
+/// por nome gosta disso na Harpa e no Cantor, e uma escolha por hinário seria
+/// a pessoa descobrir, no meio do culto, que a lista está diferente da que
+/// ela acabou de ver.
+enum OrdemDosHinos {
+  numero('numero', 'Pelo número'),
+  nome('nome', 'Pelo nome (A–Z)'),
+  maisTocados('tocados', 'Mais tocados no ministério'),
+  favoritos('favoritos', 'Meus favoritos primeiro');
+
+  /// O que vai gravado no aparelho. Curto e estável: trocar um destes faria a
+  /// escolha de todo mundo voltar para "pelo número" sem aviso.
+  final String id;
+
+  /// Como a linha do menu se lê.
+  final String rotulo;
+
+  const OrdemDosHinos(this.id, this.rotulo);
+}
+
+/// A ordem com este id, ou "pelo número".
+///
+/// Valor desconhecido cai no PADRÃO, nunca lança: a chave vem do aparelho e
+/// pode ter sobrado de uma versão futura do app, ou ter sido mexida à mão.
+OrdemDosHinos ordemPorId(String? id) {
+  for (final o in OrdemDosHinos.values) {
+    if (o.id == id) return o;
+  }
+  return OrdemDosHinos.numero;
+}
 
 /// O hinário com este id, ou nulo.
 ///

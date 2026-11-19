@@ -180,6 +180,36 @@ class ScaleProvider extends ChangeNotifier {
     return saida;
   }
 
+  /// Quantas vezes cada música foi tocada, pelas escalas passadas.
+  ///
+  /// Mesmas regras de [ultimaVezTocada], pela mesma razão: culto cancelado
+  /// não conta (ninguém tocou nele) e culto futuro não conta (a pergunta é o
+  /// que já foi tocado, não o que está marcado).
+  ///
+  /// **E o mesmo limite, que a tela precisa dizer em voz alta:** a janela de
+  /// leitura vai só até 60 dias atrás, então isto é "mais tocados nos últimos
+  /// dois meses", nunca "mais tocados de todos os tempos". Um hino cantado
+  /// toda semana até agosto aparece aqui com zero.
+  ///
+  /// A mesma música repetida DENTRO de um culto conta uma vez só: foi um
+  /// culto, e contar duas premiaria um repertório gravado com engano.
+  static Map<String, int> vezesTocadas(
+      List<ScaleModel> cultos, DateTime agora) {
+    final saida = <String, int>{};
+    for (final culto in cultos) {
+      if (culto.canceled) continue;
+      if (culto.date.isAfter(agora)) continue;
+      final noCulto = <String>{};
+      for (final ref in culto.songs) {
+        noCulto.add(ref.songId);
+      }
+      for (final id in noCulto) {
+        saida[id] = (saida[id] ?? 0) + 1;
+      }
+    }
+    return saida;
+  }
+
   /// Upcoming services, cancelled ones left out — they are kept in the
   /// database so the generator does not recreate them, but nobody needs to
   /// see a cancelled service as "the next one".
@@ -188,10 +218,7 @@ class ScaleProvider extends ChangeNotifier {
   /// `orderBy('date')`), então o primeiro que passa no filtro é o próximo.
   List<ScaleModel> getUpcomingScales({int limit = 5}) {
     final agora = DateTime.now();
-    return _scales
-        .where((s) => aindaVale(s, agora))
-        .take(limit)
-        .toList();
+    return _scales.where((s) => aindaVale(s, agora)).take(limit).toList();
   }
 
   ScaleModel? get nextScale {
@@ -275,16 +302,15 @@ class ScaleProvider extends ChangeNotifier {
   }
 
   /// Replaces who is scheduled, keeping the answers already given.
-  Future<String?> setLevitas(
-      String scaleId, List<ScaleLevita> levitas) async {
+  Future<String?> setLevitas(String scaleId, List<ScaleLevita> levitas) async {
     final result = await FirestoreService.setScaleLevitas(scaleId, levitas);
     if (!result.success) return result.error;
     _applyLocally(scaleId, (scale) {
       final previous = {for (final l in scale.levitas) l.userId: l.confirmed};
       return scale.copyWith(
         levitas: levitas
-            .map((l) =>
-                l.copyWith(confirmed: previous[l.userId] ?? l.confirmed))
+            .map(
+                (l) => l.copyWith(confirmed: previous[l.userId] ?? l.confirmed))
             .toList(),
       );
     });

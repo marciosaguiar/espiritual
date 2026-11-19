@@ -22,7 +22,8 @@ class LocalStorageService {
 
   static SharedPreferences get prefs {
     if (_prefs == null) {
-      throw Exception('LocalStorageService not initialized. Call init() first.');
+      throw Exception(
+          'LocalStorageService not initialized. Call init() first.');
     }
     return _prefs!;
   }
@@ -73,8 +74,8 @@ class LocalStorageService {
     try {
       final data = Map<String, dynamic>.from(jsonDecode(json) as Map);
       _offlineCache = data.map(
-        (k, v) =>
-            MapEntry(k, SongModel.fromJson(Map<String, dynamic>.from(v as Map))),
+        (k, v) => MapEntry(
+            k, SongModel.fromJson(Map<String, dynamic>.from(v as Map))),
       );
     } catch (_) {
       _offlineCache = {};
@@ -270,8 +271,8 @@ class LocalStorageService {
   /// por nada. A marca resolve isso de outro jeito — se acabamos de mandar a
   /// pessoa ao Cifra Club, o que ela copiou lá é quase certamente uma cifra.
   static Future<void> marcarIdaAoCifraClub(String procurado) async {
-    await prefs.setString(_idaAoCifraClubKey,
-        '${DateTime.now().toIso8601String()}|$procurado');
+    await prefs.setString(
+        _idaAoCifraClubKey, '${DateTime.now().toIso8601String()}|$procurado');
   }
 
   /// O que foi procurado, se a ida foi recente. Nulo caso contrário.
@@ -295,7 +296,33 @@ class LocalStorageService {
 
   static const String _hinarioKey = 'hinario_escolhido';
   static const String _hinosAbertosKey = 'hinos_abertos';
+  static const String _ordemHinariosKey = 'ordem_hinarios';
+  static const String _ordemHinosKey = 'ordem_hinos';
   static const int _maxHinosAbertos = 8;
+
+  /// A ordem em que os hinários aparecem, escolhida arrastando os cartões.
+  ///
+  /// FICA NO APARELHO, como o marcador da Bíblia e os últimos hinos abertos.
+  /// É preferência de quem está com o celular na mão: não há o que
+  /// sincronizar, ninguém mais precisa saber, e no Firestore custaria uma
+  /// leitura por abertura do app para guardar duas palavras.
+  ///
+  /// Guarda só os ids. Quem transforma isto na lista da tela é
+  /// `hinariosNaOrdem`, que sabe lidar com id que não existe mais e com
+  /// hinário novo que ainda não está aqui.
+  static Future<void> salvarOrdemDosHinarios(List<String> ids) async {
+    await prefs.setStringList(_ordemHinariosKey, ids);
+  }
+
+  static List<String> get ordemDosHinarios =>
+      prefs.getStringList(_ordemHinariosKey) ?? const <String>[];
+
+  /// Em que ordem a lista de hinos aparece, dentro de qualquer hinário.
+  static Future<void> salvarOrdemDosHinos(String id) async {
+    await prefs.setString(_ordemHinosKey, id);
+  }
+
+  static String? get ordemDosHinos => prefs.getString(_ordemHinosKey);
 
   /// O hinário que esta pessoa usa neste aparelho.
   ///
@@ -344,11 +371,9 @@ class LocalStorageService {
     return saida;
   }
 
-  static bool isSongOffline(String songId) =>
-      _offlineCache.containsKey(songId);
+  static bool isSongOffline(String songId) => _offlineCache.containsKey(songId);
 
   static int get offlineCount => _offlineCache.length;
 
-  static List<SongModel> get offlineSongsList =>
-      _offlineCache.values.toList();
+  static List<SongModel> get offlineSongsList => _offlineCache.values.toList();
 }
