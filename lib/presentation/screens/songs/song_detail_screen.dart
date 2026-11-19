@@ -1,12 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/songs_provider.dart';
 import '../../../core/constants/app_colors.dart';
-import '../../../core/constants/app_strings.dart';
 import '../../../core/utils/chord_transposer.dart';
 import '../../../core/utils/cifra_colada.dart';
+import '../../../core/utils/mapa_da_musica.dart';
 import '../../widgets/common/abrir_link.dart';
 import '../../widgets/common/glass.dart';
 import '../../widgets/songs/colar_cifra.dart';
@@ -57,11 +58,26 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   int _semitones = 0;
   double _fontSize = 16.0;
 
+  /// Esconder as linhas de tablatura.
+  ///
+  /// Fica no APARELHO, e vale para todas as músicas: quem toca violão quer
+  /// tablatura sempre, e quem canta nunca. Perguntar música por música seria
+  /// o mesmo toque repetido para a mesma pessoa, para sempre.
+  bool _ocultarTab = LocalStorageService.ocultarTablaturas;
+
+  /// O tom se salva sozinho, um instante depois do último toque em − ou +.
+  ///
+  /// Antes havia os botões "Salvar" e "Reset" ao lado do tom, e é o tipo de
+  /// botão que não deveria existir: a pessoa acabou de dizer em que tom quer
+  /// ler: pedir que ela confirme é pedir duas vezes. Esperar um instante
+  /// evita gravar quatro vezes quando ela toca em + quatro vezes.
+  static const _esperaDoTom = Duration(milliseconds: 700);
+  Timer? _relogioDoTom;
+
   /// How this church plays the song. Fetched when the screen opens — it is a
   /// subcollection of the song, so the chart is not downloaded with the song
   /// list.
   ArrangementModel? _arrangement;
-  bool _loadingArrangement = true;
 
   @override
   void initState() {
@@ -77,13 +93,31 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     });
   }
 
+  @override
+  void dispose() {
+    _relogioDoTom?.cancel();
+    super.dispose();
+  }
+
+  /// Muda o tom na tela e guarda depois, sem avisar nada.
+  ///
+  /// Sem mensagem de "tom salvo": é o que a pessoa pediu, e um aviso a cada
+  /// toque em + viraria quatro avisos seguidos.
+  void _mudarTom(int novo) {
+    setState(() => _semitones = novo);
+    _relogioDoTom?.cancel();
+    _relogioDoTom = Timer(_esperaDoTom, () {
+      if (!mounted) return;
+      context.read<AuthProvider>().saveSongTone(widget.song.id, _semitones);
+    });
+  }
+
   Future<void> _loadArrangement() async {
     final found = await FirestoreService.getArrangement(widget.song.id);
     if (!mounted) return;
     final canta = _cantaAgora(context);
     setState(() {
       _arrangement = found;
-      _loadingArrangement = false;
       // Quem toca abre direto na cifra, no tom dele; quem canta, na letra.
       _showChords = !canta && (found?.hasChords ?? false);
     });
@@ -357,18 +391,61 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   /// alguma frequência, e a pessoa lê como app travado.
   Future<void> _openYoutube() => abrirLink(context, widget.song.videoUrl);
 
-  Future<void> _saveTone() async {
+  /// Tirar a música do repertório. NÃO apaga: o documento fica.
+  ///
+  /// A confirmação diz o NOME da música e o que não se perde. O repertório
+  /// inteiro já sumiu do banco uma vez por um toque num menu, com uma
+  /// confirmação que não dizia sequer qual música era.
+  Future<void> _tirarDoRepertorio() async {
+    final songs = context.read<SongsProvider>();
     final auth = context.read<AuthProvider>();
-    await auth.saveSongTone(widget.song.id, _semitones);
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            'Tom ${ChordTransposer.getTransposeDisplay(_semitones)} salvo!',
-          ),
-          backgroundColor: AppColors.success,
-          duration: const Duration(seconds: 2),
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('Tirar "${widget.song.name}" do repertório?'),
+        content: Text(
+          [
+            if (widget.song.artist.isNotEmpty)
+              '${widget.song.name} — ${widget.song.artist}'
+            else
+              widget.song.name,
+            '',
+            'Ela sai da lista e da busca para todo mundo, com a cifra e as '
+                'anotações da música.',
+            '',
+            'DÁ PARA DESFAZER: nada é apagado. Os cultos em que ela já foi '
+                'tocada continuam mostrando o nome, e você devolve a música '
+                'em Músicas → Fora do repertório.',
+          ].join('\n'),
+          style: const TextStyle(
+              fontFamily: 'Poppins', fontSize: 13.5, height: 1.45),
         ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.red, foregroundColor: Colors.white),
+            child: const Text('Tirar do repertório'),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true || !mounted) return;
+
+    final erro = await songs.arquivar(widget.song.id, auth.user?.id ?? '');
+    if (!mounted) return;
+    if (erro == null) {
+      Navigator.pop(context);
+    } else {
+      // Antes a tela fechava mesmo quando falhava, e a música reaparecia na
+      // lista sem explicação nenhuma.
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(erro), backgroundColor: AppColors.red),
       );
     }
   }
@@ -391,6 +468,28 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     }
   }
 
+  /// Uma linha do menu ⋯, no mesmo formato sempre.
+  ///
+  /// Existe para o menu não ser dez blocos de `Row` copiados: a próxima
+  /// opção que alguém acrescentar vai nascer parecida com as outras.
+  PopupMenuItem<String> _opcao(String valor, IconData icone, String texto,
+      {Color? cor}) {
+    return PopupMenuItem<String>(
+      value: valor,
+      child: Row(
+        children: [
+          Icon(icone, size: 18, color: cor),
+          const SizedBox(width: 10),
+          Expanded(child: Text(texto, style: TextStyle(color: cor))),
+        ],
+      ),
+    );
+  }
+
+  /// Tem tablatura na cifra desta música?
+  bool get _temTablatura =>
+      _hasChords && _arrangement!.chords.split('\n').any(ehTablatura);
+
   bool get _mostrandoCifra => _showChords && _hasChords;
 
   /// A cifra (no tom escolhido), quando há e a pessoa pediu; senão a letra.
@@ -398,7 +497,10 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   /// sai a letra pura.
   String _textoExibido(String letra, bool canta) {
     if (_mostrandoCifra) {
-      return ChordTransposer.transposeText(_arrangement!.chords, _semitones);
+      final cifra = _ocultarTab
+          ? semTablaturas(_arrangement!.chords)
+          : _arrangement!.chords;
+      return ChordTransposer.transposeText(cifra, _semitones);
     }
     if (canta) return CifraColada.letraDe(letra);
     return CifraColada.pareceCifra(letra)
@@ -452,322 +554,168 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           overflow: TextOverflow.ellipsis,
         ),
         actions: [
-          // Favorite
+          // Coração e ⋯, e nada mais.
+          //
+          // Eram OITO botões no topo: cifra, anotação, modo culto, offline,
+          // Cifra Club, YouTube, salvar tom e reset. Oito escolhas para quem
+          // abriu a tela querendo uma coisa — ler a música. Tudo continua
+          // existindo, dentro do ⋯; o que saiu da tela foi a obrigação de
+          // escolher antes de ler.
           IconButton(
             icon: Icon(
               isFav ? Icons.favorite_rounded : Icons.favorite_border_rounded,
               color: isFav ? AppColors.red : null,
             ),
+            tooltip: isFav ? 'Tirar das favoritas' : 'Favoritar',
             onPressed: () => auth.toggleFavorite(widget.song.id),
           ),
-          // O menu aparece para o líder e para quem cadastrou a música:
-          // quem digitou o nome errado é quem mais precisa consertá-lo, e
-          // antes só o líder podia.
-          if (auth.isAdmin || _souQuemCadastrou(auth.user?.id))
-            PopupMenuButton<String>(
-              onSelected: (v) async {
-                if (v == 'editar') {
-                  await _editar();
+          PopupMenuButton<String>(
+            tooltip: 'Mais opções',
+            onSelected: (v) async {
+              switch (v) {
+                case 'cifra-ver':
+                  setState(() => _showChords = !_showChords);
                   return;
-                }
-                if (v == 'cifra') {
+                case 'tab':
+                  final novo = !_ocultarTab;
+                  await LocalStorageService.salvarOcultarTablaturas(novo);
+                  if (mounted) setState(() => _ocultarTab = novo);
+                  return;
+                case 'anotacao':
+                  await _editNotes();
+                  return;
+                case 'culto':
+                  setState(() => _isWorshipMode = true);
+                  return;
+                case 'offline':
+                  await _toggleOffline();
+                  return;
+                case 'tom-original':
+                  _mudarTom(0);
+                  return;
+                case 'cifraclub':
+                  await abrirBuscaCifraClub(
+                      context, widget.song.name, widget.song.artist);
+                  return;
+                case 'youtube':
+                  await _openYoutube();
+                  return;
+                case 'letra':
                   await _abrirEditorDeCifra();
                   return;
-                }
-                if (v == 'arquivar') {
-                  // Não apaga: tira do repertório. O documento fica, então
-                  // os cultos em que a música foi tocada seguem mostrando o
-                  // nome dela, e dá para voltar atrás.
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: Text('Tirar "${widget.song.name}" do repertório?'),
-                      content: Text(
-                        [
-                          if (widget.song.artist.isNotEmpty)
-                            '${widget.song.name} — ${widget.song.artist}'
-                          else
-                            widget.song.name,
-                          '',
-                          'Ela sai da lista e da busca para todo mundo, com '
-                              'a cifra e as anotações da música.',
-                          '',
-                          'DÁ PARA DESFAZER: nada é apagado. Os cultos em '
-                              'que ela já foi tocada continuam mostrando o '
-                              'nome, e você devolve a música em Músicas → '
-                              'Fora do repertório.',
-                        ].join('\n'),
-                        style: const TextStyle(
-                            fontFamily: 'Poppins', fontSize: 13.5, height: 1.45),
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancelar'),
-                        ),
-                        ElevatedButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          style: ElevatedButton.styleFrom(
-                              backgroundColor: AppColors.red,
-                              foregroundColor: Colors.white),
-                          child: const Text('Tirar do repertório'),
-                        ),
-                      ],
-                    ),
-                  );
-                  if (confirm == true && mounted) {
-                    final error = await songs.arquivar(
-                        widget.song.id, auth.user?.id ?? '');
-                    if (!mounted) return;
-                    if (error == null) {
-                      Navigator.pop(context);
-                    } else {
-                      // Antes a tela fechava mesmo quando falhava, e a música
-                      // reaparecia na lista sem explicação.
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                            content: Text(error),
-                            backgroundColor: AppColors.red),
-                      );
-                    }
-                  }
-                }
-              },
-              itemBuilder: (_) => [
-                // "Letra e cifra" vem antes de "Editar música": é o que mais
-                // se mexe numa música já cadastrada, e era justamente o que
-                // não tinha onde ser mexido.
-                if (auth.isAdmin)
-                  const PopupMenuItem(
-                    value: 'cifra',
-                    child: Row(
-                      children: [
-                        Icon(Icons.notes_rounded, size: 18),
-                        SizedBox(width: 8),
-                        Text('Letra e cifra'),
-                      ],
-                    ),
-                  ),
-                const PopupMenuItem(
-                  value: 'editar',
-                  child: Row(
-                    children: [
-                      Icon(Icons.edit_outlined, size: 18),
-                      SizedBox(width: 8),
-                      Text('Editar música'),
-                    ],
-                  ),
+                case 'editar':
+                  await _editar();
+                  return;
+                case 'arquivar':
+                  await _tirarDoRepertorio();
+                  return;
+              }
+            },
+            itemBuilder: (_) => [
+              // A ordem é a do uso: o que se faz lendo vem primeiro, o que
+              // se faz uma vez na vida da música vem no fim.
+              if (_hasChords)
+                _opcao(
+                  'cifra-ver',
+                  _showChords ? Icons.queue_music_rounded
+                      : Icons.music_note_rounded,
+                  _showChords ? 'Ocultar cifra' : 'Mostrar cifra',
                 ),
-                // Tirar do repertório continua só do líder: é decisão sobre o
-                // repertório da igreja, não sobre o cadastro de uma música.
-                if (auth.isAdmin)
-                  const PopupMenuItem(
-                    value: 'arquivar',
-                    child: Row(
-                      children: [
-                        Icon(Icons.archive_outlined,
-                            color: AppColors.red, size: 18),
-                        SizedBox(width: 8),
-                        Text('Tirar do repertório (dá para devolver)',
-                            style: TextStyle(color: AppColors.red)),
-                      ],
-                    ),
-                  ),
-              ],
-            ),
+              if (_temTablatura)
+                _opcao(
+                  'tab',
+                  Icons.straighten_rounded,
+                  _ocultarTab ? 'Mostrar tablaturas' : 'Ocultar tablaturas',
+                ),
+              if (_semitones != 0)
+                _opcao('tom-original', Icons.restart_alt_rounded,
+                    'Voltar ao tom original'),
+              _opcao(
+                'anotacao',
+                Icons.sticky_note_2_outlined,
+                auth.getSongNotes(widget.song.id).isEmpty
+                    ? 'Minha anotação'
+                    : 'Minha anotação ✓',
+              ),
+              _opcao('culto', Icons.fullscreen_rounded, 'Modo culto'),
+              _opcao(
+                'offline',
+                isOffline ? Icons.download_done_rounded
+                    : Icons.download_rounded,
+                isOffline ? 'Tirar do celular' : 'Salvar no celular',
+              ),
+              if (widget.song.videoUrl != null)
+                _opcao('youtube', Icons.play_circle_outline_rounded,
+                    'Abrir no YouTube'),
+              _opcao('cifraclub', Icons.open_in_new_rounded,
+                  'Abrir no Cifra Club'),
+              if (auth.isAdmin)
+                _opcao('letra', Icons.notes_rounded, 'Letra e cifra'),
+              if (auth.isAdmin || _souQuemCadastrou(auth.user?.id))
+                _opcao('editar', Icons.edit_outlined, 'Editar música'),
+              if (auth.isAdmin)
+                _opcao('arquivar', Icons.archive_outlined,
+                    'Tirar do repertório (dá para devolver)',
+                    cor: AppColors.red),
+            ],
+          ),
         ],
       ),
       body: Column(
         children: [
-          // Controls bar
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-            color:
-                isDark ? const Color(0x8C141019) : Colors.white.withOpacity(0.55),
-            child: Column(
+          // O TOM, e nada mais.
+          //
+          // É a única coisa que se mexe lendo a música, e a primeira que
+          // quem vai tocar procura. Os botões "Salvar" e "Reset" que ficavam
+          // ao lado saíram: o tom se salva sozinho (ver `_mudarTom`), e
+          // voltar ao original virou uma linha no ⋯ — onde ela aparece só
+          // quando há o que voltar.
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
+            child: Row(
               children: [
-                // Key and transpose — Wrap prevents overflow on small screens
-                Wrap(
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  spacing: 10,
-                  runSpacing: 8,
-                  children: [
-                    // Key display
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
-                      decoration: BoxDecoration(
-                        gradient: AppColors.primaryGradient,
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(
-                        'Tom: $_currentKey',
-                        style: const TextStyle(
-                          fontFamily: 'Poppins',
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    gradient: AppColors.primaryGradient,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    'Tom $_currentKey',
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
                     ),
-                    // Transpose cluster kept together
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        _TransposeButton(
-                          label: '−',
-                          onTap: () => setState(() => _semitones--),
-                        ),
-                        Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 8),
-                          child: Text(
-                            ChordTransposer.getTransposeDisplay(_semitones),
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: isDark
-                                  ? AppColors.textPrimaryDark
-                                  : AppColors.textPrimaryLight,
-                            ),
-                          ),
-                        ),
-                        _TransposeButton(
-                          label: '+',
-                          onTap: () => setState(() => _semitones++),
-                        ),
-                      ],
-                    ),
-                    // Reset
-                    if (_semitones != 0)
-                      GestureDetector(
-                        onTap: () => setState(() => _semitones = 0),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade100,
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Text(
-                            'Reset',
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              fontSize: 11,
-                              color: AppColors.textSecondaryLight,
-                            ),
-                          ),
-                        ),
-                      ),
-                    // Save tone
-                    if (_semitones != 0)
-                      GestureDetector(
-                        onTap: _saveTone,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppColors.blue.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.save_rounded,
-                                  size: 14, color: AppColors.blue),
-                              SizedBox(width: 4),
-                              Text(
-                                'Salvar',
-                                style: TextStyle(
-                                  fontFamily: 'Poppins',
-                                  fontSize: 12,
-                                  color: AppColors.blue,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 10),
-                // Mode toggles — Wrap prevents overflow on small screens
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    // Chart: only offered once we know there is one. The
-                    // chart belongs to the church's arrangement and is
-                    // fetched when this screen opens.
-                    if (_loadingArrangement)
-                      const _ToggleChip(
-                        label: 'Carregando cifra...',
-                        icon: Icons.hourglass_empty_rounded,
-                        isActive: false,
-                      )
-                    else if (_hasChords)
-                      _ToggleChip(
-                        label: _showChords
-                            ? AppStrings.hideChords
-                            : AppStrings.showChords,
-                        icon: _showChords
-                            ? Icons.queue_music_rounded
-                            : Icons.music_note_rounded,
-                        isActive: _showChords,
-                        onTap: () =>
-                            setState(() => _showChords = !_showChords),
-                      )
-                    else
-                      const _ToggleChip(
-                        label: 'Sem cifra ainda',
-                        icon: Icons.music_off_rounded,
-                        isActive: false,
-                      ),
-                    // Personal notes, private to this musician.
-                    _ToggleChip(
-                      label: auth.getSongNotes(widget.song.id).isEmpty
-                          ? 'Minha anotação'
-                          : 'Minha anotação ✓',
-                      icon: Icons.sticky_note_2_outlined,
-                      isActive: auth.getSongNotes(widget.song.id).isNotEmpty,
-                      onTap: _editNotes,
+                const Spacer(),
+                _BotaoDeTom(
+                  rotulo: '−',
+                  isDark: isDark,
+                  onTap: () => _mudarTom(_semitones - 1),
+                ),
+                SizedBox(
+                  width: 54,
+                  child: Text(
+                    ChordTransposer.getTransposeDisplay(_semitones),
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? AppColors.textSecondaryDark
+                          : AppColors.textSecondaryLight,
                     ),
-                    // Worship mode
-                    _ToggleChip(
-                      label: 'Modo Culto',
-                      icon: Icons.fullscreen_rounded,
-                      isActive: false,
-                      onTap: () => setState(() => _isWorshipMode = true),
-                    ),
-                    // Offline
-                    _ToggleChip(
-                      label: isOffline
-                          ? 'Tirar do celular'
-                          : 'Salvar no celular',
-                      icon: isOffline
-                          ? Icons.download_done_rounded
-                          : Icons.download_rounded,
-                      isActive: isOffline,
-                      onTap: _toggleOffline,
-                    ),
-                    // Só abre a busca do site no navegador; nada é lido de lá.
-                    _ToggleChip(
-                      label: 'Cifra Club',
-                      icon: Icons.open_in_new_rounded,
-                      isActive: false,
-                      onTap: () => abrirBuscaCifraClub(
-                          context, widget.song.name, widget.song.artist),
-                    ),
-                    if (widget.song.videoUrl != null)
-                      _ToggleChip(
-                        label: 'YouTube',
-                        icon: Icons.play_circle_outline_rounded,
-                        isActive: false,
-                        activeColor: AppColors.red,
-                        onTap: _openYoutube,
-                      ),
-                  ],
+                  ),
+                ),
+                _BotaoDeTom(
+                  rotulo: '+',
+                  isDark: isDark,
+                  onTap: () => _mudarTom(_semitones + 1),
                 ),
               ],
             ),
@@ -784,10 +732,10 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
               margin: const EdgeInsets.fromLTRB(20, 14, 20, 0),
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.blue.withOpacity(0.08),
+                color: AppColors.blue.withValues(alpha: 0.08),
                 borderRadius: BorderRadius.circular(12),
                 border:
-                    Border.all(color: AppColors.blue.withOpacity(0.25)),
+                    Border.all(color: AppColors.blue.withValues(alpha: 0.25)),
               ),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -831,93 +779,6 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _TransposeButton extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-
-  const _TransposeButton({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: 32,
-        height: 32,
-        decoration: BoxDecoration(
-          color: AppColors.blue,
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: Center(
-          child: Text(
-            label,
-            style: const TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _ToggleChip extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final bool isActive;
-
-  /// Null for a chip that only states something (loading, no chart yet).
-  final VoidCallback? onTap;
-
-  final Color? activeColor;
-
-  const _ToggleChip({
-    required this.label,
-    required this.icon,
-    required this.isActive,
-    this.onTap,
-    this.activeColor,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final color = activeColor ?? AppColors.blue;
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: isActive ? color.withOpacity(0.1) : Colors.grey.shade100,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: isActive ? color.withOpacity(0.3) : Colors.grey.shade200,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon,
-                size: 14, color: isActive ? color : AppColors.textSecondaryLight),
-            const SizedBox(width: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 11,
-                fontWeight: FontWeight.w500,
-                color: isActive ? color : AppColors.textSecondaryLight,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
@@ -1077,5 +938,46 @@ class _TextoMusica extends StatelessWidget {
     );
     if (!mono) return t;
     return SingleChildScrollView(scrollDirection: Axis.horizontal, child: t);
+  }
+}
+
+/// O − e o + do tom: alvo de 44 px, que o polegar acerta sem olhar.
+class _BotaoDeTom extends StatelessWidget {
+  final String rotulo;
+  final bool isDark;
+  final VoidCallback onTap;
+
+  const _BotaoDeTom({
+    required this.rotulo,
+    required this.isDark,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: isDark ? Colors.white12 : Colors.black.withValues(alpha: 0.05),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Center(
+            child: Text(
+              rotulo,
+              style: TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.w600,
+                color: isDark
+                    ? AppColors.textPrimaryDark
+                    : AppColors.textPrimaryLight,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

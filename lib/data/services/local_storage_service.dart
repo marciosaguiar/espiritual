@@ -171,6 +171,23 @@ class LocalStorageService {
 
   static double get fonteBiblia => prefs.getDouble(_bibliaFonteKey) ?? 17;
 
+  // ─── Esconder tablatura ───────────────────────────────────────────────────
+
+  static const String _tablaturaKey = 'ocultar_tablaturas';
+
+  /// Quem toca violão quer tablatura sempre; quem canta, nunca. Então a
+  /// escolha é do APARELHO e vale para todas as músicas — perguntar música
+  /// por música seria o mesmo toque repetido para a mesma pessoa, para
+  /// sempre.
+  ///
+  /// Ausente é MOSTRAR: é como o app sempre funcionou, e esconder parte da
+  /// cifra de quem não pediu seria pior que mostrar demais.
+  static bool get ocultarTablaturas => prefs.getBool(_tablaturaKey) ?? false;
+
+  static Future<void> salvarOcultarTablaturas(bool ocultar) async {
+    await prefs.setBool(_tablaturaKey, ocultar);
+  }
+
   // ─── Rascunho do editor de letra e cifra ──────────────────────────────────
 
   static const String _rascunhoKey = 'rascunho_cifra';
