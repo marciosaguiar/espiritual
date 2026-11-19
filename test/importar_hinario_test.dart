@@ -751,6 +751,112 @@ void main() {
     });
   });
 
+  // O texto do Cantor foi gravado na biblioteca da HARPA: a tela de importar
+  // abre com a Harpa escolhida, e a prévia ("Achei 581 hinos, do 1 ao 581") é
+  // idêntica nos dois hinários. Os 581 primeiros hinos da Harpa viraram hinos do
+  // Cantor, sem nenhum aviso. O que denuncia o engano é o TÍTULO: o hino 15 da
+  // biblioteca tem um nome, e o 15 do texto novo tem outro.
+  group('o texto combina com o que a biblioteca já tem?', () {
+    Map<int, String> biblioteca(int ate) =>
+        {for (var i = 1; i <= ate; i++) i: 'Título antigo $i'};
+
+    List<HinoLido> novos(int de, int ate, String Function(int) titulo) => [
+          for (var i = de; i <= ate; i++)
+            HinoLido(
+                numero: i,
+                titulo: titulo(i),
+                letra: 'letra inventada do hino $i, só para ter o que gravar'),
+        ];
+
+    test('outro hinário por cima: a maioria dos títulos não bate', () {
+      final c = ImportarHinario.conflitoComABiblioteca(
+          biblioteca(50), novos(1, 50, (i) => 'Título de outro livro $i'));
+
+      expect(c, isNotNull);
+      expect(c!.comparados, 50);
+      expect(c.diferentes, 50);
+      expect(c.numero, 1, reason: 'o exemplo é o primeiro hino que difere');
+      expect(c.tituloNaBiblioteca, 'Título antigo 1');
+      expect(c.tituloNoTexto, 'Título de outro livro 1');
+    });
+
+    test('importar de novo o MESMO hinário não acusa nada', () {
+      final c = ImportarHinario.conflitoComABiblioteca(
+          biblioteca(50), novos(1, 50, (i) => 'Título antigo $i'));
+      expect(c, isNull);
+    });
+
+    test('acento, maiúscula e pontuação não contam como título diferente', () {
+      final c = ImportarHinario.conflitoComABiblioteca({
+        1: 'Conversão',
+        2: 'Chuvas de Graça',
+        3: 'O Pão da Vida',
+        4: 'Hino à Bandeira',
+        5: 'Ao Pé da Cruz',
+      }, [
+        for (final e in {
+          1: 'CONVERSAO',
+          2: 'chuvas de graca!',
+          3: 'O pao da vida.',
+          4: 'Hino a Bandeira',
+          5: 'Ao pé da cruz',
+        }.entries)
+          HinoLido(
+              numero: e.key,
+              titulo: e.value,
+              letra: 'letra inventada do hino ${e.key}, só para ter o que gravar'),
+      ]);
+      expect(c, isNull);
+    });
+
+    test('um título contido no outro é o mesmo hino', () {
+      final c = ImportarHinario.conflitoComABiblioteca({
+        for (var i = 1; i <= 6; i++) i: 'Hino da Proclamação $i',
+      }, novos(1, 6, (i) => 'Hino da Proclamação $i da República'));
+      expect(c, isNull);
+    });
+
+    test('correções de digitação em poucos títulos não são um engano', () {
+      // Re-importar serve JUSTAMENTE para corrigir texto: dois de dez
+      // títulos mudando é o uso normal, e não pode virar alarme.
+      final c = ImportarHinario.conflitoComABiblioteca(
+          biblioteca(10),
+          novos(1, 10,
+              (i) => i <= 2 ? 'Título corrigido $i' : 'Título antigo $i'));
+      expect(c, isNull);
+    });
+
+    test('só conta o que existe dos DOIS lados', () {
+      // A biblioteca tem 1 a 50; o texto novo, 41 a 90. Só 41 a 50 se
+      // comparam — e, se baterem, nada a avisar.
+      final c = ImportarHinario.conflitoComABiblioteca(
+          biblioteca(50), novos(41, 90, (i) => 'Título antigo $i'));
+      expect(c, isNull);
+    });
+
+    test('colar poucos hinos não dá base para acusar ninguém', () {
+      final c = ImportarHinario.conflitoComABiblioteca(
+          biblioteca(50), novos(1, 3, (i) => 'Título de outro livro $i'));
+      expect(c, isNull);
+    });
+
+    test('biblioteca vazia: é a primeira importação', () {
+      final c = ImportarHinario.conflitoComABiblioteca(
+          const {}, novos(1, 50, (i) => 'Título de outro livro $i'));
+      expect(c, isNull);
+    });
+
+    test('metade dos títulos diferentes já é motivo de perguntar', () {
+      final c = ImportarHinario.conflitoComABiblioteca(
+          biblioteca(10),
+          novos(1, 10,
+              (i) => i <= 5 ? 'Título de outro livro $i' : 'Título antigo $i'));
+      expect(c, isNotNull);
+      expect(c!.diferentes, 5);
+      expect(c.comparados, 10);
+    });
+  });
+
   // 520 dos 581 hinos do Cantor vêm com a letra TODA EM MAIÚSCULAS. Na tela do
   // culto isso grita, e é difícil de ler de longe.
   group('letra toda em maiúsculas', () {

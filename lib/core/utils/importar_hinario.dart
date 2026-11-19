@@ -31,6 +31,7 @@
 library;
 
 import '../constants/hinarios.dart';
+import 'texto.dart';
 
 /// Os jeitos de escrever o começo de um hino que o app reconhece.
 ///
@@ -262,9 +263,104 @@ class ResultadoDaLeitura {
   }
 }
 
+/// O texto colado NÃO parece ser do hinário que está escolhido.
+///
+/// Existe por um engano que aconteceu de verdade: a tela de importar abre com
+/// a Harpa escolhida, a prévia ("Achei 581 hinos, do 1 ao 581") é IDÊNTICA nos
+/// dois hinários, e o texto do Cantor Cristão foi gravado por cima da Harpa —
+/// 581 hinos trocados, sem um aviso. O que denuncia o engano é o título: o
+/// hino 15 que a biblioteca já tem se chama de um jeito, e o 15 do texto novo,
+/// de outro.
+class ConflitoDeTitulos {
+  /// Quantos números existem nos DOIS lados e puderam ser comparados.
+  final int comparados;
+
+  /// Em quantos deles o título é outro.
+  final int diferentes;
+
+  /// O primeiro número que difere: o exemplo que a tela mostra.
+  final int numero;
+  final String tituloNaBiblioteca;
+  final String tituloNoTexto;
+
+  const ConflitoDeTitulos({
+    required this.comparados,
+    required this.diferentes,
+    required this.numero,
+    required this.tituloNaBiblioteca,
+    required this.tituloNoTexto,
+  });
+}
+
 /// A conta de ler o texto.
 class ImportarHinario {
   const ImportarHinario._();
+
+  /// Menos números em comum que isto não dá base para acusar ninguém: quem
+  /// cola o hinário em partes, ou só três hinos para conferir, não está
+  /// errando de hinário.
+  static const int minimoParaComparar = 5;
+
+  /// Compara os títulos do texto novo com os que a biblioteca JÁ tem para os
+  /// mesmos números, e devolve o conflito quando metade ou mais difere.
+  ///
+  /// Nulo quer dizer "nada a avisar": biblioteca vazia (é a primeira
+  /// importação), poucos números em comum, ou títulos que batem.
+  ///
+  /// **Por que metade, e não "algum":** re-importar serve justamente para
+  /// CORRIGIR texto, então um título aqui e outro ali mudando é o uso normal e
+  /// não pode virar alarme — alarme que toda correção dispara é alarme que se
+  /// aprende a tocar sem ler. Já o hinário errado difere em quase TODOS (no
+  /// engano real, nos 581).
+  ///
+  /// **Título igual** ignora acento, maiúscula e pontuação, e um contido no
+  /// outro conta como o mesmo ("Conversão" e "HC 15 · Conversão"). Título
+  /// vazio de qualquer lado não entra na conta: não há o que comparar.
+  ///
+  /// **Limite conhecido:** biblioteca vazia não tem o que comparar, então a
+  /// PRIMEIRA importação no hinário errado passa. Quem protege esse caso é o
+  /// nome do hinário na pergunta de confirmação.
+  static ConflitoDeTitulos? conflitoComABiblioteca(
+    Map<int, String> existentes,
+    List<HinoLido> novos,
+  ) {
+    if (existentes.isEmpty) return null;
+
+    // Em ordem de número, para o exemplo ser sempre o primeiro que difere e
+    // não depender da ordem em que o texto foi lido.
+    final ordem = [...novos]..sort((a, b) => a.numero.compareTo(b.numero));
+
+    var comparados = 0;
+    var diferentes = 0;
+    HinoLido? exemplo;
+    String? tituloAntigo;
+    for (final h in ordem) {
+      final antigo = existentes[h.numero];
+      if (antigo == null) continue;
+      final a = nomeComparavel(antigo);
+      final b = nomeComparavel(h.titulo);
+      if (a.isEmpty || b.isEmpty) continue;
+      comparados++;
+      final mesmo = a == b ||
+          (a.length >= 4 && b.contains(a)) ||
+          (b.length >= 4 && a.contains(b));
+      if (!mesmo) {
+        diferentes++;
+        exemplo ??= h;
+        tituloAntigo ??= antigo;
+      }
+    }
+
+    if (comparados < minimoParaComparar) return null;
+    if (diferentes * 2 < comparados) return null;
+    return ConflitoDeTitulos(
+      comparados: comparados,
+      diferentes: diferentes,
+      numero: exemplo!.numero,
+      tituloNaBiblioteca: tituloAntigo!,
+      tituloNoTexto: exemplo.titulo,
+    );
+  }
 
   /// Lê [texto] como um hinário de [hinario].
   ///

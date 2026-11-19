@@ -12,6 +12,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
+import 'package:levitasync/data/models/hino_da_biblioteca.dart';
 import 'package:levitasync/data/models/user_model.dart';
 import 'package:levitasync/presentation/providers/auth_provider.dart';
 import 'package:levitasync/presentation/providers/biblioteca_provider.dart';
@@ -41,6 +42,7 @@ Future<void> _montar(
   WidgetTester t, {
   bool lider = true,
   String copiado = '',
+  BibliotecaProvider? biblioteca,
 }) async {
   // Um celular de 375 x 812, como o app é usado na igreja.
   t.view.physicalSize = const Size(375 * 3, 812 * 3);
@@ -63,8 +65,8 @@ Future<void> _montar(
       providers: [
         ChangeNotifierProvider<AuthProvider>.value(
             value: _AuthDeTeste(lider: lider)),
-        ChangeNotifierProvider<BibliotecaProvider>(
-            create: (_) => BibliotecaProvider()),
+        ChangeNotifierProvider<BibliotecaProvider>.value(
+            value: biblioteca ?? BibliotecaProvider()),
       ],
       child: const MaterialApp(home: ImportarHinarioScreen()),
     ),
@@ -351,16 +353,167 @@ void main() {
       await t.tap(find.text('Importar 2 hinos'));
       await t.pumpAndSettle();
 
-      expect(find.text('Importar 2 hinos?'), findsOneWidget);
+      expect(find.text('Importar 2 hinos — Harpa Cristã?'), findsOneWidget);
       expect(find.textContaining('O repertório do ministério não muda.'),
           findsOneWidget);
 
       await t.tap(find.text('Cancelar'));
       await t.pumpAndSettle();
-      expect(find.text('Importar 2 hinos?'), findsNothing);
+      expect(find.text('Importar 2 hinos — Harpa Cristã?'), findsNothing);
       // Continua na conferência, com o botão de volta.
       expect(find.text('Importar 2 hinos'), findsOneWidget);
       expect(find.textContaining('Gravando'), findsNothing);
+    });
+
+    testWidgets('a confirmação diz PARA QUAL hinário os hinos vão', (t) async {
+      // A tela abre com a Harpa escolhida. Quem esquece de tocar em "Cantor
+      // Cristão" precisa ler o nome do hinário na pergunta, em letra grande.
+      await _montar(t, copiado: [_hino(1), _hino(2)].join('\n'));
+      await t.tap(find.text('Cantor Cristão'));
+      await t.pumpAndSettle();
+      await _colar(t);
+
+      await t.ensureVisible(find.text('Importar 2 hinos'));
+      await t.tap(find.text('Importar 2 hinos'));
+      await t.pumpAndSettle();
+
+      expect(find.text('Importar 2 hinos — Cantor Cristão?'), findsOneWidget);
+    });
+
+    testWidgets('a prévia também diz para onde os hinos vão', (t) async {
+      await _montar(t, copiado: [_hino(1), _hino(2)].join('\n'));
+      await _colar(t);
+      expect(find.textContaining('Vai para a biblioteca: Harpa Cristã'),
+          findsOneWidget);
+    });
+  });
+
+  // A biblioteca da Harpa foi sobrescrita com os 581 hinos do Cantor: a tela
+  // abre com a Harpa escolhida, a prévia dos dois hinários é idêntica, e o
+  // texto novo apagou o antigo sem uma pergunta sequer.
+  group('hinário errado: o app pergunta antes de sobrescrever', () {
+    /// Uma biblioteca que JÁ TEM os hinos 1 a 6, com estes títulos, e que
+    /// conta as gravações.
+    ({BibliotecaProvider provider, List<int> gravacoes}) bib() {
+      final gravacoes = <int>[];
+      final provider = BibliotecaProvider(
+        lerIndice: (id) async => (
+          indice: IndiceDoHinario(hinario: id, titulos: {
+            for (var i = 1; i <= 6; i++) i: 'Título $i',
+          }),
+          error: null,
+        ),
+        gravarHinos: ({
+          required hinario,
+          required hinos,
+          required porQuemId,
+          aoAvancar,
+        }) async {
+          gravacoes.add(hinos.length);
+          return (gravados: hinos.length, error: null);
+        },
+      );
+      return (provider: provider, gravacoes: gravacoes);
+    }
+
+    // O texto cujos hinos têm OUTROS títulos que os da biblioteca.
+    String deOutroLivro() => [
+          for (var n = 1; n <= 6; n++)
+            '$n - Outro Livro $n\n'
+                '1. palavras inventadas da estrofe um do hino $n de teste\n\n'
+                '2. palavras inventadas da estrofe dois do hino $n de teste\n',
+        ].join('\n');
+
+    testWidgets('títulos que não batem: avisa, com um exemplo, antes de tudo',
+        (t) async {
+      final b = bib();
+      await _montar(t, copiado: deOutroLivro(), biblioteca: b.provider);
+      await t.pumpAndSettle(); // o índice carrega ao abrir a tela
+      await _colar(t);
+
+      await t.ensureVisible(find.text('Importar 6 hinos'));
+      await t.tap(find.text('Importar 6 hinos'));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('não parecem ser do hinário Harpa Cristã'),
+          findsOneWidget);
+      expect(find.textContaining('o hino 1 é "Título 1"'), findsOneWidget);
+      expect(find.textContaining('"Outro Livro 1"'), findsOneWidget);
+      // A confirmação de sempre NÃO veio: primeiro vem a pergunta de verdade.
+      expect(find.text('Importar 6 hinos — Harpa Cristã?'), findsNothing);
+      expect(b.gravacoes, isEmpty);
+    });
+
+    testWidgets('"Voltar" não grava nada e deixa trocar o hinário', (t) async {
+      final b = bib();
+      await _montar(t, copiado: deOutroLivro(), biblioteca: b.provider);
+      await t.pumpAndSettle();
+      await _colar(t);
+
+      await t.ensureVisible(find.text('Importar 6 hinos'));
+      await t.tap(find.text('Importar 6 hinos'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Voltar'));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('não parecem ser'), findsNothing);
+      expect(find.text('Importar 6 hinos'), findsOneWidget);
+      expect(b.gravacoes, isEmpty);
+    });
+
+    testWidgets('"Importar mesmo assim" ainda passa pela confirmação normal',
+        (t) async {
+      final b = bib();
+      await _montar(t, copiado: deOutroLivro(), biblioteca: b.provider);
+      await t.pumpAndSettle();
+      await _colar(t);
+
+      await t.ensureVisible(find.text('Importar 6 hinos'));
+      await t.tap(find.text('Importar 6 hinos'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Importar mesmo assim'));
+      await t.pumpAndSettle();
+
+      expect(find.text('Importar 6 hinos — Harpa Cristã?'), findsOneWidget);
+      await t.tap(find.text('Cancelar'));
+      await t.pumpAndSettle();
+      expect(b.gravacoes, isEmpty);
+    });
+
+    testWidgets('re-importar o MESMO hinário vai direto à confirmação',
+        (t) async {
+      final b = bib();
+      final mesmo = [
+        for (var n = 1; n <= 6; n++)
+          '$n - Título $n\n'
+              '1. palavras inventadas da estrofe um do hino $n de teste\n\n'
+              '2. palavras inventadas da estrofe dois do hino $n de teste\n',
+      ].join('\n');
+      await _montar(t, copiado: mesmo, biblioteca: b.provider);
+      await t.pumpAndSettle();
+      await _colar(t);
+
+      await t.ensureVisible(find.text('Importar 6 hinos'));
+      await t.tap(find.text('Importar 6 hinos'));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('não parecem ser'), findsNothing);
+      expect(find.text('Importar 6 hinos — Harpa Cristã?'), findsOneWidget);
+    });
+
+    testWidgets('o aviso fala do hinário ESCOLHIDO, não de um fixo', (t) async {
+      final b = bib();
+      await _montar(t, copiado: deOutroLivro(), biblioteca: b.provider);
+      await t.tap(find.text('Cantor Cristão'));
+      await t.pumpAndSettle();
+      await _colar(t);
+
+      await t.ensureVisible(find.text('Importar 6 hinos'));
+      await t.tap(find.text('Importar 6 hinos'));
+      await t.pumpAndSettle();
+
+      expect(find.textContaining('não parecem ser do hinário Cantor Cristão'),
+          findsOneWidget);
     });
   });
 

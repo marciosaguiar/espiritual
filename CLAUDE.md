@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 724 testes
+flutter test                   # 740 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -2183,7 +2183,8 @@ passar:
   (UTC) e reprovava no Mac do dono. O defeito era do TESTE (agora `toUtc()`).
   A suíte inteira foi rodada em `TZ=America/Sao_Paulo` e em UTC: 656 nos dois
   (675 depois de ler o texto real da Harpa; 710 depois do Cantor Cristão;
-  724 depois dos cultos do mesmo dia — ver as seções abaixo).
+  724 depois dos cultos do mesmo dia; 740 depois da trava de hinário errado — ver
+  as seções abaixo).
   **Ao mexer em data, rode também `TZ=America/Sao_Paulo flutter test`.**
 
 Os dois dizem a mesma coisa: o computador do dono é o ambiente que mais difere
@@ -2196,8 +2197,9 @@ da CI, e um teste que só passa na CI não prova que passa onde se publica.
    estavam), importou, e conferiu no celular os hinos 583, 584, 200 e 201.
    Cantor: o texto colado pelo dono ficou no histórico da sessão, então foi
    **EXECUTADO de verdade** contra o motor (ver "O texto do Cantor Cristão") —
-   581 hinos, do 1 ao 581. **Ainda não foi para o app:** a prévia na tela com
-   esse texto e a gravação do lote no Firestore.
+   581 hinos, do 1 ao 581. **Foi para o app, mas com o hinário errado** (ver
+   "Hinário errado"): a gravação no Firestore funcionou, e por isso o engano
+   apareceu.
 2. **A tela num navegador de verdade a 375 px.** Só há testes de widget, com a
    fonte de teste (mais larga que a Poppins) e sem estouro de layout. Rodar o
    app e fotografar, como na rodada de 19/11, ainda falta.
@@ -2367,6 +2369,70 @@ amostra; e a conversão desligada por padrão, o da tela.
 fica no fim do último hino (a amostra mostra); um nome próprio que a lista não
 tem sai em minúscula; um parêntese que ocupa a linha inteira
 (`(Aos anjos escutei)`) não abre frase na linha de baixo.
+
+### Hinário errado: o Cantor foi gravado por cima da Harpa (19/11/2026)
+
+O dono colou o Cantor Cristão (581 hinos) **com a Harpa escolhida** e importou.
+A biblioteca da Harpa passou a ter, do 1 ao 581, os hinos do Cantor: no celular,
+"HC 15 · A Deus Demos Glória" aparecia com o rótulo "Harpa Cristã, hino 15", e
+no teclado do Cantor o hino 100 "ainda não está no repertório". Nada avisou, e
+nenhum teste podia avisar: **a tela abre com a Harpa escolhida e a prévia é
+idêntica nos dois hinários** ("Achei 581 hinos, do 1 ao 581."). O número de
+hinos não diz de que livro eles são — só o TÍTULO diz.
+
+O que o app passou a fazer, em três camadas:
+
+1. **Compara com o que a biblioteca já tem.**
+   `ImportarHinario.conflitoComABiblioteca` (pura) olha só os números que
+   existem nos DOIS lados e acusa quando **metade ou mais** tem outro título.
+   Antes de gravar, a tela pergunta "É este o hinário?", com um exemplo ("na
+   biblioteca o hino 15 é X; no texto que você colou, é Y"), **"Voltar" como
+   botão de destaque** e "Importar mesmo assim" como texto vermelho — o gesto
+   que aperta sem pensar é o que não apaga nada. "Mesmo assim" ainda passa pela
+   confirmação de sempre.
+2. **O nome do hinário está na pergunta de confirmação**
+   ("Importar 581 hinos — Cantor Cristão?") e numa linha colada ao botão
+   ("Vai para a biblioteca: Harpa Cristã"). Cobre o caso que a comparação não
+   cobre.
+3. **Sem o índice, a confirmação diz que não conferiu**, em vez de seguir
+   calada. A tela espera o índice (`carregarIndice`, que sai da memória quando
+   já foi lido) antes de decidir.
+
+Decisões que valem lembrar:
+
+- **Metade, não "algum".** Re-importar serve para CORRIGIR texto: dois títulos
+  em dez mudando é o uso normal. Alarme que toda correção dispara é alarme que
+  se aprende a tocar sem ler. O hinário errado difere em quase todos (aqui, nos
+  581).
+- **Piso de 5 números em comum.** Quem cola três hinos para conferir ou cola o
+  hinário em partes não está errando de hinário.
+- **Título igual ignora acento, maiúscula e pontuação, e um contido no outro
+  conta como o mesmo** — a mesma régua de `nomesParecidos`. Título vazio de um
+  dos lados não entra na conta.
+- **Sem contração com o nome do hinário nos textos NOVOS.** "da Cantor Cristão"
+  sai errado em português (é "do Cantor Cristão"), e o app usa "da ${nome}" em
+  vários lugares antigos — que ficam como estão. Nos novos: "do hinário
+  ${nome}", que serve aos dois gêneros.
+- **A tela guarda o hinário e o resultado de ANTES de esperar a rede**, e a
+  gravação usa os guardados. A conferência é assíncrona, e trocar de hinário no
+  meio dela gravaria outro hinário que o da pergunta.
+
+**Limite conhecido:** biblioteca VAZIA não tem com o que comparar, então a
+PRIMEIRA importação no hinário errado passa. Só a linha "Vai para a
+biblioteca" e o nome no título protegem esse caso — e dependem de a pessoa ler.
+Um passo seguinte possível é comparar também com o índice do OUTRO hinário
+("estes títulos são os do Cantor Cristão"), ao custo de uma leitura a mais.
+
+**Para consertar a biblioteca errada:** importar o Cantor com o chip "Cantor
+Cristão" e a Harpa de novo, com o chip "Harpa Cristã", da mesma fonte de antes.
+Re-importar grava por cima, e as músicas já postas no repertório não mudam (o
+hino vira música de `songs` só quando é usado, e daí é uma cópia).
+
+**Provado quebrando de propósito (sete vezes):** limiar impossível — 6 testes
+reprovam; qualquer diferença acusando — o do "uma correção não é engano";
+piso de 5 removido — o dos poucos hinos; título comparado cru, sem tirar acento
+— o do acento; tela sem a pergunta — 4; "Importar mesmo assim" sem seguir — o da
+confirmação normal; título da confirmação sem o nome do hinário — 4.
 
 ### O manual e o guia dentro do app
 

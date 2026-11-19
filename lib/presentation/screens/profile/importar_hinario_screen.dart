@@ -212,13 +212,79 @@ class _ImportarHinarioScreenState extends State<ImportarHinarioScreen> {
 
   // ── Gravar ────────────────────────────────────────────────────────────────
 
+  /// O texto não combina com o que a biblioteca do hinário escolhido já tem.
+  ///
+  /// O botão de segurança é "Voltar", e o "Importar mesmo assim" fica como
+  /// texto simples e vermelho: o caminho que aperta sem pensar tem de ser o
+  /// que não apaga nada. Devolve true só se a pessoa insistir.
+  Future<bool?> _perguntarSeEhOHinarioCerto(
+    Hinario hinario,
+    ConflitoDeTitulos c,
+  ) {
+    final quantos = c.diferentes == c.comparados
+        ? 'Em todos os ${c.comparados} hinos que a biblioteca já tem'
+        : 'Em ${c.diferentes} dos ${c.comparados} hinos que a biblioteca já '
+            'tem';
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('É este o hinário?'),
+        content: SingleChildScrollView(
+          child: Text(
+            'Estes hinos não parecem ser do hinário ${hinario.nome}. '
+            '$quantos, o título é outro.\n\n'
+            'Por exemplo: na biblioteca o hino ${c.numero} é '
+            '"${c.tituloNaBiblioteca}"; no texto que você colou, é '
+            '"${c.tituloNoTexto}".\n\n'
+            'Se você importar, o texto novo APAGA o que está lá. Se escolheu '
+            'o hinário errado, toque em Voltar e escolha o outro.',
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red.shade700),
+            child: const Text('Importar mesmo assim'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Voltar'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _importar() async {
     final r = _resultado;
     final uid = context.read<AuthProvider>().user?.id;
     if (r == null || !r.achouAlgo || uid == null || _importando) return;
 
+    // O hinário e o resultado de AGORA, guardados: a conferência abaixo espera
+    // a rede, e é com estes dois que a pergunta foi feita e é com estes que a
+    // gravação tem de ser feita.
+    final hinario = _hinario;
     final biblioteca = context.read<BibliotecaProvider>();
-    final indice = biblioteca.indiceDe(_hinario.id);
+
+    // O índice vem da memória quando já foi lido (a tela o pede ao abrir). Só
+    // custa uma leitura se venceu — e é ele que permite conferir se o texto
+    // combina com o que a biblioteca já tem.
+    final erroDoIndice = await biblioteca.carregarIndice(hinario.id);
+    if (!mounted || !identical(_resultado, r)) return;
+    final indice = biblioteca.indiceDe(hinario.id);
+
+    // Sem o índice não dá para conferir — e dizer isso é melhor que seguir
+    // calado, porque quem importa o hinário errado só descobre depois.
+    final semConferencia = erroDoIndice != null;
+
+    final conflito = semConferencia
+        ? null
+        : ImportarHinario.conflitoComABiblioteca(indice.titulos, r.hinos);
+    if (conflito != null) {
+      final seguir = await _perguntarSeEhOHinarioCerto(hinario, conflito);
+      if (seguir != true || !mounted) return;
+    }
+
     final jaTem = r.hinos.where((h) => indice.tem(h.numero)).length;
 
     final jaTemFrase = switch (jaTem) {
@@ -228,16 +294,24 @@ class _ImportarHinarioScreenState extends State<ImportarHinarioScreen> {
       _ => '\n\n$jaTem deles já estão na biblioteca. '
           'O texto novo substitui o antigo.',
     };
+    final semConferenciaFrase = semConferencia
+        ? '\n\nNão consegui conferir o que já está na biblioteca agora, '
+            'então não sei dizer se estes hinos combinam com o que há lá.'
+        : '';
 
     final confirmou = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // O NOME do hinário no título, em letra grande: a tela abre com a
+        // Harpa escolhida, e quem esquece de trocar precisa ler isto antes de
+        // tocar em "Importar".
         title: Text(r.hinos.length == 1
-            ? 'Importar 1 hino?'
-            : 'Importar ${r.hinos.length} hinos?'),
+            ? 'Importar 1 hino — ${hinario.nome}?'
+            : 'Importar ${r.hinos.length} hinos — ${hinario.nome}?'),
         content: Text(
-          'Eles vão para a biblioteca da ${_hinario.nome}. '
-          'O repertório do ministério não muda.$jaTemFrase',
+          'Eles vão para a biblioteca do hinário ${hinario.nome}. '
+          'O repertório do ministério não muda.'
+          '$jaTemFrase$semConferenciaFrase',
         ),
         actions: [
           TextButton(
@@ -261,7 +335,7 @@ class _ImportarHinarioScreenState extends State<ImportarHinarioScreen> {
     });
 
     final res = await biblioteca.importar(
-      hinario: _hinario,
+      hinario: hinario,
       hinos: r.hinos,
       porQuemId: uid,
       aoAvancar: (feitos, total) {
@@ -395,6 +469,7 @@ class _ImportarHinarioScreenState extends State<ImportarHinarioScreen> {
                         isDark: isDark,
                         filho: _Importar(
                           quantos: r.hinos.length,
+                          hinario: _hinario,
                           importando: _importando,
                           feitos: _feitos,
                           total: _total,
@@ -1060,6 +1135,7 @@ class _EscolhaDeFormato extends StatelessWidget {
 
 class _Importar extends StatelessWidget {
   final int quantos;
+  final Hinario hinario;
   final bool importando;
   final int feitos;
   final int total;
@@ -1067,6 +1143,7 @@ class _Importar extends StatelessWidget {
 
   const _Importar({
     required this.quantos,
+    required this.hinario,
     required this.importando,
     required this.feitos,
     required this.total,
@@ -1088,11 +1165,32 @@ class _Importar extends StatelessWidget {
         ],
       );
     }
-    return FilledButton.icon(
-      onPressed: onImportar,
-      icon: const Icon(Icons.download_done_rounded),
-      label: Text(quantos == 1 ? 'Importar 1 hino' : 'Importar $quantos hinos'),
-      style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // A tela abre com a Harpa escolhida e a prévia é a mesma para qualquer
+        // hinário: sem esta linha colada ao botão, quem esqueceu de trocar não
+        // tem nada que o faça olhar para cima.
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: Text(
+            'Vai para a biblioteca: ${hinario.nome}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        FilledButton.icon(
+          onPressed: onImportar,
+          icon: const Icon(Icons.download_done_rounded),
+          label: Text(
+              quantos == 1 ? 'Importar 1 hino' : 'Importar $quantos hinos'),
+          style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(52)),
+        ),
+      ],
     );
   }
 }
