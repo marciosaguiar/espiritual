@@ -91,7 +91,7 @@ class _AvisoDeSaudeState extends State<AvisoDeSaude> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      pior.oQueFazer ?? 'Veja em Perfil → Saúde do sistema.',
+                      pior.oQueFazer ?? 'Veja em Perfil → Painel do líder → Saúde do sistema.',
                       style: const TextStyle(
                         fontFamily: 'Poppins',
                         fontSize: 12.5,

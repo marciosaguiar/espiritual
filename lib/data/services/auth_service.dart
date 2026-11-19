@@ -218,10 +218,10 @@ class AuthService {
   static const String leaderResetUnavailable =
       'Ninguém troca a senha de outra pessoa — nem o líder, nem o app. O '
       'Firebase só deixa cada conta trocar a sua.\n\nSe ela ainda consegue '
-      'entrar: Perfil → Alterar minha senha.\n\nSe não consegue mais, só o '
+      'entrar: Perfil → Conta → Alterar minha senha.\n\nSe não consegue mais, só o '
       'e-mail de recuperação resolve, e ele precisa ter sido cadastrado '
       'antes. Por isso vale pedir a quem ainda não cadastrou que faça agora, '
-      'em Perfil → Recuperar a senha.';
+      'em Perfil → Conta → Recuperar a senha.';
 
   /// Manda o link de "esqueci minha senha" para um e-mail.
   ///
@@ -239,7 +239,7 @@ class AuthService {
       return (
         success: false,
         error: 'Esse endereço é interno do app e não recebe e-mail. Use o '
-            'e-mail que você cadastrou em Perfil → Recuperar a senha. Se você '
+            'e-mail que você cadastrou em Perfil → Conta → Recuperar a senha. Se você '
             'nunca cadastrou um, fale com o líder do ministério.'
       );
     }

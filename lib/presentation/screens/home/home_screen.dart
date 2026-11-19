@@ -583,18 +583,26 @@ class _NextServiceCard extends StatelessWidget {
                 spacing: 6,
                 runSpacing: 6,
                 children: scale!.levitas.map((l) {
+                  // MEDIDO NO MODO ESCURO: estas pastilhas eram brancas
+                  // (`grey.shade100` fixo), e no tema escuro apareciam como
+                  // retalhos claros no meio do cartão — parecia defeito.
+                  // Agora quem não confirmou segue o tema.
                   return Container(
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
                       color: l.confirmed
-                          ? AppColors.success.withOpacity(0.1)
-                          : Colors.grey.shade100,
+                          ? AppColors.success.withValues(alpha: 0.1)
+                          : (isDark
+                              ? Colors.white.withValues(alpha: 0.07)
+                              : Colors.grey.shade100),
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(
                         color: l.confirmed
-                            ? AppColors.success.withOpacity(0.3)
-                            : Colors.grey.shade300,
+                            ? AppColors.success.withValues(alpha: 0.3)
+                            : (isDark
+                                ? Colors.white.withValues(alpha: 0.14)
+                                : Colors.grey.shade300),
                       ),
                     ),
                     child: Row(
@@ -612,7 +620,9 @@ class _NextServiceCard extends StatelessWidget {
                             fontWeight: FontWeight.w500,
                             color: l.confirmed
                                 ? AppColors.success
-                                : AppColors.textSecondaryLight,
+                                : (isDark
+                                    ? AppColors.textSecondaryDark
+                                    : AppColors.textSecondaryLight),
                           ),
                         ),
                       ],

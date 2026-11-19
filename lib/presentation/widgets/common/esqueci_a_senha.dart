@@ -89,7 +89,7 @@ class _EsqueciASenhaState extends State<_EsqueciASenha> {
         children: [
           const Text(
             'Digite o e-mail que você cadastrou no app, em '
-            'Perfil → Recuperar a senha.',
+            'Perfil → Conta → Recuperar a senha.',
             style: estilo,
           ),
           const SizedBox(height: 14),

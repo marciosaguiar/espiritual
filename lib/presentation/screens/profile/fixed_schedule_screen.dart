@@ -575,7 +575,7 @@ class _EditorSlotState extends State<_EditorSlot> {
               }),
               if (widget.equipes.isEmpty)
                 const Text(
-                  'Crie uma equipe primeiro, em Perfil → Equipes.',
+                  'Crie uma equipe primeiro, em Perfil → Painel do líder → Equipes.',
                   style: TextStyle(
                       fontFamily: 'Poppins',
                       fontSize: 12,

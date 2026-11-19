@@ -4,8 +4,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 ///
 /// `pendente` é onde todo cadastro começa: o endereço do app é público, então
 /// qualquer um com o link cria conta, e sem este degrau estaria dentro do chat
-/// e da escala no mesmo instante. O líder aprova ou recusa em Perfil →
-/// Membros. As regras do banco não liberam leitura nenhuma para pendente e
+/// e da escala no mesmo instante. O líder aprova ou recusa em Perfil → Painel do
+/// líder → Membros. As regras do banco não liberam leitura nenhuma para pendente e
 /// recusado, fora o próprio cadastro — é isso que faz a trava valer de
 /// verdade, e não só sumir com os botões da tela.
 enum UserRole { pendente, levita, admin, removido }

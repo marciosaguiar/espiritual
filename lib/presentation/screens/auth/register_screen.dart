@@ -239,9 +239,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     SizedBox(width: 9),
                                     Expanded(
                                       child: Text(
-                                        'Você entra como Levita. Quem criou o ministério '
-                                        'no app é o Líder e pode promover outras pessoas '
-                                        'depois, no Perfil.',
+                                        // O TEXTO DIZIA "Você entra como
+                                        // Levita", e isso deixou de ser
+                                        // verdade quando a aprovação do
+                                        // líder passou a existir: todo
+                                        // cadastro nasce pendente. Quem
+                                        // lesse isto e caísse na tela de
+                                        // espera acharia o app quebrado.
+                                        'Seu cadastro fica aguardando um líder '
+                                        'aprovar — é assim para todo mundo. '
+                                        'Enquanto isso o app explica a espera, '
+                                        'e o líder recebe o seu pedido.',
                                         style: TextStyle(
                                           fontFamily: 'Poppins',
                                           fontSize: 12,

@@ -266,10 +266,10 @@ class _SemRecuperacao extends StatelessWidget {
                   um
                       ? 'Ela ainda não cadastrou e-mail. Se esquecer a senha, '
                           'não há como devolver o acesso — nem por você. Peça '
-                          'que faça agora, em Perfil → Recuperar a senha.'
+                          'que faça agora, em Perfil → Conta → Recuperar a senha.'
                       : 'Elas ainda não cadastraram e-mail. Quem esquecer a '
                           'senha perde o acesso, e nem você consegue devolver. '
-                          'Peça que façam agora, em Perfil → Recuperar a senha.',
+                          'Peça que façam agora, em Perfil → Conta → Recuperar a senha.',
                   style: const TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 12,
@@ -681,7 +681,7 @@ class _MemberRowState extends State<_MemberRow> {
                       ),
                     ),
                   // Nunca na própria linha: sair do ministério é decisão de
-                  // quem sai, e fica em Perfil → Sair do ministério.
+                  // quem sai, e fica em Perfil → Conta → Sair do ministério.
                   if (!widget.isMe)
                     const PopupMenuItem(
                       value: 'remover',
