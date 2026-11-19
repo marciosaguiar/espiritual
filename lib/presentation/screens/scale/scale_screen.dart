@@ -36,14 +36,16 @@ class _ScaleScreenState extends State<ScaleScreen> {
     final scale = context.watch<ScaleProvider>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final selectedScale = _selectedDay != null
-        ? scale.getScaleForDay(_selectedDay!)
-        : null;
+    // TODOS os cultos do dia tocado: o domingo tem o da manhã e o da noite.
+    final selectedScales = _selectedDay != null
+        ? scale.getScalesForDay(_selectedDay!)
+        : const <ScaleModel>[];
 
-    // Precompute the days that have a service for the focused month so the
-    // calendar's per-cell lookup is O(1) instead of scanning all scales.
-    final serviceDays =
-        scale.getDaysWithServices(_focusedDay.year, _focusedDay.month);
+    // Quantos cultos há em cada dia do mês em foco, contado uma vez, para a
+    // consulta de cada célula do calendário ser O(1) em vez de percorrer
+    // todos os cultos.
+    final cultosPorDia =
+        scale.getServicesPerDay(_focusedDay.year, _focusedDay.month);
 
     return Scaffold(
       appBar: AppBar(
@@ -102,10 +104,12 @@ class _ScaleScreenState extends State<ScaleScreen> {
               onPageChanged: (focused) {
                 setState(() => _focusedDay = focused);
               },
+              // Um ponto por culto: dois pontos no domingo dizem, sem tocar,
+              // que há o da manhã e o da noite.
               eventLoader: (day) {
-                final hasService =
-                    serviceDays.contains(DateTime(day.year, day.month, day.day));
-                return hasService ? [day] : [];
+                final quantos =
+                    cultosPorDia[DateTime(day.year, day.month, day.day)] ?? 0;
+                return List<DateTime>.filled(quantos, day);
               },
               calendarStyle: CalendarStyle(
                 outsideDaysVisible: false,
@@ -197,9 +201,8 @@ class _ScaleScreenState extends State<ScaleScreen> {
                 ? _UpcomingServicesView(scale: scale)
                 : _SelectedDayView(
                     day: _selectedDay!,
-                    scaleModel: selectedScale,
+                    cultos: selectedScales,
                     auth: auth,
-                    scale: scale,
                   ),
           ),
         ],
@@ -217,17 +220,11 @@ class _ScaleScreenState extends State<ScaleScreen> {
       return;
     }
 
-    if (scale.getScaleForDay(_selectedDay!) != null) {
-      Navigator.push(
-        context,
-        GlassPageRoute(
-          builder: (_) => ScaleDetailScreen(
-            scale: scale.getScaleForDay(_selectedDay!)!,
-          ),
-        ),
-      );
-      return;
-    }
+    // O "+" sempre abre a criação, mesmo num dia que já tem culto. Antes, num
+    // dia com culto ele pulava para o culto que existia — e com dois cultos
+    // por dia isso impedia criar o segundo. O que o impede de criar o MESMO
+    // culto duas vezes é a conferência de horário, em "Criar".
+    final doDia = scale.getScalesForDay(_selectedDay!);
 
     showDialog(
       context: context,
@@ -246,6 +243,19 @@ class _ScaleScreenState extends State<ScaleScreen> {
             return Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (doDia.isNotEmpty) ...[
+                  // Diz o que já existe, para ninguém criar sem saber.
+                  Text(
+                    'Neste dia já há: ${doDia.map((c) => '${c.serviceType} '
+                        'às ${DateFormat('HH:mm').format(c.date)}').join(', ')}',
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 12,
+                      color: AppColors.textSecondaryLight,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
                 ...['Culto', 'Ensaio', 'Especial'].map((type) {
                   return RadioListTile<String>(
                     title: Text(type,
@@ -321,6 +331,22 @@ class _ScaleScreenState extends State<ScaleScreen> {
               onPressed: () async {
                 Navigator.pop(ctx);
                 final dia = _selectedDay!;
+                // Mesmo dia e mesma hora de um culto que já existe é o mesmo
+                // culto: criar de novo deixaria dois iguais na lista.
+                final repetido = doDia.any((c) =>
+                    c.date.hour == time.hour && c.date.minute == time.minute);
+                if (repetido) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Já existe um culto às '
+                          '${time.hour.toString().padLeft(2, '0')}:'
+                          '${time.minute.toString().padLeft(2, '0')} neste dia. '
+                          'Escolha outro horário.'),
+                      backgroundColor: AppColors.red,
+                    ),
+                  );
+                  return;
+                }
                 final newScale = FirestoreService.createScaleModel(
                   date: DateTime(dia.year, dia.month, dia.day,
                       time.hour, time.minute),
@@ -395,22 +421,22 @@ class _UpcomingServicesView extends StatelessWidget {
 
 class _SelectedDayView extends StatelessWidget {
   final DateTime day;
-  final ScaleModel? scaleModel;
+
+  /// Todos os cultos do dia, do mais cedo ao mais tarde.
+  final List<ScaleModel> cultos;
   final AuthProvider auth;
-  final ScaleProvider scale;
 
   const _SelectedDayView({
     required this.day,
-    required this.scaleModel,
+    required this.cultos,
     required this.auth,
-    required this.scale,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    if (scaleModel == null) {
+    if (cultos.isEmpty) {
       return Padding(
         padding: const EdgeInsets.all(20),
         child: Column(
@@ -448,37 +474,33 @@ class _SelectedDayView extends StatelessWidget {
       );
     }
 
-    return _ServiceCard(scale: scaleModel!, onTap: () {
-      Navigator.push(
-        context,
-        GlassPageRoute(
-          builder: (_) => ScaleDetailScreen(scale: scaleModel!),
-        ),
-      );
-    });
+    // Um cartão por culto; o toque de cada um abre o dele.
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+      itemCount: cultos.length,
+      itemBuilder: (ctx, i) => _ServiceCard(scale: cultos[i]),
+    );
   }
 }
 
 class _ServiceCard extends StatelessWidget {
   final ScaleModel scale;
-  final VoidCallback? onTap;
 
-  const _ServiceCard({required this.scale, this.onTap});
+  const _ServiceCard({required this.scale});
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return GestureDetector(
-      onTap: onTap ??
-          () {
-            Navigator.push(
-              context,
-              GlassPageRoute(
-                builder: (_) => ScaleDetailScreen(scale: scale),
-              ),
-            );
-          },
+      onTap: () {
+        Navigator.push(
+          context,
+          GlassPageRoute(
+            builder: (_) => ScaleDetailScreen(scale: scale),
+          ),
+        );
+      },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(16),

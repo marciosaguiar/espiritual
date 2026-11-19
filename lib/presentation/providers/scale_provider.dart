@@ -62,17 +62,54 @@ class ScaleProvider extends ChangeNotifier {
     }
   }
 
-  ScaleModel? getScaleForDay(DateTime day) {
-    final date = DateTime(day.year, day.month, day.day);
-    try {
-      return _scales.firstWhere((s) {
-        final sDate = DateTime(s.date.year, s.date.month, s.date.day);
-        return sDate == date;
-      });
-    } catch (_) {
-      return null;
-    }
+  /// Coloca uma lista de cultos na memória, sem passar pelo Firestore. Só os
+  /// testes de tela usam: o provider de verdade só se enche pela escuta.
+  @visibleForTesting
+  void carregarParaTeste(List<ScaleModel> cultos) {
+    _scales = cultos;
+    notifyListeners();
   }
+
+  /// TODOS os cultos de um dia, do mais cedo ao mais tarde.
+  ///
+  /// Existia `getScaleForDay`, que devolvia UM culto — o primeiro que
+  /// achasse. Numa igreja em que o domingo tem culto de manhã e de noite (e a
+  /// quarta também), tocar no dia mostrava só o da manhã: o da noite estava no
+  /// banco, na lista de próximos e com ponto no calendário, mas não dava para
+  /// abrir pelo dia. A pergunta "qual é o culto deste dia?" não tem resposta
+  /// única aqui, então a função que a fazia deixou de existir — e não deve
+  /// voltar.
+  ///
+  /// Pura, e recebe a lista, como [aindaVale]: é conta de data, e conta de
+  /// data se testa melhor sem o banco no meio. A hora do dia tocado não
+  /// importa; cancelado entra (a tela o mostra riscado, com a marca).
+  static List<ScaleModel> cultosDoDia(List<ScaleModel> todos, DateTime dia) {
+    return todos
+        .where((s) =>
+            s.date.year == dia.year &&
+            s.date.month == dia.month &&
+            s.date.day == dia.day)
+        .toList()
+      ..sort((a, b) => a.date.compareTo(b.date));
+  }
+
+  List<ScaleModel> getScalesForDay(DateTime day) => cultosDoDia(_scales, day);
+
+  /// Quantos cultos há em cada dia de um mês — para o calendário pôr um ponto
+  /// por culto, e o líder ver sem tocar que o domingo tem dois.
+  static Map<DateTime, int> cultosPorDia(
+      List<ScaleModel> todos, int ano, int mes) {
+    final saida = <DateTime, int>{};
+    for (final s in todos) {
+      if (s.date.year != ano || s.date.month != mes) continue;
+      final dia = DateTime(s.date.year, s.date.month, s.date.day);
+      saida[dia] = (saida[dia] ?? 0) + 1;
+    }
+    return saida;
+  }
+
+  Map<DateTime, int> getServicesPerDay(int year, int month) =>
+      cultosPorDia(_scales, year, month);
 
   List<ScaleModel> getScalesForMonth(int year, int month) {
     return _scales.where((s) {
@@ -393,15 +430,6 @@ class ScaleProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Check if a day has a service scheduled
-  bool hasDayService(DateTime day) => getScaleForDay(day) != null;
-
-  /// Days in current month with services
-  Set<DateTime> getDaysWithServices(int year, int month) {
-    return getScalesForMonth(year, month)
-        .map((s) => DateTime(s.date.year, s.date.month, s.date.day))
-        .toSet();
-  }
 }
 
 /// Uma música que eu vou tocar, e em que culto.

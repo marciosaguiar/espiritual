@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 710 testes
+flutter test                   # 724 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -156,6 +156,21 @@ como não confirmados.
   para as músicas, e **`allow delete: if false` em `scales`** vale para
   todos, líder incluído — esconder o botão não bastaria, porque a API aceita
   quem falar direto com ela. Apagar de verdade, só pelo console do Firebase.
+- **Um dia pode ter MAIS DE UM culto — e a pergunta "qual é o culto deste dia?"
+  não tem resposta única.** O domingo tem o da manhã e o da noite, e a quarta
+  também. A Escala tinha `getScaleForDay`, que devolvia o primeiro que achasse:
+  tocar no domingo mostrava só o das 8h, e o das 19h estava no banco, na lista
+  de próximos e com ponto no calendário, mas **não dava para abrir pelo dia**.
+  Não aparecia em teste nenhum porque nenhum teste tinha dois cultos no mesmo
+  dia. Agora `ScaleProvider.cultosDoDia` devolve TODOS, do mais cedo ao mais
+  tarde (função pura que recebe a lista, como `aindaVale`), e a função de um
+  culto só **deixou de existir**: deixá-la ali seria convidar o defeito a
+  voltar. Três consequências na mesma tela: o calendário põe **um ponto por
+  culto** (`cultosPorDia`), o "+" **sempre abre a criação** — antes, num dia
+  com culto, pulava para o que existia e impedia criar o segundo — e quem
+  impede criar o MESMO culto duas vezes é a conferência de horário ("Já existe
+  um culto às 19:30 neste dia"), porque o id do culto criado à mão é sorteado
+  e não barraria nada.
 - **`manuallyEdited`** marca o culto que o líder ajustou à mão. "Aplicar aos
   próximos cultos?", ao salvar uma equipe, pula esses e preserva quem já
   confirmou. Confirmar presença NÃO marca — é ação do levita, não edição.
@@ -2167,8 +2182,8 @@ passar:
   data zero, que em Brasília é 31/12/1969. Passava no GitHub e no contêiner
   (UTC) e reprovava no Mac do dono. O defeito era do TESTE (agora `toUtc()`).
   A suíte inteira foi rodada em `TZ=America/Sao_Paulo` e em UTC: 656 nos dois
-  (675 depois de ler o texto real da Harpa; 710 depois do Cantor Cristão —
-  ver as seções abaixo).
+  (675 depois de ler o texto real da Harpa; 710 depois do Cantor Cristão;
+  724 depois dos cultos do mesmo dia — ver as seções abaixo).
   **Ao mexer em data, rode também `TZ=America/Sao_Paulo flutter test`.**
 
 Os dois dizem a mesma coisa: o computador do dono é o ambiente que mais difere
