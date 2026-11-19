@@ -47,6 +47,10 @@ class _MainScreenState extends State<MainScreen> {
   static const int _abaChat = 3;
   static const int _abaEscala = 2;
 
+  /// Índice da aba Músicas, para os contadores do Perfil abrirem as listas
+  /// que já existem lá.
+  static const int _abaMusicas = 1;
+
   /// Índice da aba Perfil, usado por quem precisa levar a pessoa até lá.
   static const int _abaPerfil = 4;
 
@@ -60,7 +64,7 @@ class _MainScreenState extends State<MainScreen> {
     const SongsScreen(),
     const ScaleScreen(),
     const ChatScreen(),
-    const ProfileScreen(),
+    ProfileScreen(onAbrirMusicas: _abrirMusicasCom),
   ];
 
   @override
@@ -144,6 +148,16 @@ class _MainScreenState extends State<MainScreen> {
         ),
       ),
     );
+  }
+
+  /// Abre a aba Músicas já com o filtro pedido.
+  ///
+  /// É o que os contadores do Perfil usam: "Favoritas" e "No celular" são
+  /// filtros que já existem na aba Músicas, e o Perfil tinha cópias das duas
+  /// listas no fim da tela — onde ninguém rolava.
+  void _abrirMusicasCom(SongsFilter filtro) {
+    context.read<SongsProvider>().setFilter(filtro);
+    _goToTab(_abaMusicas);
   }
 
   void _abrirMembros() {

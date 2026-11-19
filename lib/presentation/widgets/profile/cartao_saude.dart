@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../data/models/saude_model.dart';
 import '../../providers/saude_provider.dart';
+import '../common/glass.dart';
 
 /// "Saúde do sistema", no Perfil do líder.
 ///
@@ -216,5 +217,101 @@ Color corDe(EstadoDeSaude e) {
       return AppColors.red;
     case EstadoDeSaude.desconhecido:
       return AppColors.textSecondaryLight;
+  }
+}
+
+/// A tarja curta de saúde, no Perfil do líder: "Algo parou — toque para ver".
+///
+/// POR QUE ELA É CURTA, E POR QUE SOME
+///
+/// O cartão com as cinco linhas saiu do Perfil e foi para o Painel do líder:
+/// cinco linhas de diagnóstico na tela principal, com tudo verde, é o jeito
+/// de a pessoa aprender a passar o olho por cima. Aqui fica só o aviso, e só
+/// quando há o que ver — **tudo verde é invisível**.
+///
+/// Ela não acende em `desconhecido`: "não consegui falar com o Worker" é o
+/// wi-fi da igreja, não o sistema (ver `SaudeDoSistema`).
+class AvisoCurtoDeSaude extends StatefulWidget {
+  const AvisoCurtoDeSaude({super.key});
+
+  @override
+  State<AvisoCurtoDeSaude> createState() => _AvisoCurtoDeSaudeState();
+}
+
+class _AvisoCurtoDeSaudeState extends State<AvisoCurtoDeSaude> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<SaudeProvider>().carregarUmaVez();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final p = context.watch<SaudeProvider>();
+    final saude = p.saude;
+    if (saude == null) return const SizedBox.shrink();
+
+    // Amarelo também aparece: "já passou da hora de hoje" é o aviso que
+    // ainda dá tempo de agir antes de alguém ficar sem o lembrete.
+    final ruim = saude.pior;
+    final alerta = ruim ??
+        saude.itens.cast<ItemDeSaude?>().firstWhere(
+              (i) => i?.estado == EstadoDeSaude.alerta,
+              orElse: () => null,
+            );
+    if (alerta == null) return const SizedBox.shrink();
+
+    final cor = corDe(alerta.estado);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Material(
+        color: cor.withValues(alpha: isDark ? 0.16 : 0.10),
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => Navigator.push(
+            context,
+            GlassPageRoute(
+              builder: (_) => Scaffold(
+                appBar: AppBar(title: const Text('Saúde do sistema')),
+                body: const SafeArea(
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.all(20),
+                    child: CartaoSaude(),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(13),
+            child: Row(
+              children: [
+                Icon(Icons.warning_amber_rounded, size: 20, color: cor),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    '${alerta.titulo}: toque para ver',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w600,
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight,
+                    ),
+                  ),
+                ),
+                Icon(Icons.chevron_right_rounded, color: cor),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

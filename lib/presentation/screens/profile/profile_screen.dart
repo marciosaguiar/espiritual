@@ -15,8 +15,6 @@ import '../../../data/services/avisos_service.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../providers/agenda_provider.dart';
 import '../../providers/scale_provider.dart';
-import '../songs/song_detail_screen.dart';
-import '../biblia/biblia_screen.dart';
 import '../../widgets/profile/cartao_saude.dart';
 import 'fixed_schedule_screen.dart';
 import 'members_screen.dart';
@@ -27,7 +25,15 @@ import '../../widgets/common/selecao_de_funcoes.dart';
 import '../../widgets/common/recuperacao_por_email.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  /// Abre a aba Músicas já com o filtro escolhido.
+  ///
+  /// Vem de fora porque quem troca de aba é o `main_screen`. É o que faz os
+  /// contadores de "Favoritas" e "No celular" levarem às listas que já
+  /// existem lá, em vez de o Perfil ter cópias delas no fim da tela — que
+  /// era o jeito antigo, e ninguém rolava até lá.
+  final void Function(SongsFilter)? onAbrirMusicas;
+
+  const ProfileScreen({super.key, this.onAbrirMusicas});
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -310,6 +316,278 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
+  // ── As telas da lista curta ─────────────────────────────────────────────
+  //
+  // Cada uma responde UMA pergunta, e todas são construídas aqui dentro, em
+  // closures: assim elas alcançam os métodos desta tela (trocar senha, sair)
+  // sem precisar de uma fila de callbacks atravessando cinco arquivos.
+
+  void _abrirEm(String titulo, WidgetBuilder corpo) {
+    Navigator.push(
+      context,
+      GlassPageRoute(
+        builder: (ctx) => Scaffold(
+          appBar: AppBar(title: Text(titulo)),
+          body: SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 60),
+              child: corpo(ctx),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _abrirAvisos() => _abrirEm('Avisos', (_) => const Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [_AvisosDoApp()],
+      ));
+
+  void _abrirConta() {
+    final user = context.read<AuthProvider>().user;
+    if (user == null) return;
+    _abrirEm('Conta', (ctx) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Vem ANTES de "Alterar minha senha" de propósito: esta é a que a
+          // pessoa precisa ter feito ANTES de precisar dela. Sem e-mail
+          // cadastrado, senha esquecida é acesso perdido — não existe quem
+          // destrave depois, nem o líder.
+          _SettingRow(
+            icon: user.recuperacaoPorEmail
+                ? Icons.verified_user_outlined
+                : Icons.shield_outlined,
+            label: 'Recuperar a senha',
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  user.recuperacaoPorEmail ? 'Pronto' : 'Falta cadastrar',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: user.recuperacaoPorEmail
+                        ? AppColors.success
+                        : AppColors.red,
+                  ),
+                ),
+                const Icon(Icons.chevron_right_rounded,
+                    color: AppColors.textSecondaryLight),
+              ],
+            ),
+            onTap: () => mostrarRecuperacaoPorEmail(ctx),
+          ),
+          const SizedBox(height: 8),
+          _SettingRow(
+            icon: Icons.key_outlined,
+            label: 'Alterar minha senha',
+            trailing: const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textSecondaryLight),
+            onTap: () => _showChangePasswordSheet(ctx, user),
+          ),
+          const SizedBox(height: 22),
+          const _SairDoMinisterio(),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () async {
+                final confirm = await showDialog<bool>(
+                  context: ctx,
+                  builder: (_) => AlertDialog(
+                    title: const Text('Sair da conta'),
+                    content:
+                        const Text('Deseja realmente sair da sua conta?'),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancelar'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.red),
+                        child: const Text('Sair'),
+                      ),
+                    ],
+                  ),
+                );
+                if (confirm == true && mounted) {
+                  await context.read<AuthProvider>().logout();
+                }
+              },
+              icon: const Icon(Icons.logout_rounded,
+                  color: AppColors.red, size: 18),
+              label: const Text(
+                AppStrings.logout,
+                style: TextStyle(
+                  color: AppColors.red,
+                  fontFamily: 'Poppins',
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: AppColors.red),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    });
+  }
+
+  void _abrirAjuda() => _abrirEm('Ajuda', (ctx) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _SettingRow(
+            icon: Icons.menu_book_rounded,
+            label: 'Como usar o app',
+            trailing: const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textSecondaryLight),
+            onTap: () => _showHelpSheet(ctx),
+          ),
+          const SizedBox(height: 8),
+          _SettingRow(
+            icon: Icons.info_outline_rounded,
+            label: 'Sobre o ${AppStrings.appName}',
+            trailing: const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textSecondaryLight),
+            onTap: () => _showAboutSheet(ctx),
+          ),
+        ],
+      ));
+
+  void _abrirPainelDoLider() => _abrirEm('Painel do líder', (ctx) => Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // A saúde do sistema vem PRIMEIRO: é a única coisa aqui que pode
+          // estar quebrada agora.
+          const CartaoSaude(),
+          const SizedBox(height: 14),
+          _SettingRow(
+            icon: Icons.groups_rounded,
+            label: 'Membros e pedidos de entrada',
+            trailing: const _SeloPendentes(),
+            onTap: () => Navigator.push(
+              ctx,
+              GlassPageRoute(builder: (_) => const MembersScreen()),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _SettingRow(
+            icon: Icons.diversity_3_rounded,
+            label: 'Equipes',
+            trailing: const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textSecondaryLight),
+            onTap: () => Navigator.push(
+              ctx,
+              GlassPageRoute(builder: (_) => const TeamsScreen()),
+            ),
+          ),
+          const SizedBox(height: 8),
+          _SettingRow(
+            icon: Icons.event_repeat_rounded,
+            label: 'Agenda fixa',
+            trailing: const Icon(Icons.chevron_right_rounded,
+                color: AppColors.textSecondaryLight),
+            onTap: () => Navigator.push(
+              ctx,
+              GlassPageRoute(builder: (_) => const FixedScheduleScreen()),
+            ),
+          ),
+        ],
+      ));
+
+  /// "Tons salvos": o tom em que EU toco cada música.
+  ///
+  /// A lista morava no fim do Perfil, depois de tudo — ninguém rolava até
+  /// lá. Virou a tela que o contador abre.
+  void _abrirTonsSalvos() {
+    _abrirEm('Tons salvos', (ctx) {
+      final auth = ctx.read<AuthProvider>();
+      final songs = ctx.read<SongsProvider>();
+      final isDark = Theme.of(ctx).brightness == Brightness.dark;
+      final entradas = auth.songPrefs.entries.toList();
+
+      if (entradas.isEmpty) {
+        return Text(
+          'Nenhum tom salvo ainda.\n\nQuando você mudar o tom de uma música '
+          'com o − ou o +, ele fica salvo para você e aparece aqui.',
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 14,
+            height: 1.5,
+            color: isDark
+                ? AppColors.textSecondaryDark
+                : AppColors.textSecondaryLight,
+          ),
+        );
+      }
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: entradas.map((e) {
+          final song = songs.getSongById(e.key);
+          if (song == null) return const SizedBox.shrink();
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: isDark ? AppColors.cardDark : AppColors.cardLight,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
+              ),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    song.name,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 14,
+                      color: isDark
+                          ? AppColors.textPrimaryDark
+                          : AppColors.textPrimaryLight,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: AppColors.blue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  // O tom em que a pessoa toca, não o deslocamento: "+2" não
+                  // diz nada para quem canta, "D → E" diz.
+                  child: Text(
+                    '${song.originalKey} → '
+                    '${ChordTransposer.getKeyName(song.originalKey, e.value.semitones)}',
+                    style: const TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.blue,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      );
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
@@ -321,10 +599,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (user == null) {
       return const Center(child: CircularProgressIndicator());
     }
-
-    final favoriteSongs = songs.repertorio
-        .where((s) => user.favoriteSongs.contains(s.id))
-        .toList();
 
     return Scaffold(
       body: CustomScrollView(
@@ -518,7 +792,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                   const SizedBox(height: 20),
 
-                  // Stats cards
+                  // Os três contadores, agora TOCÁVEIS.
+                  //
+                  // Eram números decorativos, e as listas que eles contavam
+                  // ficavam no FIM do Perfil, depois de tudo — então o número
+                  // dizia "você tem 12 favoritas" e não levava a lugar
+                  // nenhum. Agora cada um abre a sua lista, e as duas seções
+                  // do fim do Perfil deixaram de existir: "Favoritas" e "No
+                  // celular" são filtros que já existiam na aba Músicas.
                   Row(
                     children: [
                       _StatCard(
@@ -526,55 +807,48 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         value: '${user.favoriteSongs.length}',
                         icon: Icons.favorite_rounded,
                         color: AppColors.red,
+                        onTap: () =>
+                            widget.onAbrirMusicas?.call(SongsFilter.favorites),
                       ),
                       const SizedBox(width: 12),
                       _StatCard(
-                        label: 'Tons Salvos',
+                        label: 'Tons salvos',
                         value: '${auth.songPrefs.length}',
                         icon: Icons.music_note_rounded,
                         color: AppColors.blue,
+                        onTap: _abrirTonsSalvos,
                       ),
                       const SizedBox(width: 12),
                       _StatCard(
-                        label: 'Offline',
+                        label: 'No celular',
                         value: '${songs.offlineCount}',
                         icon: Icons.download_done_rounded,
                         color: AppColors.success,
+                        onTap: () =>
+                            widget.onAbrirMusicas?.call(SongsFilter.offline),
                       ),
                     ],
                   ),
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
-                  // Settings group
-                  Text(
-                    'Configurações',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: isDark
-                          ? AppColors.textPrimaryDark
-                          : AppColors.textPrimaryLight,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  _SettingRow(
-                    icon: isDark
-                        ? Icons.light_mode_rounded
-                        : Icons.dark_mode_rounded,
-                    label: isDark ? 'Modo Claro' : 'Modo Escuro',
-                    trailing: Switch(
-                      value: isDark,
-                      onChanged: (_) => theme.toggleTheme(),
-                      activeColor: AppColors.blue,
-                    ),
-                    onTap: () => theme.toggleTheme(),
-                  ),
-                  // "Instalar o app" só aparece para quem ainda não
-                  // instalou — e no iPhone é o que destrava os avisos.
+                  // O AVISO de saúde, e só quando há o que ver.
+                  //
+                  // O cartão com as cinco linhas saiu do Perfil: ele mora no
+                  // Painel do líder. Aqui fica só a tarja, quando algo está
+                  // amarelo ou vermelho — tudo verde é invisível, porque
+                  // diagnóstico na cara quando não há nada a fazer ensina a
+                  // não olhar.
+                  if (auth.isAdmin) ...[
+                    const AvisoCurtoDeSaude(),
+                  ],
+
+                  // A LISTA CURTA.
+                  //
+                  // Eram treze linhas e duas listas compridas no fim. Agora
+                  // são quatro linhas e, para o líder, uma quinta. Cada uma
+                  // abre uma tela que responde uma pergunta só.
                   if (caminhoDeInstalacao != InstallRoute.naoSeAplica) ...[
-                    const SizedBox(height: 8),
                     _SettingRow(
                       icon: Icons.add_to_home_screen_rounded,
                       label: 'Instalar o app no celular',
@@ -582,390 +856,60 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           color: AppColors.textSecondaryLight),
                       onTap: () => mostrarComoInstalar(context),
                     ),
+                    const SizedBox(height: 8),
                   ],
-                  const SizedBox(height: 8),
-                  const _AvisosDoApp(),
-                  const SizedBox(height: 8),
                   _SettingRow(
-                    icon: Icons.menu_book_rounded,
-                    label: 'Bíblia',
+                    icon: Icons.notifications_none_rounded,
+                    label: 'Avisos',
                     trailing: const Icon(Icons.chevron_right_rounded,
                         color: AppColors.textSecondaryLight),
-                    onTap: () => Navigator.push(
-                      context,
-                      GlassPageRoute(builder: (_) => const BibliaScreen()),
-                    ),
-                  ),
-                  if (auth.isAdmin) ...[
-                    const SizedBox(height: 10),
-                    // Em cima das linhas de líder de propósito: é a única
-                    // tela em que dá para ver se os robôs estão rodando, e
-                    // eles já falharam em silêncio por dias.
-                    const CartaoSaude(),
-                    const SizedBox(height: 8),
-                    _SettingRow(
-                      icon: Icons.groups_rounded,
-                      label: 'Membros do ministério',
-                      trailing: const _SeloPendentes(),
-                      onTap: () => Navigator.push(
-                        context,
-                        GlassPageRoute(
-                            builder: (_) => const MembersScreen()),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _SettingRow(
-                      icon: Icons.event_repeat_rounded,
-                      label: 'Agenda fixa',
-                      trailing: const Icon(Icons.chevron_right_rounded,
-                          color: AppColors.textSecondaryLight),
-                      onTap: () => Navigator.push(
-                        context,
-                        GlassPageRoute(
-                            builder: (_) => const FixedScheduleScreen()),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    _SettingRow(
-                      icon: Icons.diversity_3_rounded,
-                      label: 'Equipes',
-                      trailing: const Icon(Icons.chevron_right_rounded,
-                          color: AppColors.textSecondaryLight),
-                      onTap: () => Navigator.push(
-                        context,
-                        GlassPageRoute(builder: (_) => const TeamsScreen()),
-                      ),
-                    ),
-                  ],
-                  const SizedBox(height: 8),
-                  // Vem ANTES de "Alterar minha senha" de propósito: esta é a
-                  // que a pessoa precisa ter feito antes de precisar dela.
-                  // Sem e-mail cadastrado, senha esquecida é acesso perdido —
-                  // não existe quem destrave depois, nem o líder.
-                  _SettingRow(
-                    icon: user.recuperacaoPorEmail
-                        ? Icons.verified_user_outlined
-                        : Icons.shield_outlined,
-                    label: 'Recuperar a senha',
-                    trailing: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          user.recuperacaoPorEmail
-                              ? 'Pronto'
-                              : 'Falta cadastrar',
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: user.recuperacaoPorEmail
-                                ? AppColors.success
-                                : AppColors.red,
-                          ),
-                        ),
-                        const Icon(Icons.chevron_right_rounded,
-                            color: AppColors.textSecondaryLight),
-                      ],
-                    ),
-                    onTap: () => mostrarRecuperacaoPorEmail(context),
+                    onTap: _abrirAvisos,
                   ),
                   const SizedBox(height: 8),
                   _SettingRow(
-                    icon: Icons.key_outlined,
-                    label: 'Alterar minha senha',
+                    icon: Icons.person_outline_rounded,
+                    label: 'Conta',
                     trailing: const Icon(Icons.chevron_right_rounded,
                         color: AppColors.textSecondaryLight),
-                    onTap: () => _showChangePasswordSheet(context, user),
+                    onTap: _abrirConta,
+                  ),
+                  const SizedBox(height: 8),
+                  // MODO ESCURO fica aqui, com o interruptor à vista.
+                  //
+                  // Você deixou a escolha para mim: uma linha "Aparência" que
+                  // abre uma tela com um interruptor só, ou o interruptor na
+                  // própria linha. Para quem só usa WhatsApp, um interruptor
+                  // que se vê e se vira num toque ganha de uma tela que
+                  // esconde um interruptor.
+                  _SettingRow(
+                    icon: isDark
+                        ? Icons.light_mode_rounded
+                        : Icons.dark_mode_rounded,
+                    label: 'Modo escuro',
+                    trailing: Switch(
+                      value: isDark,
+                      onChanged: (_) => theme.toggleTheme(),
+                      activeColor: AppColors.blue,
+                    ),
+                    onTap: () => theme.toggleTheme(),
                   ),
                   const SizedBox(height: 8),
                   _SettingRow(
                     icon: Icons.help_outline_rounded,
-                    label: 'Como usar o app',
+                    label: 'Ajuda',
                     trailing: const Icon(Icons.chevron_right_rounded,
                         color: AppColors.textSecondaryLight),
-                    onTap: () => _showHelpSheet(context),
+                    onTap: _abrirAjuda,
                   ),
-                  const SizedBox(height: 8),
-                  _SettingRow(
-                    icon: Icons.info_outline_rounded,
-                    label: 'Sobre o ${AppStrings.appName}',
-                    trailing: const Icon(Icons.chevron_right_rounded,
-                        color: AppColors.textSecondaryLight),
-                    onTap: () => _showAboutSheet(context),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  // Saved tones
-                  if (auth.songPrefs.isNotEmpty) ...[
-                    const SizedBox(height: 16),
-                    Text(
-                      AppStrings.savedTones,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? AppColors.textPrimaryDark
-                            : AppColors.textPrimaryLight,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    ...auth.songPrefs.entries.map((e) {
-                      final song = songs.getSongById(e.key);
-                      if (song == null) return const SizedBox.shrink();
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: isDark ? AppColors.cardDark : AppColors.cardLight,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(
-                            color: isDark
-                                ? Colors.grey.shade800
-                                : Colors.grey.shade100,
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                song.name,
-                                style: TextStyle(
-                                  fontFamily: 'Poppins',
-                                  fontSize: 13,
-                                  color: isDark
-                                      ? AppColors.textPrimaryDark
-                                      : AppColors.textPrimaryLight,
-                                ),
-                              ),
-                            ),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: AppColors.blue.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                // O tom em que a pessoa toca, não o
-                                // deslocamento: "+2" não diz nada para quem
-                                // canta, "D → E" diz.
-                                '${song.originalKey} → '
-                                '${ChordTransposer.getKeyName(song.originalKey, e.value.semitones)}',
-                                style: const TextStyle(
-                                  fontFamily: 'Poppins',
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.blue,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                  ],
-
-                  // Favorites
-                  if (favoriteSongs.isNotEmpty) ...[
-                    const SizedBox(height: 20),
-                    Text(
-                      AppStrings.myFavorites,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? AppColors.textPrimaryDark
-                            : AppColors.textPrimaryLight,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    ...favoriteSongs.map((song) {
-                      return GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            GlassPageRoute(
-                              builder: (_) => SongDetailScreen(song: song),
-                            ),
-                          );
-                        },
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 8),
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: isDark ? AppColors.cardDark : AppColors.cardLight,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isDark
-                                  ? Colors.grey.shade800
-                                  : Colors.grey.shade100,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(Icons.favorite_rounded,
-                                  size: 18, color: AppColors.red),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      song.name,
-                                      style: TextStyle(
-                                        fontFamily: 'Poppins',
-                                        fontSize: 13,
-                                        fontWeight: FontWeight.w600,
-                                        color: isDark
-                                            ? AppColors.textPrimaryDark
-                                            : AppColors.textPrimaryLight,
-                                      ),
-                                    ),
-                                    Text(
-                                      song.artist,
-                                      style: const TextStyle(
-                                        fontFamily: 'Poppins',
-                                        fontSize: 11,
-                                        color: AppColors.textSecondaryLight,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: AppColors.blue.withOpacity(0.1),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  song.originalKey,
-                                  style: const TextStyle(
-                                    fontFamily: 'Poppins',
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.blue,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    }),
-                  ],
-
-                  // Favorites empty hint
-                  if (favoriteSongs.isEmpty) ...[
-                    const SizedBox(height: 20),
-                    Text(
-                      AppStrings.myFavorites,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                        color: isDark
-                            ? AppColors.textPrimaryDark
-                            : AppColors.textPrimaryLight,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Container(
-                      width: double.infinity,
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: isDark ? AppColors.cardDark : AppColors.cardLight,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color:
-                              isDark ? Colors.grey.shade800 : Colors.grey.shade100,
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(Icons.favorite_border_rounded,
-                              size: 20,
-                              color: isDark
-                                  ? AppColors.textSecondaryDark
-                                  : AppColors.textSecondaryLight),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              'Toque no ♥ em uma música para salvá-la nas favoritas.',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                fontSize: 12.5,
-                                color: isDark
-                                    ? AppColors.textSecondaryDark
-                                    : AppColors.textSecondaryLight,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
+                  if (auth.isAdmin) ...[
+                    const SizedBox(height: 18),
+                    _SettingRow(
+                      icon: Icons.shield_outlined,
+                      label: 'Painel do líder',
+                      trailing: const _SeloPendentes(),
+                      onTap: _abrirPainelDoLider,
                     ),
                   ],
-
-                  const SizedBox(height: 28),
-
-                  // Sair do MINISTÉRIO — diferente de sair da conta, e por
-                  // isso vem antes e com outra cara. Quem toca em "Sair da
-                  // conta" quer voltar depois; quem toca aqui, não.
-                  const _SairDoMinisterio(),
-                  const SizedBox(height: 10),
-
-                  // Logout
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton.icon(
-                      onPressed: () async {
-                        final confirm = await showDialog<bool>(
-                          context: context,
-                          builder: (_) => AlertDialog(
-                            title: const Text('Sair da conta'),
-                            content: const Text(
-                                'Deseja realmente sair da sua conta?'),
-                            actions: [
-                              TextButton(
-                                onPressed: () => Navigator.pop(context, false),
-                                child: const Text('Cancelar'),
-                              ),
-                              ElevatedButton(
-                                onPressed: () => Navigator.pop(context, true),
-                                style: ElevatedButton.styleFrom(
-                                    backgroundColor: AppColors.red),
-                                child: const Text('Sair'),
-                              ),
-                            ],
-                          ),
-                        );
-                        if (confirm == true && mounted) {
-                          await auth.logout();
-                        }
-                      },
-                      icon: const Icon(Icons.logout_rounded,
-                          color: AppColors.red, size: 18),
-                      label: const Text(
-                        AppStrings.logout,
-                        style: TextStyle(
-                          color: AppColors.red,
-                          fontFamily: 'Poppins',
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: AppColors.red),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ),
                   const SizedBox(height: 100),
                 ],
               ),
@@ -983,54 +927,69 @@ class _StatCard extends StatelessWidget {
   final IconData icon;
   final Color color;
 
+  /// O toque que abre a lista contada.
+  ///
+  /// Eram números decorativos: diziam "12 favoritas" e não levavam a lugar
+  /// nenhum — as listas ficavam no FIM do Perfil, e ninguém rolava até lá.
+  final VoidCallback? onTap;
+
   const _StatCard({
     required this.label,
     required this.value,
     required this.icon,
     required this.color,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: color.withOpacity(0.18)),
-          boxShadow: [
-            BoxShadow(
-              color: color.withOpacity(0.10),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Icon(icon, color: color, size: 24),
-            const SizedBox(height: 6),
-            Text(
-              value,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-                color: color,
+      child: Material(
+        color: isDark ? AppColors.cardDark : AppColors.cardLight,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: isDark ? Colors.grey.shade800 : Colors.grey.shade100,
               ),
             ),
-            Text(
-              label,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontFamily: 'Poppins',
-                fontSize: 10,
-                color: isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight,
-              ),
+            child: Column(
+              children: [
+                Icon(icon, color: color, size: 22),
+                const SizedBox(height: 6),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
+                  ),
+                ),
+                Text(
+                  label,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 11.5,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondaryLight,
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
