@@ -6,14 +6,17 @@ import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/hinarios.dart';
+import '../../../data/models/hino_da_biblioteca.dart';
 import '../../../data/models/song_model.dart';
 import '../../../data/services/local_storage_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/biblioteca_provider.dart';
 import '../../providers/scale_provider.dart';
 import '../../providers/songs_provider.dart';
 import '../../widgets/common/glass.dart';
 import '../../widgets/songs/colar_cifra.dart';
 import 'add_song_screen.dart';
+import 'hino_da_biblioteca_screen.dart';
 import 'song_detail_screen.dart';
 
 /// Abrir o hino pelo número, em segundos.
@@ -65,11 +68,26 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
   /// em que ninguém digita o segundo dígito de um número que queria.
   static const _espera = Duration(milliseconds: 600);
 
+  /// Quantas linhas da biblioteca a busca mostra de uma vez. A lista é uma
+  /// coluna comum, e 600 linhas construídas de uma vez travariam um celular
+  /// velho; quem procura de verdade acerta o nome em poucas letras.
+  static const _maximoDaBiblioteca = 30;
+
   late Hinario _hinario;
   late List<Hinario> _ordemDosHinarios;
   late OrdemDosHinos _ordem;
   String _digitado = '';
   String _recado = '';
+
+  /// O recado é um ERRO (sem internet, sem permissão), e não o "ainda não
+  /// está no repertório". Muda o que a tela oferece: "Cadastrar agora" e "Peça
+  /// a um líder" respondem a outra pergunta, e ao lado de "Sem internet"
+  /// mandariam a pessoa fazer o que não resolve.
+  bool _recadoDeErro = false;
+
+  /// Perguntando à biblioteca. A primeira consulta do dia lê o índice, e sem
+  /// um sinal a pessoa tocaria no número e veria a tela parada.
+  bool _procurando = false;
   final _buscaCtrl = TextEditingController();
   String _busca = '';
   Timer? _relogio;
@@ -90,6 +108,10 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
         ? (hinarioPorId(LocalStorageService.ultimoHinario) ??
             _ordemDosHinarios.first)
         : _ordemDosHinarios.first;
+    // Lê o índice de títulos da biblioteca (UMA leitura por hinário). Erro
+    // aqui não precisa de aviso: a consulta pelo número, que é o que a
+    // pessoa faz de fato, mostra o motivo se a biblioteca não responder.
+    context.read<BibliotecaProvider>().carregarIndice(_hinario.id);
   }
 
   Future<void> _reordenar(int de, int para) async {
@@ -261,7 +283,7 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
     _relogio = Timer(_espera, _abrir);
   }
 
-  void _abrir() {
+  Future<void> _abrir() async {
     final n = int.tryParse(_digitado);
     if (n == null) return;
 
@@ -281,11 +303,108 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
     // confundir os dois faria o líder cadastrar de novo um hino que já
     // existe — perdendo a cifra que alguém já colou nele.
     final fora = songs.hinoCadastrado(_hinario.id, n);
+    if (fora != null) {
+      setState(() {
+        _recado = 'O hino $n está fora do repertório.';
+        _recadoDeErro = false;
+      });
+      return;
+    }
+
+    // Nem no repertório, nem fora dele: a biblioteca (o texto que o líder
+    // importou) tem?
+    await _abrirDaBiblioteca(n, doTeclado: true);
+  }
+
+  /// Procura o hino [n] na biblioteca e abre.
+  ///
+  /// [doTeclado] é verdadeiro quando a busca nasceu de um número digitado: aí
+  /// a resposta pode chegar DEPOIS de a pessoa digitar outro número ou trocar
+  /// de hinário, e abrir o hino velho por cima do que ela pediu agora seria
+  /// pior que não abrir nada.
+  Future<void> _abrirDaBiblioteca(int n, {required bool doTeclado}) async {
+    if (_procurando) return;
+    final hinario = _hinario;
     setState(() {
-      _recado = fora != null
-          ? 'O hino $n está fora do repertório.'
-          : 'O hino $n ainda não está no repertório.';
+      _procurando = true;
+      _recado = '';
+      _recadoDeErro = false;
     });
+
+    final r = await context.read<BibliotecaProvider>().buscarHino(hinario, n);
+    if (!mounted) return;
+    setState(() => _procurando = false);
+
+    if (doTeclado &&
+        (int.tryParse(_digitado) != n || _hinario.id != hinario.id)) {
+      return;
+    }
+
+    if (r.error != null) {
+      setState(() {
+        _recado = r.error!;
+        _recadoDeErro = true;
+      });
+      return;
+    }
+    final hino = r.hino;
+    if (hino == null) {
+      setState(() => _recado = 'O hino $n ainda não está no repertório.');
+      return;
+    }
+    await _irParaDaBiblioteca(hinario, hino);
+  }
+
+  /// Abre o hino da biblioteca.
+  ///
+  /// Para LER, abre a tela de leitura e não escreve nada. Para ESCOLHER (pôr
+  /// num culto), o hino tem de virar música do repertório antes, porque o
+  /// culto guarda o id da música — e quem escolhe é sempre líder, que é
+  /// quem as regras deixam criar música.
+  Future<void> _irParaDaBiblioteca(
+      Hinario hinario, HinoDaBiblioteca hino) async {
+    _relogio?.cancel();
+    LocalStorageService.salvarHinoAberto(hinario.id, hino.numero);
+
+    if (widget.paraEscolher) {
+      final songs = context.read<SongsProvider>();
+      final ja = songs.hinoPorNumero(hinario.id, hino.numero);
+      if (ja != null) {
+        _irPara(ja);
+        return;
+      }
+      final auth = context.read<AuthProvider>();
+      final biblioteca = context.read<BibliotecaProvider>();
+      setState(() => _procurando = true);
+      final r = await biblioteca.porNoRepertorio(hinario, hino,
+          porQuemId: auth.user?.id);
+      if (!mounted) return;
+      setState(() => _procurando = false);
+      if (r.musica == null) {
+        setState(() {
+          _recado = r.error ?? 'Não foi possível pôr o hino no repertório.';
+          _recadoDeErro = true;
+        });
+        return;
+      }
+      setState(() {
+        _digitado = '';
+        _recado = '';
+      });
+      Navigator.pop(context, r.musica);
+      return;
+    }
+
+    setState(() {
+      _digitado = '';
+      _recado = '';
+    });
+    await Navigator.push(
+      context,
+      GlassPageRoute(
+        builder: (_) => HinoDaBibliotecaScreen(hinario: hinario, hino: hino),
+      ),
+    );
   }
 
   void _irPara(SongModel hino) {
@@ -327,7 +446,9 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
       _hinario = h;
       _digitado = '';
       _recado = '';
+      _recadoDeErro = false;
     });
+    context.read<BibliotecaProvider>().carregarIndice(h.id);
   }
 
   @override
@@ -357,6 +478,16 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
       favoritas: auth.user?.favoriteSongs.toSet() ?? const {},
     );
 
+    // A biblioteca só entra na lista quando a pessoa PROCURA, e sem repetir o
+    // que já está no repertório: o mesmo hino em duas linhas faria parecer
+    // que há dois.
+    final indice = context.watch<BibliotecaProvider>().indiceDe(_hinario.id);
+    final jaNoRepertorio = <int>{
+      for (final s in songs.allSongs)
+        if (s.hinario == _hinario.id && s.numero != null) s.numero!,
+    };
+    final naBiblioteca = indice.buscar(_busca, excluir: jaNoRepertorio);
+
     final corpo = ListView(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
       children: [
@@ -374,6 +505,10 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
           digitado: _digitado,
           isDark: isDark,
         ),
+        if (_procurando) ...[
+          const SizedBox(height: 12),
+          _Procurando(numero: numeroDigitado, isDark: isDark),
+        ],
         if (_recado.isNotEmpty) ...[
           const SizedBox(height: 12),
           _Recado(
@@ -383,7 +518,8 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
             // levita ele falharia com erro de permissão, que não explica
             // nada — então a frase diz o que fazer em vez de oferecer um
             // caminho fechado.
-            acao: (auth.isAdmin &&
+            acao: (!_recadoDeErro &&
+                    auth.isAdmin &&
                     numeroDigitado != null &&
                     _hinario.existe(numeroDigitado) &&
                     songs.hinoCadastrado(_hinario.id, numeroDigitado) == null)
@@ -392,13 +528,14 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
             onAcao: numeroDigitado == null
                 ? null
                 : () => _cadastrar(numeroDigitado),
-            rodape: auth.isAdmin
+            rodape: (_recadoDeErro || auth.isAdmin)
                 ? null
                 : 'Peça a um líder para cadastrar este hino.',
             // O atalho para achar a cifra do hino, com o nome do hinário
             // já no texto da busca: "Harpa Cristã 15" é o que acha o hino
             // certo no Cifra Club.
-            acaoExtra: (auth.isAdmin &&
+            acaoExtra: (!_recadoDeErro &&
+                    auth.isAdmin &&
                     numeroDigitado != null &&
                     _hinario.existe(numeroDigitado))
                 ? 'Buscar no Cifra Club'
@@ -494,21 +631,79 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
             ),
           ),
         ],
+        if (indice.total > 0 && _busca.trim().isEmpty) ...[
+          const SizedBox(height: 6),
+          Text(
+            indice.total == 1
+                ? 'Na biblioteca há 1 hino da ${_hinario.nome}. Digite o '
+                    'número, ou procure pelo nome.'
+                : 'Na biblioteca há ${indice.total} hinos da '
+                    '${_hinario.nome}. Digite o número, ou procure pelo nome.',
+            style: TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 12,
+              height: 1.4,
+              color: isDark
+                  ? AppColors.textSecondaryDark
+                  : AppColors.textSecondaryLight,
+            ),
+          ),
+        ],
         const SizedBox(height: 10),
-        if (achados.isEmpty)
+        if (achados.isEmpty && naBiblioteca.isEmpty)
           _Vazio(
             busca: _busca,
             hinario: _hinario,
             total: songs.hinosDe(_hinario.id).length,
+            naBiblioteca: indice.total,
             isDark: isDark,
           )
-        else
+        else ...[
           ...achados.map((h) => _LinhaDeHino(
                 hino: h,
                 hinario: _hinario,
                 isDark: isDark,
                 onAbrir: () => _irPara(h),
               )),
+          if (naBiblioteca.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
+              child: Text(
+                'Na biblioteca',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: isDark
+                      ? AppColors.textSecondaryDark
+                      : AppColors.textSecondaryLight,
+                ),
+              ),
+            ),
+            ...naBiblioteca.take(_maximoDaBiblioteca).map((n) =>
+                _LinhaDaBiblioteca(
+                  numero: n,
+                  titulo: indice.tituloDe(n) ?? '',
+                  isDark: isDark,
+                  onAbrir: () => _abrirDaBiblioteca(n, doTeclado: false),
+                )),
+            if (naBiblioteca.length > _maximoDaBiblioteca)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
+                child: Text(
+                  'Mostrando $_maximoDaBiblioteca de ${naBiblioteca.length}. '
+                  'Escreva mais um pouco para afinar a busca.',
+                  style: TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 12,
+                    color: isDark
+                        ? AppColors.textSecondaryDark
+                        : AppColors.textSecondaryLight,
+                  ),
+                ),
+              ),
+          ],
+        ],
       ],
     );
 
@@ -1012,6 +1207,87 @@ class _LinhaDeHino extends StatelessWidget {
   }
 }
 
+/// "Procurando o hino 15…" — a primeira consulta do dia lê o índice, e sem um
+/// sinal a pessoa tocaria no número e veria a tela parada, achando que o
+/// teclado não funcionou.
+class _Procurando extends StatelessWidget {
+  final int? numero;
+  final bool isDark;
+
+  const _Procurando({required this.numero, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        const SizedBox(
+          width: 18,
+          height: 18,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        const SizedBox(width: 10),
+        Text(
+          numero == null ? 'Procurando o hino…' : 'Procurando o hino $numero…',
+          style: TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 13.5,
+            color: isDark
+                ? AppColors.textSecondaryDark
+                : AppColors.textSecondaryLight,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+/// Um hino que está na biblioteca e não no repertório.
+class _LinhaDaBiblioteca extends StatelessWidget {
+  final int numero;
+  final String titulo;
+  final bool isDark;
+  final VoidCallback onAbrir;
+
+  const _LinhaDaBiblioteca({
+    required this.numero,
+    required this.titulo,
+    required this.isDark,
+    required this.onAbrir,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
+      leading: SizedBox(
+        width: 46,
+        child: Text(
+          '$numero',
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            fontFamily: 'Poppins',
+            fontSize: 17,
+            fontWeight: FontWeight.w700,
+            color: AppColors.blue,
+          ),
+        ),
+      ),
+      title: Text(
+        titulo,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          fontFamily: 'Poppins',
+          fontSize: 15,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      subtitle: const Text('Toque para ler'),
+      onTap: onAbrir,
+    );
+  }
+}
+
 /// Lista vazia que diz QUAL dos casos é.
 ///
 /// A regra do projeto: vazio explica por que está vazio. "Nenhum hino" sem
@@ -1021,25 +1297,37 @@ class _LinhaDeHino extends StatelessWidget {
 class _Vazio extends StatelessWidget {
   final String busca;
   final Hinario hinario;
+
+  /// Hinos do hinário que estão NO REPERTÓRIO.
   final int total;
+
+  /// Hinos do hinário que o líder importou para a biblioteca.
+  final int naBiblioteca;
   final bool isDark;
 
   const _Vazio({
     required this.busca,
     required this.hinario,
     required this.total,
+    required this.naBiblioteca,
     required this.isDark,
   });
 
   @override
   Widget build(BuildContext context) {
     final String texto;
-    if (total == 0) {
+    if (total == 0 && naBiblioteca == 0) {
       texto = 'Nenhum hino da ${hinario.nome} está no repertório ainda. '
           'Eles entram pelo cadastro de música, com a cifra do hinário da '
           'igreja.';
     } else if (busca.trim().isNotEmpty) {
       texto = 'Nenhum hino da ${hinario.nome} com "$busca".';
+    } else if (total == 0) {
+      // A biblioteca tem os hinos, o repertório ainda não: não é "vazio",
+      // e dizer "nenhum hino" aqui seria mandar cadastrar o que já existe.
+      texto = 'Nenhum hino da ${hinario.nome} no repertório ainda. Eles '
+          'entram quando um líder os põe no culto. Antes disso, dá para '
+          'abrir qualquer um pelo número ou pelo nome.';
     } else {
       texto = 'Nenhum hino para mostrar.';
     }
