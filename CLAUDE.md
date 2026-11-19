@@ -1839,6 +1839,56 @@ mesma faixa, acima da música, em telas de 375 px.
   palavras da pessoa, não as do app: quem canta quer a letra grande, quem
   toca quer os acordes no seu tom.
 
+### O que só apareceu rodando o app a 375 px
+
+Não dá para conferir tela lendo código. Esta rodada rodou o app de verdade
+num navegador de 375×812, com o banco do tamanho do ministério semeado num
+emulador (16 pessoas, 42 músicas, 65 cultos, 8 recados), e fotografou 24
+telas nos dois temas. **Cinco defeitos apareceram só aí**, e nenhum deles
+estava no caminho de nenhum teste:
+
+- **O título "Músicas" saía cortado ao meio.** A altura da barra morava em
+  dois lugares que discordavam — `preferredSize` fixo em 120 e o cálculo do
+  recuo em 168. Conteúdo maior que o espaço declarado faz o Flutter desenhar
+  **por cima** do título. Agora a altura é somada num lugar só.
+- **110 px de vazio no meio da Bíblia**, entre "Antigo Testamento" e Gênesis.
+  A regra que ninguém vê lendo o código: **uma lista rolável sem `padding`
+  herda o recuo do MediaQuery**, e dentro da aba Músicas esse recuo é a barra
+  inteira (56 + 54 = exatamente os 110 medidos). `padding: EdgeInsets.zero`
+  resolve. Vale para toda lista rolável aninhada.
+- **"Original" quebrava em duas linhas** entre o − e o + ("Origina / l"), por
+  cima do −: 54 px não cabiam.
+- **O Início abria com dois convites** (instalar o app, cadastrar e-mail) e
+  empurrava o cartão do culto para fora do primeiro olhar.
+- **As pastilhas de quem não confirmou eram brancas fixas** e, no tema
+  escuro, viravam retalhos claros no meio do cartão.
+
+E uma classe inteira de defeito que a foto revelou: **texto do app apontando
+para tela que mudou de lugar.** A tarja de Membros dizia "em Perfil →
+Recuperar a senha", caminho que deixou de existir. Eram dez frases em seis
+arquivos. Junto veio uma que estava errada desde a aprovação do líder: a tela
+de cadastro prometia "Você entra como Levita" quando todo cadastro nasce
+**pendente** — quem lesse aquilo e caísse na tela de espera acharia o app
+quebrado.
+
+**Como medir isto de novo:** o app aponta para o emulador (uma linha em
+`main()`, só na árvore de teste), um servidor estático serve `build/web`, e o
+Playwright liga a **semântica do Flutter** (o botão invisível "Enable
+accessibility"), que transforma cada widget num elemento com rótulo. Duas
+coisas custaram tempo e ficam registradas:
+
+- **O mouse do Playwright derruba a página** com a semântica ligada: o filtro
+  de cliques do motor se perde com ponteiro sintético vindo de fora
+  ("Cannot read properties of null").
+- **`elemento.click()` move um `ElevatedButton`, mas NÃO move um `InkWell`.**
+  O seletor "Repertório · Hinários · Bíblia" não trocava de seção e o roteiro
+  fotografava a mesma tela três vezes. O que move um InkWell é a sequência
+  `pointerdown` + `pointerup` + `click` disparada **no próprio elemento**.
+
+**Medido também, porque é promessa de tela que falha calada:** o tom se salva
+sozinho. Tocar no + leva "Tom G" a "Tom G#/Ab"; saindo da música e abrindo de
+novo, continua "Tom G#/Ab". O − e o + são 44×44.
+
 ### O manual e o guia dentro do app
 
 Guia que descreve a tela de antes é pior que guia nenhum: ele faz a pessoa
