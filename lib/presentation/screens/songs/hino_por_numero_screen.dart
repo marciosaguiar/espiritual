@@ -32,7 +32,15 @@ import 'song_detail_screen.dart';
 /// por isso que "ainda não está no repertório" é um estado normal dela, com
 /// um caminho para resolver, e não um erro.
 class HinoPorNumeroScreen extends StatefulWidget {
-  const HinoPorNumeroScreen({super.key});
+  /// Quando verdadeiro, a tela DEVOLVE o hino escolhido em vez de abri-lo.
+  ///
+  /// É o que permite o mesmo teclado servir a três lugares — abrir para ler,
+  /// escolher no Modo Culto ao vivo, escolher ao montar o repertório do
+  /// culto — sem três telas parecidas, que é o jeito de uma delas ficar para
+  /// trás quando a regra muda.
+  final bool paraEscolher;
+
+  const HinoPorNumeroScreen({super.key, this.paraEscolher = false});
 
   @override
   State<HinoPorNumeroScreen> createState() => _HinoPorNumeroScreenState();
@@ -149,6 +157,10 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
       _digitado = '';
       _recado = '';
     });
+    if (widget.paraEscolher) {
+      Navigator.pop(context, hino);
+      return;
+    }
     Navigator.push(
       context,
       GlassPageRoute(builder: (_) => SongDetailScreen(song: hino)),
@@ -189,7 +201,11 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
     final numeroDigitado = int.tryParse(_digitado);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Hino pelo número')),
+      appBar: AppBar(
+        title: Text(widget.paraEscolher
+            ? 'Escolher hino pelo número'
+            : 'Hino pelo número'),
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
         children: [

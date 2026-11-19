@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:levitasync/core/constants/hinarios.dart';
+import 'package:levitasync/data/models/scale_model.dart';
 import 'package:levitasync/data/models/song_model.dart';
 import 'package:levitasync/presentation/providers/songs_provider.dart';
 
@@ -320,6 +321,52 @@ void main() {
       final mexida = h.copyWith(originalKey: 'A');
       expect(mexida.hinario, 'harpa');
       expect(mexida.numero, 15);
+    });
+  });
+
+  testesDoCultoAoVivo();
+}
+
+// ─── O hino que entra no meio do culto ─────────────────────────────────────
+//
+// O dirigente anuncia "hino 15" com a igreja de pé, e ele não estava no
+// repertório montado. O hino entra como música extra — e a parte que dá para
+// errar em silêncio é pôr a mesma música duas vezes: ela apareceria
+// duplicada na tela, o índice do Modo ao vivo apontaria para a cópia errada,
+// e "5 músicas" passaria a mentir, tudo sem erro nenhum.
+
+void testesDoCultoAoVivo() {
+  group('música extra no culto', () {
+    test('entra no FIM, preservando a ordem montada', () {
+      final refs = [ScaleSong(songId: 'a'), ScaleSong(songId: 'b')];
+      final novas = ScaleModel.comMusicaExtra(refs, 'hino');
+      expect(novas.map((r) => r.songId).toList(), ['a', 'b', 'hino']);
+    });
+
+    test('música que já está no culto NÃO entra de novo', () {
+      final refs = [ScaleSong(songId: 'a'), ScaleSong(songId: 'hino')];
+      final novas = ScaleModel.comMusicaExtra(refs, 'hino');
+      expect(novas.length, 2);
+      expect(novas.map((r) => r.songId).toList(), ['a', 'hino']);
+    });
+
+    test('não mexe na lista que recebeu', () {
+      // A tela guarda a lista antiga para poder desfazer se a gravação
+      // falhar; mexer nela por referência tiraria essa saída.
+      final refs = [ScaleSong(songId: 'a')];
+      ScaleModel.comMusicaExtra(refs, 'hino');
+      expect(refs.length, 1);
+    });
+
+    test('id vazio não vira música fantasma no culto', () {
+      final refs = [ScaleSong(songId: 'a')];
+      expect(ScaleModel.comMusicaExtra(refs, '').length, 1);
+    });
+
+    test('culto sem nenhuma música aceita o primeiro hino', () {
+      expect(
+          ScaleModel.comMusicaExtra(const [], 'hino').map((r) => r.songId),
+          ['hino']);
     });
   });
 }

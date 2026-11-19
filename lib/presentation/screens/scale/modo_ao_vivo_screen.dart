@@ -11,11 +11,15 @@ import '../../../core/utils/chord_transposer.dart';
 import '../../../core/utils/mapa_da_musica.dart';
 import '../../../data/models/ao_vivo_model.dart';
 import '../../../data/models/scale_model.dart';
+import '../../../data/models/song_model.dart';
 import '../../../data/models/user_model.dart';
 import '../../../data/services/ao_vivo_service.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/scale_provider.dart';
 import '../../providers/songs_provider.dart';
+import '../songs/hino_por_numero_screen.dart';
+import '../../widgets/common/glass.dart';
 
 /// Uma música do culto, já pronta para ler.
 class _MusicaAoVivo {
@@ -76,6 +80,17 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
   List<_MusicaAoVivo> _musicas = const [];
   bool _carregando = true;
 
+  /// As referências de música deste culto, como o app as tem agora.
+  ///
+  /// Começa igual a `widget.culto.songs` e CRESCE quando um hino entra no
+  /// meio do culto. É uma cópia de propósito: `widget.culto` é o documento
+  /// como estava quando a tela abriu, e mexer nele daria a impressão de que
+  /// a tela e o banco concordam quando podem não concordar.
+  late List<ScaleSong> _refs = List<ScaleSong>.from(widget.culto.songs);
+
+  /// Está gravando o hino que acabou de entrar?
+  bool _entrandoHino = false;
+
   EstadoAoVivo? _estado;
   int _musica = 0;
   int _ancora = 0;
@@ -131,15 +146,109 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
         : '');
   }
 
+  // ── Um hino que entra no meio do culto ──────────────────────────────────
+  //
+  // O dirigente anuncia "hino 15 da Harpa" com a igreja de pé, e ele não
+  // estava no repertório montado. O hino entra como música EXTRA do culto e
+  // passa a sincronizar como qualquer outra — porque a posição que viaja
+  // entre os aparelhos é `{índice da música, âncora}`, e índice só existe
+  // para música que está na lista do culto.
+  //
+  // SÓ O LÍDER, e isto é decisão, não esquecimento. Mexer no repertório do
+  // culto é do líder na regra do banco, e afrouxar essa regra para o Modo ao
+  // vivo abriria "qualquer aprovado edita o culto" para sempre, por causa de
+  // um caso de domingo. Para quem não é líder o botão nem aparece — botão
+  // que falha com erro de permissão é pior que botão nenhum.
+
+  Future<void> _entrarComHino() async {
+    final hino = await Navigator.push<SongModel>(
+      context,
+      // GlassPageRoute, nunca MaterialPageRoute: os dois temas deixam o
+      // fundo transparente, e o Material deixaria a tela que entra
+      // translúcida durante a animação. O teste de varredura pega isto.
+      GlassPageRoute(
+        builder: (_) => const HinoPorNumeroScreen(paraEscolher: true),
+        fullscreenDialog: true,
+      ),
+    );
+    if (hino == null || !mounted) return;
+
+    // Já está no culto? Então é só pular para ele: gravar de novo criaria a
+    // mesma música duas vezes na lista, e o "3 de 7" passaria a mentir.
+    final jaEsta = _refs.indexWhere((r) => r.songId == hino.id);
+    if (jaEsta >= 0) {
+      _irParaMusica(jaEsta);
+      return;
+    }
+
+    setState(() => _entrandoHino = true);
+    final novas = ScaleModel.comMusicaExtra(_refs, hino.id);
+    final erro = await context.read<ScaleProvider>()
+        .setSongs(widget.culto.id, novas);
+    if (!mounted) return;
+
+    if (erro != null) {
+      setState(() => _entrandoHino = false);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Não deu para pôr o hino no culto: $erro'),
+        backgroundColor: AppColors.red,
+      ));
+      return;
+    }
+
+    final pronta = await _prepararMusica(novas.last);
+    if (!mounted) return;
+    setState(() {
+      _refs = novas;
+      if (pronta != null) _musicas = [..._musicas, pronta];
+      _entrandoHino = false;
+    });
+    if (pronta != null) _irParaMusica(_musicas.length - 1);
+  }
+
+  /// Vai para a música de índice [i]. Publica como qualquer outra troca de
+  /// música, então quem está seguindo vai junto para o hino.
+  void _irParaMusica(int i) {
+    if (i < 0 || i >= _musicas.length) return;
+    setState(() {
+      _musica = i;
+      _ancora = 0;
+    });
+    _rolarAte(0);
+    _publicar();
+  }
+
   // ── Carregar as músicas do culto ────────────────────────────────────────
 
   Future<void> _carregar() async {
-    final songs = context.read<SongsProvider>();
     final prontas = <_MusicaAoVivo>[];
+    for (final ref in _refs) {
+      final pronta = await _prepararMusica(ref);
+      if (pronta != null) prontas.add(pronta);
+    }
 
-    for (final ref in widget.culto.songs) {
+    if (!mounted) return;
+    setState(() {
+      _musicas = prontas;
+      _carregando = false;
+      final sugerido = prontas.isEmpty ? null : prontas.first.segundosPorLinha;
+      if (sugerido != null) _segundosPorLinha = sugerido.clamp(1.5, 12);
+    });
+    _ouvirOCulto();
+  }
+
+  /// Deixa UMA música pronta para o modo ao vivo.
+  ///
+  /// Saiu de dentro do laço de `_carregar` para poder ser chamada também
+  /// quando um hino entra no meio do culto: a conta da cifra, do tom e do
+  /// mapa de âncoras tem de ser a MESMA nos dois caminhos, senão o hino que
+  /// entra agora teria âncoras diferentes das dos outros aparelhos — e o
+  /// culto desalinharia sem nenhum erro aparecer na tela.
+  Future<_MusicaAoVivo?> _prepararMusica(ScaleSong ref) async {
+    final songs = context.read<SongsProvider>();
+    {
       final musica = songs.getSongById(ref.songId);
-      if (musica == null) continue;
+      if (musica == null) return null;
       final arranjo = await FirestoreService.getArrangement(ref.songId);
       final tomDoCulto = songs.keyOf(ref);
 
@@ -155,7 +264,7 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
         if (n != 0) fonte = ChordTransposer.transposeText(fonte, n);
       }
 
-      prontas.add(_MusicaAoVivo(
+      return _MusicaAoVivo(
         nome: musica.name,
         artista: musica.artist,
         tom: tomDoCulto,
@@ -165,17 +274,8 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
             // Uma linha de letra dura mais ou menos quatro tempos.
             ? (4 * 60) / arranjo!.bpm
             : null,
-      ));
+      );
     }
-
-    if (!mounted) return;
-    setState(() {
-      _musicas = prontas;
-      _carregando = false;
-      final sugerido = prontas.isEmpty ? null : prontas.first.segundosPorLinha;
-      if (sugerido != null) _segundosPorLinha = sugerido.clamp(1.5, 12);
-    });
-    _ouvirOCulto();
   }
 
   void _ouvirOCulto() {
@@ -593,6 +693,27 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
                   ],
                 ),
               ),
+              // "Hino pelo número", para o hino anunciado na hora. Só para
+              // o líder: mexer no repertório do culto é dele na regra do
+              // banco, e botão que falha com erro de permissão é pior que
+              // botão nenhum.
+              if (context.watch<AuthProvider>().isAdmin)
+                _entrandoHino
+                    ? const Padding(
+                        padding: EdgeInsets.all(14),
+                        child: SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white70),
+                        ),
+                      )
+                    : IconButton(
+                        tooltip: 'Hino pelo número',
+                        icon: const Icon(Icons.dialpad_rounded,
+                            color: Colors.white70),
+                        onPressed: _entrarComHino,
+                      ),
               // Cifra ou letra, trocável na hora. A escolha vale só aqui e
               // não mexe no perfil: é para o momento, não para sempre.
               IconButton(

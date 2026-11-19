@@ -5,6 +5,8 @@ import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/texto.dart';
 import '../../../data/models/song_model.dart';
+import '../../screens/songs/hino_por_numero_screen.dart';
+import '../common/glass.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../providers/scale_provider.dart';
 import '../../providers/songs_provider.dart';
@@ -122,6 +124,35 @@ class _EscolherState extends State<_Escolher> {
     super.dispose();
   }
 
+  /// Abre o teclado numérico de hinos e marca o que vier.
+  ///
+  /// O MESMO teclado das outras duas telas — não uma busca por número
+  /// colada aqui. Três telas parecidas é o jeito de uma delas ficar para
+  /// trás quando a regra muda; e esta já herda de graça o "não existe o hino
+  /// 700", o "ainda não está no repertório" e os últimos abertos.
+  Future<void> _escolherHino() async {
+    final hino = await Navigator.push<SongModel>(
+      context,
+      // GlassPageRoute, nunca MaterialPageRoute: os dois temas deixam o
+      // fundo transparente, e o Material deixaria a tela que entra
+      // translúcida durante a animação. O teste de varredura pega isto.
+      GlassPageRoute(
+        builder: (_) => const HinoPorNumeroScreen(paraEscolher: true),
+        fullscreenDialog: true,
+      ),
+    );
+    if (hino == null || !mounted) return;
+    setState(() => _escolhidas.add(hino.id));
+    // A busca é limpa de propósito: com um filtro ativo, o hino que acabou
+    // de ser marcado poderia não aparecer na lista, e a pessoa ficaria sem
+    // saber se o toque funcionou.
+    _buscaCtrl.clear();
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('${hino.name} entrou na lista do culto.'),
+      duration: const Duration(seconds: 2),
+    ));
+  }
+
   @override
   Widget build(BuildContext context) {
     final songs = context.watch<SongsProvider>();
@@ -135,8 +166,23 @@ class _EscolherState extends State<_Escolher> {
     );
 
     return AlertDialog(
-      title: const Text('Músicas do culto',
-          style: TextStyle(fontFamily: 'Poppins', fontSize: 16)),
+      title: Row(
+        children: [
+          const Expanded(
+            child: Text('Músicas do culto',
+                style: TextStyle(fontFamily: 'Poppins', fontSize: 16)),
+          ),
+          // Hino pelo número, aqui também. Montando o culto, o líder sabe o
+          // número do hino antes de lembrar o nome dele — e procurar
+          // "HC 15" por nome na lista é o que esta entrega veio tirar.
+          IconButton(
+            tooltip: 'Hino pelo número',
+            icon: const Icon(Icons.dialpad_rounded, size: 21),
+            onPressed: _escolherHino,
+            visualDensity: VisualDensity.compact,
+          ),
+        ],
+      ),
       content: SizedBox(
         width: double.maxFinite,
         height: 440,

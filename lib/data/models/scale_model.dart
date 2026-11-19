@@ -247,6 +247,25 @@ class ScaleModel {
   /// Está aqui, e não só na regra, porque quem acrescenta uma linha precisa
   /// saber ANTES de tentar: estourar o limite no banco devolveria um erro de
   /// permissão, que não explica nada a ninguém.
+  /// A lista de músicas do culto com [songId] no fim — ou a MESMA lista, se
+  /// ele já estiver nela.
+  ///
+  /// Existe por causa do hino anunciado no meio do culto. Gravar sem olhar
+  /// criaria a mesma música duas vezes na lista: ela apareceria duplicada na
+  /// tela do culto, no Modo ao vivo o índice de uma apontaria para a outra, e
+  /// "5 músicas" passaria a mentir. Nada disso daria erro.
+  ///
+  /// Fica no modelo, e não na tela, porque é a parte que dá para errar em
+  /// silêncio — e porque duas telas já precisam dela.
+  static List<ScaleSong> comMusicaExtra(
+      List<ScaleSong> refs, String songId) {
+    if (songId.isEmpty) return List<ScaleSong>.from(refs);
+    for (final r in refs) {
+      if (r.songId == songId) return List<ScaleSong>.from(refs);
+    }
+    return [...refs, ScaleSong(songId: songId)];
+  }
+
   static const int limiteDasObservacoes = 5000;
 
   /// As observações com uma linha nova no fim, assinada e datada.
