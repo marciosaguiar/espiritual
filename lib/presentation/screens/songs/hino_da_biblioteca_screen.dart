@@ -9,6 +9,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/biblioteca_provider.dart';
 import '../../providers/songs_provider.dart';
 import '../../widgets/common/glass.dart';
+import 'projetar_letra_screen.dart';
 import 'song_detail_screen.dart';
 
 /// Ler um hino que está na biblioteca, mas ainda não no repertório.
@@ -130,6 +131,16 @@ class _HinoDaBibliotecaScreenState extends State<HinoDaBibliotecaScreen> {
       appBar: AppBar(
         title: Text('${widget.hinario.sigla} ${widget.hino.numero}'),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.cast_rounded),
+            tooltip: 'Projetar a letra (tela cheia)',
+            onPressed: () => ProjetarLetraScreen.abrir(
+              context,
+              titulo: widget.hino.titulo,
+              subtitulo: '${widget.hinario.nome}, hino ${widget.hino.numero}',
+              letra: widget.hino.letra,
+            ),
+          ),
           IconButton(
             icon: const Icon(Icons.text_decrease_rounded),
             tooltip: 'Letra menor',

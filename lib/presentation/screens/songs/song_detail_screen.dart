@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../../core/constants/hinarios.dart';
 import '../../providers/songs_provider.dart';
+import 'projetar_letra_screen.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/utils/chord_transposer.dart';
 import '../../../core/utils/cifra_colada.dart';
@@ -320,6 +322,21 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     );
   }
 
+  /// A letra em tela cheia, para o telão. Nunca com cifra: se só há cifra, sai
+  /// a letra tirada dela.
+  void _projetar() {
+    final letra = _letra(context.read<SongsProvider>());
+    final base = letra.trim().isNotEmpty
+        ? letra
+        : (_arrangement?.hasChords == true ? _arrangement!.chords : '');
+    ProjetarLetraScreen.abrir(
+      context,
+      titulo: nomeSemHinario(widget.song.name),
+      subtitulo: widget.song.artist.isEmpty ? null : widget.song.artist,
+      letra: base,
+    );
+  }
+
   /// Letra atual: a da lista de músicas (atualiza depois de colar a cifra).
   String _letra(SongsProvider songs) {
     for (final s in songs.allSongs) {
@@ -587,6 +604,9 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                 case 'culto':
                   setState(() => _isWorshipMode = true);
                   return;
+                case 'projetar':
+                  _projetar();
+                  return;
                 case 'offline':
                   await _toggleOffline();
                   return;
@@ -642,6 +662,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
                     : 'Minha anotação ✓',
               ),
               _opcao('culto', Icons.fullscreen_rounded, 'Modo culto'),
+              _opcao('projetar', Icons.cast_rounded,
+                  'Projetar a letra (tela cheia)'),
               _opcao(
                 'offline',
                 isOffline ? Icons.download_done_rounded
