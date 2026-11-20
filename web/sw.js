@@ -73,6 +73,29 @@ const ESQUELETO = (self.LISTA_DO_BUILD ||
     ['./', 'index.html', 'flutter_bootstrap.js', 'main.dart.js'])
     .filter((caminho) => !NUNCA_GUARDAR.test(caminho));
 
+// ── O SDK do Firebase, que mora fora do nosso domínio ───────────────────────
+//
+// O Flutter carrega o SDK do Firebase de www.gstatic.com na hora de ligar o
+// banco. Ele NÃO é do nosso domínio, então o cache acima nunca o guardou — e
+// sem ele o app não liga o Firebase, o que sem internet transformava a
+// abertura numa tela de erro. Dependia do cache comum do navegador, que o
+// iPhone esvazia quando quer.
+//
+// Cada arquivo tem a VERSÃO no endereço, então nunca muda: o cache é
+// "primeiro o cache, rede só se faltar", e fica numa caixa à parte, que a
+// troca de versão do app não apaga. A versão é a do `firebase_core_web` do
+// `pubspec.lock`; um teste confere que `index.html`, este arquivo e o lock
+// dizem a mesma coisa.
+const VERSAO_DO_SDK = '10.11.1';
+const ORIGEM_DO_SDK = `https://www.gstatic.com/firebasejs/${VERSAO_DO_SDK}/`;
+const CACHE_DO_SDK = `sdk-firebase-${VERSAO_DO_SDK}`;
+const ARQUIVOS_DO_SDK = ['firebase-app.js', 'firebase-auth.js', 'firebase-firestore.js']
+    .map((a) => ORIGEM_DO_SDK + a);
+
+function ehSdkDoFirebase(pedido) {
+  return pedido.method === 'GET' && pedido.url.startsWith(ORIGEM_DO_SDK);
+}
+
 self.addEventListener('install', (evento) => {
   // Nada de `skipWaiting()` aqui. Assumir na instalação trocaria o código
   // debaixo de quem está usando o app — alguém no meio do culto, com a
@@ -89,6 +112,19 @@ self.addEventListener('install', (evento) => {
       const falhas = resultados.filter((r) => r.status === 'rejected').length;
       if (falhas) {
         console.warn(`[sw] ${falhas} de ${ESQUELETO.length} arquivos não foram guardados`);
+      }
+
+      // O SDK do Firebase (ver acima): sem desistir se um falhar, e sem
+      // refazer o que já está guardado.
+      try {
+        const sdk = await caches.open(CACHE_DO_SDK);
+        await Promise.allSettled(ARQUIVOS_DO_SDK.map(async (url) => {
+          if (await sdk.match(url)) return;
+          const r = await fetch(url, { mode: 'cors' });
+          if (r.ok) await sdk.put(url, r);
+        }));
+      } catch (_) {
+        // Sem o SDK no cache hoje; a primeira abertura com rede o guarda.
       }
     })(),
   );
@@ -109,7 +145,10 @@ self.addEventListener('activate', (evento) => {
     (async () => {
       const nomes = await caches.keys();
       await Promise.all(
-        nomes.filter((n) => n.startsWith('levitasync-') && n !== CACHE)
+        nomes.filter((n) =>
+                (n.startsWith('levitasync-') && n !== CACHE) ||
+                // Versão antiga do SDK; a atual NÃO sai com a versão do app.
+                (n.startsWith('sdk-firebase-') && n !== CACHE_DO_SDK))
              .map((n) => caches.delete(n)),
       );
       await self.clients.claim();
@@ -255,6 +294,24 @@ function guardavel(pedido) {
 
 self.addEventListener('fetch', (evento) => {
   const pedido = evento.request;
+
+  // O SDK do Firebase: do cache, e da rede só se faltar.
+  if (ehSdkDoFirebase(pedido)) {
+    evento.respondWith((async () => {
+      const cache = await caches.open(CACHE_DO_SDK);
+      const guardado = await cache.match(pedido.url);
+      if (guardado) return guardado;
+      const resposta = await fetch(pedido);
+      // Só resposta completa e boa: uma parcial no cache quebraria o app
+      // para sempre, porque o cache vem ANTES da rede.
+      if (resposta.ok && resposta.status === 200) {
+        cache.put(pedido.url, resposta.clone()).catch(() => {});
+      }
+      return resposta;
+    })());
+    return;
+  }
+
   if (!guardavel(pedido)) return;
 
   // Abrir o app: serve a página guardada na hora. É isto que faz o app
