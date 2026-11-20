@@ -2437,6 +2437,11 @@ hinários:** é a primeira coisa a olhar quando o teclado não acha um hino.
 Re-importar grava por cima, e as músicas já postas no repertório não mudam (o
 hino vira música de `songs` só quando é usado, e daí é uma cópia).
 
+**Conferido no app no ar (20/11/2026, iPhone):** com a Harpa marcada e o texto do
+Cantor colado, "Importar 581 hinos" abriu "É este o hinário?" com o exemplo do
+hino 1, e "Voltar" não gravou nada. Na mesma entrega, um domingo com dois cultos
+mostrou os dois cartões na Escala.
+
 **Provado quebrando de propósito (sete vezes):** limiar impossível — 6 testes
 reprovam; qualquer diferença acusando — o do "uma correção não é engano";
 piso de 5 removido — o dos poucos hinos; título comparado cru, sem tirar acento
