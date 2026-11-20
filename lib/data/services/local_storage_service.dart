@@ -324,6 +324,78 @@ class LocalStorageService {
 
   static String? get ordemDosHinos => prefs.getString(_ordemHinosKey);
 
+  // ─── As mesmas escolhas, POR PESSOA ───────────────────────────────────────
+  //
+  // O aparelho é de quem está com ele na mão, mas no computador da igreja
+  // quem usa muda: a ordem que a Ana escolheu não é a do Bruno. A chave leva o
+  // id de quem está logado, e quem nunca escolheu nada herda o que estava
+  // gravado antes disto existir — senão todo mundo voltaria para "pelo
+  // número" sem ninguém ter mexido em nada.
+
+  static String _chaveDe(String base, String? usuario) =>
+      (usuario == null || usuario.isEmpty) ? base : '${base}_$usuario';
+
+  static Future<void> salvarOrdemDosHinosDe(String? usuario, String id) async {
+    await prefs.setString(_chaveDe(_ordemHinosKey, usuario), id);
+  }
+
+  static String? ordemDosHinosDe(String? usuario) =>
+      prefs.getString(_chaveDe(_ordemHinosKey, usuario)) ?? ordemDosHinos;
+
+  static Future<void> salvarOrdemDosHinariosDe(
+      String? usuario, List<String> ids) async {
+    await prefs.setStringList(_chaveDe(_ordemHinariosKey, usuario), ids);
+  }
+
+  static List<String> ordemDosHinariosDe(String? usuario) =>
+      prefs.getStringList(_chaveDe(_ordemHinariosKey, usuario)) ??
+      ordemDosHinarios;
+
+  // ─── As letras dos hinários, no aparelho ──────────────────────────────────
+  //
+  // Para a busca "por um trecho da letra" funcionar sem custo. Cada hinário
+  // fica numa chave só, como um texto JSON (número → letra), com a MARCA da
+  // importação de que veio: quando o líder importa de novo, a marca muda e o
+  // que está aqui deixa de valer. Mora no aparelho, não no Firestore: é uma
+  // cópia de leitura, e no banco custaria 640 leituras a cada pessoa.
+
+  static String _letrasKey(String hinario) => 'letras_hinario_$hinario';
+
+  static Future<void> salvarLetrasDoHinario(
+      String hinario, Map<int, String> letras, String marca) async {
+    final corpo = jsonEncode({
+      'marca': marca,
+      'letras': {for (final e in letras.entries) '${e.key}': e.value},
+    });
+    await prefs.setString(_letrasKey(hinario), corpo);
+  }
+
+  /// As letras guardadas e a marca de que vieram, ou nulo se não há (ou se o
+  /// que há está estragado: lê-se como "nunca baixou", que é o seguro).
+  static ({Map<int, String> letras, String marca})? letrasDoHinario(
+      String hinario) {
+    final bruto = prefs.getString(_letrasKey(hinario));
+    if (bruto == null || bruto.isEmpty) return null;
+    try {
+      final d = jsonDecode(bruto);
+      if (d is! Map || d['letras'] is! Map || d['marca'] is! String) {
+        return null;
+      }
+      final saida = <int, String>{};
+      (d['letras'] as Map).forEach((k, v) {
+        final n = int.tryParse('$k');
+        if (n != null && v is String) saida[n] = v;
+      });
+      return (letras: saida, marca: d['marca'] as String);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<void> esquecerLetrasDoHinario(String hinario) async {
+    await prefs.remove(_letrasKey(hinario));
+  }
+
   /// O hinário que esta pessoa usa neste aparelho.
   ///
   /// Uma igreja canta de um hinário quase sempre; fazer a pessoa escolher
@@ -344,7 +416,7 @@ class LocalStorageService {
   /// com o celular na mão, não há o que sincronizar, e no Firestore custaria
   /// uma escrita por hino aberto.
   static Future<void> salvarHinoAberto(String hinario, int numero) async {
-    final chave = '\$hinario|\$numero';
+    final chave = '$hinario|$numero';
     final lista = prefs.getStringList(_hinosAbertosKey) ?? <String>[];
     // Tira antes de pôr na frente: abrir o mesmo hino duas vezes não pode
     // encher a lista de repetições e empurrar os outros para fora.
