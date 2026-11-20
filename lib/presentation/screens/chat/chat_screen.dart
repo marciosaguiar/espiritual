@@ -124,6 +124,10 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _chat = context.read<ChatProvider>();
     _auth = context.read<AuthProvider>();
+    // "Fulano está digitando": a escuta nasce AQUI, na primeira visita ao
+    // chat, e não na abertura do app (ver `MainScreen._initData`). Ela já se
+    // protege de ser aberta duas vezes.
+    if (widget.escutas) _chat!.listenToTyping();
     _lastMessageCount = _chat!.messages.length;
     // Scroll to the bottom only when a new message actually arrives.
     _chat!.addListener(_onMessagesChanged);

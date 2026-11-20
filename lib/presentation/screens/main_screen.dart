@@ -12,6 +12,8 @@ import '../../data/services/auth_service.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../core/platform/avisos.dart';
+import '../../../core/platform/marcas.dart';
+import '../../../core/utils/fonte_mono.dart';
 import '../../../core/platform/tela_atual.dart';
 import '../../../core/utils/compartilhado.dart';
 import '../../data/services/avisos_service.dart';
@@ -70,6 +72,18 @@ class _MainScreenState extends State<MainScreen> {
   /// Onde o toque num aviso pede para abrir um culto na aba da Escala.
   final _pedidoDeCulto = ValueNotifier<PedidoDeCulto?>(null);
 
+  /// As abas que já foram abertas.
+  ///
+  /// O `IndexedStack` constrói TODOS os filhos de uma vez, e as cinco abas
+  /// (calendário, lista de músicas, chat, perfil…) eram montadas no primeiro
+  /// quadro — MEDIDO: ~850 ms de processador a mais antes de o Início poder
+  /// pedir os dados, e ainda por cima as abas escondidas medem o próprio texto
+  /// e fazem o navegador baixar as fontes de emoji e de símbolos de que só
+  /// elas precisam. Agora só a aba de abertura nasce pronta; cada outra é
+  /// construída na primeira visita e DEPOIS fica (guarda busca, rolagem e o
+  /// que foi digitado, como antes).
+  late final Set<int> _construidas = {widget.abaInicial};
+
   late final List<Widget> _screens = [
     // Cada aba tem a largura em que se lê bem. Sem isto, num monitor de 1920
     // px o chat vira uma linha de 2.400 px e o Início, um vazio com um cartão
@@ -91,9 +105,39 @@ class _MainScreenState extends State<MainScreen> {
     ColunaCentral(child: ProfileScreen(onAbrirMusicas: _abrirMusicasCom)),
   ];
 
+  /// Só compilações de medição (`--dart-define=MEDIR=true`) ligam isto; na
+  /// normal o compilador joga fora esta função e as chamadas a ela.
+  static const bool _medindo = bool.fromEnvironment('MEDIR');
+  bool _marcouInicio = false;
+  Timer? _timerDaAgenda;
+  VoidCallback? _tiraMarcaDeInicio;
+
+  /// Marca "inicio-com-dados": o primeiro quadro em que o Início tem cultos E
+  /// músicas. É o "posso usar" que a pessoa sente — não o primeiro quadro do
+  /// Flutter, que pode ser só a tela de abertura.
+  void _vigiarInicioParaMedir() {
+    if (!_medindo) return;
+    final songs = context.read<SongsProvider>();
+    final scale = context.read<ScaleProvider>();
+    void conferir() {
+      if (_marcouInicio || songs.songs.isEmpty || scale.scales.isEmpty) return;
+      _marcouInicio = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) => marcar('inicio-com-dados'));
+    }
+
+    songs.addListener(conferir);
+    scale.addListener(conferir);
+    _tiraMarcaDeInicio = () {
+      songs.removeListener(conferir);
+      scale.removeListener(conferir);
+    };
+    conferir();
+  }
+
   @override
   void initState() {
     super.initState();
+    _vigiarInicioParaMedir();
     // Defer to after the first frame so provider notifyListeners() (favorites
     // sync, preview seed data) don't fire during build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -210,7 +254,13 @@ class _MainScreenState extends State<MainScreen> {
     // Quem abre é a aba da Escala, e não esta tela: em tela larga o culto
     // tem de aparecer AO LADO do calendário, e só quem está dentro do painel
     // sabe chegar nele.
-    _pedidoDeCulto.value = PedidoDeCulto(culto);
+    //
+    // Depois do quadro: a aba da Escala pode estar sendo construída agora (é
+    // construída na primeira visita), e quem escuta o pedido só existe depois
+    // disso. Escrever já perderia o pedido sem aviso.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _pedidoDeCulto.value = PedidoDeCulto(culto);
+    });
   }
 
   void _goToTab(int index) {
@@ -220,13 +270,17 @@ class _MainScreenState extends State<MainScreen> {
     // tela do chat é construída uma vez e nunca mais — o `initState` dela
     // rodaria no primeiro dia e nunca de novo.
     if (index == _abaChat) LocalStorageService.marcarChatVisto();
-    setState(() => _currentIndex = index);
+    setState(() {
+      _currentIndex = index;
+      _construidas.add(index);
+    });
     // A faixa "Nova versão disponível" só se aplica sozinha com a pessoa no
     // Início e parada; fora dali ela pergunta. Ver tela_atual.dart.
     informarTelaInicial(index == 0);
   }
 
   void _initData() {
+    marcar('escutas-iniciando');
     _auth = context.read<AuthProvider>();
     if (!widget.escutas) return;
     final songs = context.read<SongsProvider>();
@@ -241,18 +295,32 @@ class _MainScreenState extends State<MainScreen> {
     // favorite anywhere updates the Songs filter without a rebuild loop.
     _auth!.addListener(_syncFavorites);
 
-    // Start real-time listeners
-    songs.listenToSongs();
+    // Escutas em tempo real, NA ORDEM do que o Início precisa: o cartão do
+    // culto vem dos cultos, "minhas próximas músicas" das músicas. O banco
+    // atende as consultas uma a uma, então a ordem é a de chegada.
     scale.listenToScales();
-    chat.listenToMessages();
-    chat.listenToTyping();
+    songs.listenToSongs();
     // Uma escuta só da lista de pessoas, para o app todo: o chat tinha a
     // dele, e a Escala e o Início passaram a precisar da mesma coisa para
     // dizer quem ainda não confirmou.
     _auth!.ouvirPessoas();
+    chat.listenToMessages();
+    // "Fulano está digitando" só serve DENTRO do chat: quem a começa é a
+    // própria tela do chat, na primeira visita. Era uma escuta a mais em toda
+    // abertura, para um recado que quase nunca é visto.
 
+    // A agenda fixa (horários e equipes) só serve a quem gera cultos e a quem
+    // abre o Perfil: espera o Início ter os dados dele. O líder só a usa
+    // 3 s depois (`_agendarGeracao`), então nada atrasa.
     final agenda = context.read<AgendaProvider>();
-    agenda.listen();
+    _timerDaAgenda = Timer(const Duration(milliseconds: 1500), () {
+      if (mounted) agenda.listen();
+    });
+    // A fonte da cifra (fora do pacote de abertura) é buscada logo depois que
+    // o Início já tem o que mostrar, para estar pronta quando a pessoa abrir
+    // uma música. Não compete com a abertura, e dá tempo de sobra antes do
+    // primeiro toque numa cifra.
+    Timer(const Duration(seconds: 4), FonteMono.garantir);
 
     // Regrava a inscrição dos avisos se o navegador a trocou, ou se a pessoa
     // mudou de nome. Sem isto, o aparelho continuaria na lista do robô com
@@ -303,6 +371,8 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void dispose() {
     _olhoNoAviso?.cancel();
+    _timerDaAgenda?.cancel();
+    _tiraMarcaDeInicio?.call();
     _pedidoDeCulto.dispose();
     _auth?.removeListener(_syncFavorites);
     super.dispose();
@@ -325,7 +395,12 @@ class _MainScreenState extends State<MainScreen> {
         index: _currentIndex,
         children: [
           for (var i = 0; i < _screens.length; i++)
-            AbaVisivel(visivel: i == _currentIndex, child: _screens[i]),
+            AbaVisivel(
+              visivel: i == _currentIndex,
+              child: _construidas.contains(i)
+                  ? _screens[i]
+                  : const SizedBox.shrink(),
+            ),
         ],
       );
       return Scaffold(

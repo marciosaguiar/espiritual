@@ -22,6 +22,7 @@ import '../../../data/models/arrangement_model.dart';
 import '../../../data/services/firestore_service.dart';
 import '../../../data/models/song_model.dart';
 import '../../../data/models/user_model.dart';
+import '../../../core/utils/fonte_mono.dart';
 
 class SongDetailScreen extends StatefulWidget {
   final SongModel song;
@@ -86,6 +87,8 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   @override
   void initState() {
     super.initState();
+    // A fonte da cifra não vem no pacote de abertura: pede aqui.
+    FonteMono.garantir();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       final auth = context.read<AuthProvider>();

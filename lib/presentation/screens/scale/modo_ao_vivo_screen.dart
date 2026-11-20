@@ -21,6 +21,7 @@ import '../../providers/scale_provider.dart';
 import '../../providers/songs_provider.dart';
 import '../songs/hino_por_numero_screen.dart';
 import '../../widgets/common/glass.dart';
+import '../../../core/utils/fonte_mono.dart';
 
 /// Uma música do culto, já pronta para ler.
 class _MusicaAoVivo {
@@ -114,6 +115,8 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
   @override
   void initState() {
     super.initState();
+    // A fonte da cifra não vem no pacote de abertura: pede aqui.
+    FonteMono.garantir();
     _mostrarCifra = widget.funcaoNoCulto == null ||
         UserModel.leituraDaFuncao(widget.funcaoNoCulto!) == ModoLeitura.toco;
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersive);

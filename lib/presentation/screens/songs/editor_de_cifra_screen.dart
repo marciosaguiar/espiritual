@@ -8,6 +8,7 @@ import '../../../core/utils/cifra_colada.dart';
 import '../../../core/utils/mapa_da_musica.dart';
 import '../../../data/services/local_storage_service.dart';
 import '../../widgets/songs/colar_cifra.dart';
+import '../../../core/utils/fonte_mono.dart';
 
 /// O editor de letra e cifra: uma tela, tela cheia, fonte de largura fixa.
 ///
@@ -73,6 +74,8 @@ class _EditorDeCifraScreenState extends State<EditorDeCifraScreen> {
   @override
   void initState() {
     super.initState();
+    // A fonte da cifra não vem no pacote de abertura: pede aqui.
+    FonteMono.garantir();
     _ctrl.addListener(_programarRascunho);
 
     // Havia um rascunho diferente do que está salvo? A pessoa decide; a tela

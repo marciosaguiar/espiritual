@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../../core/utils/fonte_mono.dart';
 import '../../../core/constants/app_colors.dart';
 
 class AppTextField extends StatefulWidget {
@@ -47,6 +48,14 @@ class AppTextField extends StatefulWidget {
 
 class _AppTextFieldState extends State<AppTextField> {
   bool _showPassword = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // O campo "colar cifra" é de largura fixa; a fonte não vem no pacote de
+    // abertura (ver `FonteMono`).
+    if (widget.monospace) FonteMono.garantir();
+  }
 
   @override
   Widget build(BuildContext context) {

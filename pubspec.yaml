@@ -48,6 +48,8 @@ flutter:
     # inicial nem atrasa a abertura do app. Ver assets/biblia/LEIA-ME.md.
     - assets/biblia/blivre.json
     - assets/biblia/alm1911.json
+    # Carregado sob demanda por `FonteMono`, e não declarado em `fonts:`.
+    - assets/fonts/JetBrainsMono.ttf
   fonts:
     - family: Poppins
       fonts:
@@ -58,8 +60,27 @@ flutter:
           weight: 600
         - asset: assets/fonts/Poppins-Bold.ttf
           weight: 700
-    # Cifra: largura fixa para o acorde ficar sobre a sílaba (licença OFL em
-    # assets/fonts/JetBrainsMono-OFL.txt). Courier não existe no Android.
-    - family: JetBrainsMono
+    # "Roboto" é o nome que o motor do Flutter na web procura para ter UMA
+    # fonte de partida. Sem ela no pacote, ele BAIXA a Roboto de
+    # fonts.gstatic.com na abertura — um servidor de fora, com conexão nova
+    # (DNS, TCP, TLS: quatro viagens), no caminho de ligar o app. MEDIDO numa
+    # linha de 4G ruim (1,6 Mbps, 150 ms): sem esse pedido o Dart começa 0,7 s
+    # antes e o Início com dados chega 1,1 s antes, em toda abertura.
+    #
+    # O app inteiro já escreve em Poppins (`ThemeData.fontFamily`), então o que
+    # entra aqui é só o NOME: uma cópia da Poppins com um único caractere (o
+    # espaço), 616 bytes, derivada da Poppins (OFL) com `fontTools.subset`:
+    #   python3 -m fontTools.subset assets/fonts/Poppins-Regular.ttf \
+    #     --unicodes=U+0020 --output-file=assets/fonts/Roboto-minima.ttf \
+    #     --layout-features= --no-hinting --name-IDs=
+    # Apontar o nome para a Poppins-Regular inteira também funcionava, mas
+    # fazia o navegador baixar 71 KB duas vezes.
+    - family: Roboto
       fonts:
-        - asset: assets/fonts/JetBrainsMono.ttf
+        - asset: assets/fonts/Roboto-minima.ttf
+    # A fonte da cifra (JetBrains Mono, largura fixa para o acorde ficar sobre
+    # a sílaba; licença OFL em assets/fonts/JetBrainsMono-OFL.txt) NÃO está
+    # aqui, de propósito: o que se declara em `fonts:` é baixado antes do
+    # primeiro quadro, toda abertura. Ela é um ATIVO (acima) e é registrada
+    # por `FonteMono` quando alguém abre uma cifra. Ver lib/core/utils/
+    # fonte_mono.dart.

@@ -111,7 +111,11 @@ class _HomeScreenState extends State<HomeScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Olá, ${auth.user?.name.split(' ').first ?? 'Levita'}! 👋',
+                        // Sem emoji, de propósito. O 👋 fazia o navegador baixar a fonte de
+                        // emoji do Google (~380 KB, de um servidor de fora, com
+                        // conexão nova) NA ABERTURA DE TODO DIA, só para
+                        // desenhar uma mão — numa linha lenta são uns 2 s.
+                        'Olá, ${auth.user?.name.split(' ').first ?? 'Levita'}!',
                         style: TextStyle(
                           fontFamily: 'Poppins',
                           fontSize: 16,
