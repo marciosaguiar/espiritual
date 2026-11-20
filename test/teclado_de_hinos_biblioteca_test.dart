@@ -251,9 +251,12 @@ void main() {
     });
   });
 
-  group('procurar pelo nome', () {
+  group('procurar pelo nome (em "Ver todos os hinos")', () {
+    // A busca saiu de baixo do teclado e foi para a lista de todos os hinos:
+    // o que se garante aqui é o mesmo de antes, no lugar novo.
     Future<void> procurar(WidgetTester t, String texto) async {
-      await t.ensureVisible(find.byType(TextField));
+      await t.tap(find.text('Ver todos os hinos'));
+      await t.pumpAndSettle();
       await t.enterText(find.byType(TextField), texto);
       await t.pumpAndSettle();
     }
@@ -261,8 +264,8 @@ void main() {
     testWidgets('acha pelo título, ignorando acento', (t) async {
       await _montar(t);
       await procurar(t, 'NOME');
-      expect(find.text('Na biblioteca'), findsOneWidget);
       expect(find.text('Grande é o nome'), findsOneWidget);
+      expect(find.text('Título quinze'), findsNothing);
     });
 
     testWidgets('tocar no resultado abre o hino', (t) async {
@@ -275,12 +278,20 @@ void main() {
           findsOneWidget);
     });
 
-    testWidgets('sem busca, não despeja a biblioteca: só diz quantos há',
+    testWidgets('sem busca, a lista mostra TODOS os hinos da biblioteca',
         (t) async {
       await _montar(t);
-      expect(find.text('Na biblioteca'), findsNothing);
-      expect(find.textContaining('Na biblioteca há 4 hinos da Harpa Cristã'),
-          findsOneWidget);
+      await t.tap(find.text('Ver todos os hinos'));
+      await t.pumpAndSettle();
+      for (final nome in [
+        'Título quinze',
+        'Título sessenta e cinco',
+        'Grande é o nome',
+        'Título cento e cinquenta',
+      ]) {
+        expect(find.text(nome), findsOneWidget, reason: nome);
+      }
+      expect(find.textContaining('4 hinos · Harpa Cristã'), findsOneWidget);
     });
 
     testWidgets('busca sem resultado diz que não achou, e não "cadastre"',
@@ -291,18 +302,22 @@ void main() {
           findsOneWidget);
     });
 
-    testWidgets('repertório vazio mas biblioteca cheia NÃO manda cadastrar '
+    testWidgets('biblioteca cheia e repertório vazio NÃO manda cadastrar '
         'o que já existe', (t) async {
       await _montar(t);
-      expect(find.textContaining('Nenhum hino da Harpa Cristã no repertório ainda'),
-          findsOneWidget);
+      await t.tap(find.text('Ver todos os hinos'));
+      await t.pumpAndSettle();
       expect(find.textContaining('Eles entram pelo cadastro de música'),
           findsNothing);
+      // Os hinos da biblioteca dizem que se abrem para ler.
+      expect(find.text('Toque para ler'), findsWidgets);
     });
 
     testWidgets('sem nada na biblioteca, o texto de antes continua', (t) async {
       await _montar(t);
       await t.tap(find.text('Cantor Cristão'));
+      await t.pumpAndSettle();
+      await t.tap(find.text('Ver todos os hinos'));
       await t.pumpAndSettle();
       expect(find.textContaining('Eles entram pelo cadastro de música'),
           findsOneWidget);

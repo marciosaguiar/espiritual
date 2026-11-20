@@ -13,7 +13,12 @@ import '../../providers/auth_provider.dart';
 import '../../providers/biblioteca_provider.dart';
 import '../../providers/scale_provider.dart';
 import '../../providers/songs_provider.dart';
+import '../../../core/utils/lista_de_hinos.dart';
 import '../../widgets/common/glass.dart';
+import '../../widgets/common/responsivo.dart';
+import '../../widgets/hinarios/lista_de_hinos_view.dart';
+import '../../widgets/hinarios/pastilhas_de_hinario.dart';
+import '../../widgets/hinarios/teclado_de_hino.dart';
 import '../../widgets/songs/colar_cifra.dart';
 import 'add_song_screen.dart';
 import 'hino_da_biblioteca_screen.dart';
@@ -60,6 +65,8 @@ class HinoPorNumeroScreen extends StatefulWidget {
   State<HinoPorNumeroScreen> createState() => _HinoPorNumeroScreenState();
 }
 
+enum _Visao { numero, lista }
+
 class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
   /// Quanto o app espera por mais um dígito antes de abrir sozinho.
   ///
@@ -68,14 +75,17 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
   /// em que ninguém digita o segundo dígito de um número que queria.
   static const _espera = Duration(milliseconds: 600);
 
-  /// Quantas linhas da biblioteca a busca mostra de uma vez. A lista é uma
-  /// coluna comum, e 600 linhas construídas de uma vez travariam um celular
-  /// velho; quem procura de verdade acerta o nome em poucas letras.
-  static const _maximoDaBiblioteca = 30;
-
   late Hinario _hinario;
   late List<Hinario> _ordemDosHinarios;
   late OrdemDosHinos _ordem;
+  String? _usuario;
+  bool _organizando = false;
+
+  /// Qual das duas formas de achar o hino está na tela. Nulo = a que combina
+  /// com como a pessoa usa o aparelho (dedo: o teclado; mouse: a lista, onde
+  /// se digita o número no teclado de verdade).
+  _Visao? _visao;
+
   String _digitado = '';
   String _recado = '';
 
@@ -88,23 +98,46 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
   /// Perguntando à biblioteca. A primeira consulta do dia lê o índice, e sem
   /// um sinal a pessoa tocaria no número e veria a tela parada.
   bool _procurando = false;
+
   final _buscaCtrl = TextEditingController();
+  final _buscaFoco = FocusNode();
+
+  /// Quem recebe o teclado de verdade quando nenhum campo está com o foco —
+  /// sem ele, depois de clicar numa linha da lista, digitar o número do hino
+  /// não chegaria a lugar nenhum.
+  final _focoDaTela = FocusNode(debugLabel: 'hinarios');
+
   String _busca = '';
   Timer? _relogio;
+
+  /// O hino que está aberto no painel da direita (telas largas).
+  int? _selecionado;
+  String? _erroDasLetras;
+
+  // Lista de itens guardada entre desenhos: montar 640 itens a cada tecla
+  // digitada pesaria num celular velho. Só se refaz quando muda de onde ela
+  // vem (o repertório, o índice, as letras ou o hinário).
+  List<ItemDeHino> _itens = const [];
+  Object? _songsUsadas;
+  Object? _indiceUsado;
+  Object? _letrasUsadas;
+  String? _hinarioUsado;
 
   @override
   void initState() {
     super.initState();
-    _ordemDosHinarios = hinariosNaOrdem(LocalStorageService.ordemDosHinarios);
-    _ordem = ordemPorId(LocalStorageService.ordemDosHinos);
-    // QUEM ABRE É O PRIMEIRO DA LISTA, e não o último usado.
+    _usuario = context.read<AuthProvider>().user?.id;
+    final salvaDosHinarios = LocalStorageService.ordemDosHinariosDe(_usuario);
+    _ordemDosHinarios = hinariosNaOrdem(salvaDosHinarios);
+    _ordem = ordemPorId(LocalStorageService.ordemDosHinosDe(_usuario));
+    // QUEM ABRE É O PRIMEIRO DA FILA, e não o último usado.
     //
-    // Duas fontes para a mesma decisão seria a pessoa arrastar o Cantor para
-    // cima e o app continuar abrindo na Harpa, sem nada que explicasse.
-    // Então a ordem manda — e, para quem nunca arrastou nada, o último
-    // hinário usado ainda vale, porque aí a lista gravada está vazia e este
-    // `??` é o que preserva o costume de hoje.
-    _hinario = LocalStorageService.ordemDosHinarios.isEmpty
+    // Duas fontes para a mesma decisão seria a pessoa pôr o Cantor na
+    // frente e o app continuar abrindo na Harpa, sem nada que explicasse.
+    // Então a ordem manda — e, para quem nunca mexeu nela, o último hinário
+    // usado ainda vale, porque aí a lista gravada está vazia e este `??` é o
+    // que preserva o costume de hoje.
+    _hinario = salvaDosHinarios.isEmpty
         ? (hinarioPorId(LocalStorageService.ultimoHinario) ??
             _ordemDosHinarios.first)
         : _ordemDosHinarios.first;
@@ -114,125 +147,29 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
     context.read<BibliotecaProvider>().carregarIndice(_hinario.id);
   }
 
-  Future<void> _reordenar(int de, int para) async {
-    // O ReorderableListView entrega o destino contando a linha que saiu, e
-    // sem este ajuste arrastar para baixo erra uma posição.
-    if (para > de) para -= 1;
-    final lista = List<Hinario>.from(_ordemDosHinarios);
-    final h = lista.removeAt(de);
-    lista.insert(para, h);
-    await _gravarOrdem(lista);
-  }
-
   Future<void> _mover(Hinario h, int passos) async {
     final ids =
         movido(_ordemDosHinarios.map((x) => x.id).toList(), h.id, passos);
-    await _gravarOrdem(hinariosNaOrdem(ids));
-  }
-
-  Future<void> _gravarOrdem(List<Hinario> lista) async {
-    setState(() {
-      _ordemDosHinarios = lista;
-      // Reordenar não troca de hinário: quem arrasta está organizando a
-      // lista, não escolhendo o que ler agora. O primeiro só passa a mandar
-      // na PRÓXIMA abertura — e é isso que "abre aqui" promete.
-    });
-    await LocalStorageService.salvarOrdemDosHinarios(
-        lista.map((h) => h.id).toList());
+    final lista = hinariosNaOrdem(ids);
+    // Mudar a ordem não troca de hinário: quem está organizando não está
+    // escolhendo o que ler agora. O primeiro só passa a mandar na PRÓXIMA
+    // abertura — e é isso que "abre primeiro" promete.
+    setState(() => _ordemDosHinarios = lista);
+    await LocalStorageService.salvarOrdemDosHinariosDe(
+        _usuario, lista.map((x) => x.id).toList());
   }
 
   Future<void> _escolherOrdem(OrdemDosHinos o) async {
     setState(() => _ordem = o);
-    await LocalStorageService.salvarOrdemDosHinos(o.id);
-  }
-
-  /// A lista de ordens, com uma marca na que está valendo.
-  ///
-  /// É uma folha simples, sem explicação nenhuma: quatro linhas que a pessoa
-  /// lê de uma vez. O que precisava de explicação — "mais tocados de quando?"
-  /// — fica na própria tela, embaixo da busca, onde a lista está à vista.
-  void _abrirOrdenar() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: isDark ? AppColors.surfaceDark : Colors.white,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const SizedBox(height: 12),
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade400,
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-            const SizedBox(height: 14),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  Text(
-                    'Ordenar os hinos',
-                    style: TextStyle(
-                      fontFamily: 'Poppins',
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: isDark
-                          ? AppColors.textPrimaryDark
-                          : AppColors.textPrimaryLight,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 6),
-            ...OrdemDosHinos.values.map((o) {
-              final marcada = o == _ordem;
-              return ListTile(
-                leading: Icon(
-                  marcada
-                      ? Icons.radio_button_checked_rounded
-                      : Icons.radio_button_unchecked_rounded,
-                  color: marcada
-                      ? AppColors.blue
-                      : (isDark
-                          ? AppColors.textSecondaryDark
-                          : AppColors.textSecondaryLight),
-                ),
-                title: Text(
-                  o.rotulo,
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 14.5,
-                    fontWeight: marcada ? FontWeight.w600 : FontWeight.w400,
-                    color: isDark
-                        ? AppColors.textPrimaryDark
-                        : AppColors.textPrimaryLight,
-                  ),
-                ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  _escolherOrdem(o);
-                },
-              );
-            }),
-            const SizedBox(height: 10),
-          ],
-        ),
-      ),
-    );
+    await LocalStorageService.salvarOrdemDosHinosDe(_usuario, o.id);
   }
 
   @override
   void dispose() {
     _relogio?.cancel();
     _buscaCtrl.dispose();
+    _buscaFoco.dispose();
+    _focoDaTela.dispose();
     super.dispose();
   }
 
@@ -240,6 +177,11 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
 
   void _digitar(String d) {
     HapticFeedback.selectionClick();
+    // Quem toca nas teclas e TAMBÉM tem teclado (um iPad com teclado) passa a
+    // poder digitar o resto no teclado de verdade.
+    if (!_focoDaTela.hasFocus && !_buscaFoco.hasFocus) {
+      _focoDaTela.requestFocus();
+    }
     // Quatro dígitos é mais que qualquer hinário; passar disso é toque
     // repetido sem querer, e deixar crescer só atrasaria o "não existe".
     if (_digitado.length >= 4) return;
@@ -398,12 +340,11 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
     setState(() {
       _digitado = '';
       _recado = '';
+      _selecionado = hino.numero;
     });
-    await Navigator.push(
+    await abrirTela(
       context,
-      GlassPageRoute(
-        builder: (_) => HinoDaBibliotecaScreen(hinario: hinario, hino: hino),
-      ),
+      (_) => HinoDaBibliotecaScreen(hinario: hinario, hino: hino),
     );
   }
 
@@ -413,15 +354,36 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
     setState(() {
       _digitado = '';
       _recado = '';
+      _selecionado = hino.numero;
     });
     if (widget.paraEscolher) {
       Navigator.pop(context, hino);
       return;
     }
-    Navigator.push(
-      context,
-      GlassPageRoute(builder: (_) => SongDetailScreen(song: hino)),
-    );
+    abrirTela(context, (_) => SongDetailScreen(song: hino));
+  }
+
+  /// Abre o hino de uma linha da lista, venha ele do repertório ou da
+  /// biblioteca.
+  void _abrirItem(ItemDeHino item) {
+    final m = item.musica;
+    if (m != null) {
+      _irPara(m);
+    } else {
+      _abrirDaBiblioteca(item.numero, doTeclado: false);
+    }
+  }
+
+  /// Enter no campo de busca: o número digitado abre, e um resultado só
+  /// abre também. É o "digitar 15 e Enter" de quem tem teclado de verdade.
+  void _enviarBusca(String texto, List<ItemDeHino> itens) {
+    final limpo = texto.trim();
+    if (RegExp(r'^\d+$').hasMatch(limpo)) {
+      _digitado = limpo;
+      _abrir();
+    } else if (itens.length == 1) {
+      _abrirItem(itens.first);
+    }
   }
 
   /// Abre a tela de cadastro já com o hinário e o número preenchidos.
@@ -447,8 +409,124 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
       _digitado = '';
       _recado = '';
       _recadoDeErro = false;
+      _selecionado = null;
+      _erroDasLetras = null;
     });
     context.read<BibliotecaProvider>().carregarIndice(h.id);
+  }
+
+  Future<void> _baixarLetras() async {
+    final erro =
+        await context.read<BibliotecaProvider>().baixarLetras(_hinario);
+    if (!mounted) return;
+    setState(() => _erroDasLetras = erro);
+  }
+
+  // ─── Teclado de verdade ─────────────────────────────────────────────────
+
+  /// As teclas de quem tem teclado: digitar o número e Enter, "/" para
+  /// buscar, Esc para sair da busca ou fechar o hino aberto.
+  KeyEventResult _teclas(FocusNode _, KeyEvent e, _Visao visao) {
+    if (e is! KeyDownEvent) return KeyEventResult.ignored;
+    final k = e.logicalKey;
+    final c = e.character ?? '';
+    final soDigito = RegExp(r'^\d$').hasMatch(c);
+    final comAtalho = HardwareKeyboard.instance.isControlPressed ||
+        HardwareKeyboard.instance.isMetaPressed ||
+        HardwareKeyboard.instance.isAltPressed;
+    if (comAtalho) return KeyEventResult.ignored;
+
+    if (k == LogicalKeyboardKey.escape) {
+      if (_buscaFoco.hasFocus) {
+        if (_busca.isNotEmpty) {
+          _buscaCtrl.clear();
+          setState(() => _busca = '');
+        } else {
+          _focoDaTela.requestFocus();
+        }
+        return KeyEventResult.handled;
+      }
+      if (visao == _Visao.numero && _digitado.isNotEmpty) {
+        _limpar();
+        return KeyEventResult.handled;
+      }
+      // Escolhendo o hino de um culto, Esc só cancela a escolha — não fecha
+      // o culto que está aberto ao lado.
+      if (widget.paraEscolher) {
+        Navigator.maybePop(context);
+        return KeyEventResult.handled;
+      }
+      final painel = PainelDeDetalhe.maybeOf(context);
+      if (painel != null && painel.aberto) {
+        painel.fechar();
+        setState(() => _selecionado = null);
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
+    // Se o campo de busca tem o foco, quem digita é ele.
+    if (_buscaFoco.hasFocus) return KeyEventResult.ignored;
+
+    if (visao == _Visao.numero) {
+      if (soDigito) {
+        _digitar(c);
+        return KeyEventResult.handled;
+      }
+      if (k == LogicalKeyboardKey.backspace) {
+        _apagar();
+        return KeyEventResult.handled;
+      }
+      if (k == LogicalKeyboardKey.enter ||
+          k == LogicalKeyboardKey.numpadEnter) {
+        _relogio?.cancel();
+        _abrir();
+        return KeyEventResult.handled;
+      }
+      return KeyEventResult.ignored;
+    }
+
+    if (k == LogicalKeyboardKey.slash) {
+      _buscaFoco.requestFocus();
+      return KeyEventResult.handled;
+    }
+    if (soDigito) {
+      // Digitar o número de qualquer lugar da tela já cai na busca.
+      _buscaCtrl.value = TextEditingValue(
+        text: c,
+        selection: TextSelection.collapsed(offset: c.length),
+      );
+      setState(() => _busca = c);
+      _buscaFoco.requestFocus();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  // ─── A tela ─────────────────────────────────────────────────────────────
+
+  List<ItemDeHino> _itensDe(
+    SongsProvider songs,
+    IndiceDoHinario indice,
+    Map<int, String> letras,
+  ) {
+    final igual = identical(_songsUsadas, songs.allSongs) &&
+        identical(_indiceUsado, indice) &&
+        identical(_letrasUsadas, letras) &&
+        _hinarioUsado == _hinario.id;
+    if (!igual) {
+      _itens = itensDoHinario(
+        hinario: _hinario.id,
+        repertorio: songs.repertorio,
+        indice: indice,
+        letras: letras,
+      );
+      _songsUsadas = songs.allSongs;
+      _indiceUsado = indice;
+      _letrasUsadas = letras;
+      _hinarioUsado = _hinario.id;
+    }
+    return _itens;
   }
 
   @override
@@ -456,7 +534,10 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final songs = context.watch<SongsProvider>();
     final auth = context.watch<AuthProvider>();
+    final biblioteca = context.watch<BibliotecaProvider>();
     final numeroDigitado = int.tryParse(_digitado);
+    final indice = biblioteca.indiceDe(_hinario.id);
+    final letras = biblioteca.letrasDe(_hinario.id);
 
     // A contagem sai dos cultos que o app já tem em memória — sem coleção
     // nova e sem leitura nova. A janela são 60 dias, e é por isso que a tela
@@ -471,47 +552,38 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
     final semDados = _ordem == OrdemDosHinos.maisTocados && vezes.isEmpty;
     final ordemValendo = semDados ? OrdemDosHinos.numero : _ordem;
 
-    final achados = SongsProvider.hinosOrdenados(
-      songs.hinosDe(_hinario.id, busca: _busca),
+    final todos = _itensDe(songs, indice, letras);
+    final itens = ordenarItens(
+      filtrarItens(todos, _busca),
       ordemValendo,
       vezesTocadas: vezes,
       favoritas: auth.user?.favoriteSongs.toSet() ?? const {},
     );
 
-    // A biblioteca só entra na lista quando a pessoa PROCURA, e sem repetir o
-    // que já está no repertório: o mesmo hino em duas linhas faria parecer
-    // que há dois.
-    final indice = context.watch<BibliotecaProvider>().indiceDe(_hinario.id);
-    final jaNoRepertorio = <int>{
-      for (final s in songs.allSongs)
-        if (s.hinario == _hinario.id && s.numero != null) s.numero!,
-    };
-    final naBiblioteca = indice.buscar(_busca, excluir: jaNoRepertorio);
+    final buscaPorTexto = _busca.trim().length >= 3 &&
+        !RegExp(r'^\d+$').hasMatch(_busca.trim());
+    final estadoDasLetras = !buscaPorTexto || indice.total == 0
+        ? EstadoDasLetras.nenhum
+        : biblioteca.baixandoLetras(_hinario.id)
+            ? EstadoDasLetras.baixando
+            : biblioteca.letrasProntas(_hinario.id)
+                ? EstadoDasLetras.prontas
+                : EstadoDasLetras.oferecer;
 
-    final corpo = ListView(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 40),
-      children: [
-        _SeletorDeHinario(
-          ordem: _ordemDosHinarios,
-          escolhido: _hinario,
-          isDark: isDark,
-          onEscolher: _trocarHinario,
-          onReordenar: _reordenar,
-          onMover: _mover,
-        ),
-        const SizedBox(height: 18),
-        _Mostrador(
-          sigla: _hinario.sigla,
-          digitado: _digitado,
-          isDark: isDark,
-        ),
-        if (_procurando) ...[
-          const SizedBox(height: 12),
-          _Procurando(numero: numeroDigitado, isDark: isDark),
-        ],
-        if (_recado.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          _Recado(
+    final String? avisoDaOrdem;
+    if (semDados) {
+      avisoDaOrdem = 'Nenhum culto com repertório nos últimos 2 meses, então '
+          'ainda não dá para dizer o que é mais tocado. A lista está pelo '
+          'número.';
+    } else if (_ordem == OrdemDosHinos.maisTocados) {
+      avisoDaOrdem = 'Mais tocados nos últimos 2 meses, primeiro.';
+    } else {
+      avisoDaOrdem = null;
+    }
+
+    final recado = _recado.isEmpty
+        ? null
+        : _Recado(
             texto: _recado,
             isDark: isDark,
             // O botão só aparece para quem o banco deixa cadastrar. Para um
@@ -544,167 +616,147 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
                 ? null
                 : () => abrirBuscaCifraClub(
                     context, '${_hinario.nome} $numeroDigitado'),
-          ),
-        ],
-        const SizedBox(height: 18),
-        _Teclado(
-          isDark: isDark,
-          onDigito: _digitar,
-          onApagar: _apagar,
-          onLimpar: _limpar,
-          podeApagar: _digitado.isNotEmpty,
-        ),
-        const SizedBox(height: 26),
-        _UltimosAbertos(isDark: isDark, onAbrir: _irPara),
-        const SizedBox(height: 26),
-        Text(
-          'Ou procure pelo nome ou por um trecho',
-          style: TextStyle(
-            fontFamily: 'Poppins',
-            fontSize: 13,
-            fontWeight: FontWeight.w500,
-            color: isDark
-                ? AppColors.textSecondaryDark
-                : AppColors.textSecondaryLight,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _buscaCtrl,
-                onChanged: (v) => setState(() => _busca = v),
-                decoration: InputDecoration(
-                  hintText: 'Ex: grato, 15, firme nas promessas',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                  isDense: true,
-                  filled: true,
-                  fillColor: isDark
-                      ? Colors.white10
-                      : Colors.black.withValues(alpha: 0.04),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
-                    borderSide: BorderSide.none,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(width: 6),
-            // DISCRETO, e ao lado da busca de propósito: é aqui que a
-            // pessoa está olhando a lista. A busca continua valendo em
-            // qualquer ordem — filtrar e ordenar são coisas separadas.
-            IconButton(
-              icon: const Icon(Icons.swap_vert_rounded),
-              tooltip: 'Ordenar',
-              onPressed: _abrirOrdenar,
-            ),
-          ],
-        ),
-        if (semDados) ...[
-          const SizedBox(height: 6),
-          Text(
-            'Nenhum culto com repertório nos últimos 2 meses, então ainda '
-            'não dá para dizer o que é mais tocado. A lista está pelo '
-            'número.',
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 12,
-              height: 1.4,
-              color: isDark
-                  ? AppColors.textSecondaryDark
-                  : AppColors.textSecondaryLight,
-            ),
-          ),
-        ] else if (_ordem != OrdemDosHinos.numero) ...[
-          const SizedBox(height: 6),
-          Text(
-            _ordem == OrdemDosHinos.maisTocados
-                ? 'Mais tocados nos últimos 2 meses, primeiro.'
-                : '${_ordem.rotulo}.',
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 12,
-              color: isDark
-                  ? AppColors.textSecondaryDark
-                  : AppColors.textSecondaryLight,
-            ),
-          ),
-        ],
-        if (indice.total > 0 && _busca.trim().isEmpty) ...[
-          const SizedBox(height: 6),
-          Text(
-            indice.total == 1
-                ? 'Na biblioteca há 1 hino da ${_hinario.nome}. Digite o '
-                    'número, ou procure pelo nome.'
-                : 'Na biblioteca há ${indice.total} hinos da '
-                    '${_hinario.nome}. Digite o número, ou procure pelo nome.',
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              fontSize: 12,
-              height: 1.4,
-              color: isDark
-                  ? AppColors.textSecondaryDark
-                  : AppColors.textSecondaryLight,
-            ),
-          ),
-        ],
-        const SizedBox(height: 10),
-        if (achados.isEmpty && naBiblioteca.isEmpty)
-          _Vazio(
-            busca: _busca,
-            hinario: _hinario,
-            total: songs.hinosDe(_hinario.id).length,
-            naBiblioteca: indice.total,
+          );
+
+    final corpo = ConformeAEntrada(
+      builder: (context, toque) {
+        // Dedo: o teclado primeiro, a lista a um toque. Mouse: direto na
+        // lista, onde digitar o número e Enter funciona.
+        final visao = toque ? (_visao ?? _Visao.numero) : _Visao.lista;
+
+        final cabeca = <Widget>[
+          PastilhasDeHinario(
+            ordem: _ordemDosHinarios,
+            escolhido: _hinario,
+            organizando: _organizando,
             isDark: isDark,
-          )
-        else ...[
-          ...achados.map((h) => _LinhaDeHino(
-                hino: h,
-                hinario: _hinario,
-                isDark: isDark,
-                onAbrir: () => _irPara(h),
-              )),
-          if (naBiblioteca.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(4, 14, 4, 4),
-              child: Text(
-                'Na biblioteca',
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: isDark
-                      ? AppColors.textSecondaryDark
-                      : AppColors.textSecondaryLight,
-                ),
-              ),
+            onEscolher: _trocarHinario,
+            onMover: _mover,
+            onAlternarOrganizar: () =>
+                setState(() => _organizando = !_organizando),
+          ),
+          if (toque) ...[
+            const SizedBox(height: 4),
+            _AbasDaVisao(
+              visao: visao,
+              isDark: isDark,
+              onEscolher: (v) => setState(() => _visao = v),
             ),
-            ...naBiblioteca.take(_maximoDaBiblioteca).map((n) =>
-                _LinhaDaBiblioteca(
-                  numero: n,
-                  titulo: indice.tituloDe(n) ?? '',
+            const SizedBox(height: 8),
+          ] else
+            const SizedBox(height: 8),
+          if (_procurando) ...[
+            _Procurando(numero: numeroDigitado, isDark: isDark),
+            const SizedBox(height: 8),
+          ],
+        ];
+
+        final Widget conteudo;
+        if (visao == _Visao.numero) {
+          conteudo = LayoutBuilder(
+            builder: (context, c) {
+              // As teclas crescem com o espaço que sobra, até um limite: em
+              // celular alto ficam grandes (tela usada de pé), e em celular
+              // baixo voltam a 52 px e a tela rola em vez de espremer.
+              final reservado = 64 + 8 + 8 + 10 + 46 + 24 +
+                  (recado != null ? 84 : 0);
+              final tecla = ((c.maxHeight - reservado) / 4 - 8)
+                  .clamp(52.0, 74.0)
+                  .toDouble();
+              return SingleChildScrollView(
+                padding: const EdgeInsets.only(bottom: 24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    MostradorDoHino(
+                      sigla: _hinario.sigla,
+                      digitado: _digitado,
+                      isDark: isDark,
+                    ),
+                    if (recado != null) ...[
+                      const SizedBox(height: 8),
+                      recado,
+                    ],
+                    const SizedBox(height: 8),
+                    TecladoDeHino(
+                      isDark: isDark,
+                      alturaDaTecla: tecla,
+                      onDigito: _digitar,
+                      onApagar: _apagar,
+                      onLimpar: _limpar,
+                      podeApagar: _digitado.isNotEmpty,
+                    ),
+                    const SizedBox(height: 10),
+                    _UltimosAbertos(isDark: isDark, onAbrir: _irPara),
+                  ],
+                ),
+              );
+            },
+          );
+        } else {
+          conteudo = Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (recado != null) ...[
+                recado,
+                const SizedBox(height: 8),
+              ],
+              if (_erroDasLetras != null) ...[
+                _Recado(texto: _erroDasLetras!, isDark: isDark),
+                const SizedBox(height: 8),
+              ],
+              Expanded(
+                child: ListaDeHinosView(
+                  controle: _buscaCtrl,
+                  foco: _buscaFoco,
+                  // Com mouse, o cursor já cai na busca: é o que permite
+                  // digitar o número e Enter sem tocar em nada.
+                  autofoco: !toque && !widget.paraEscolher,
+                  onTapFora: () => _focoDaTela.requestFocus(),
+                  busca: _busca,
+                  onBusca: (v) => setState(() => _busca = v),
+                  onEnviar: (t) => _enviarBusca(t, itens),
+                  ordem: ordemValendo,
+                  onOrdem: _escolherOrdem,
+                  avisoDaOrdem: avisoDaOrdem,
+                  itens: itens,
+                  totalDoHinario: todos.length,
+                  hinario: _hinario,
+                  favoritas: auth.user?.favoriteSongs.toSet() ?? const {},
+                  selecionado: _selecionado,
                   isDark: isDark,
-                  onAbrir: () => _abrirDaBiblioteca(n, doTeclado: false),
-                )),
-            if (naBiblioteca.length > _maximoDaBiblioteca)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(4, 8, 4, 0),
-                child: Text(
-                  'Mostrando $_maximoDaBiblioteca de ${naBiblioteca.length}. '
-                  'Escreva mais um pouco para afinar a busca.',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 12,
-                    color: isDark
-                        ? AppColors.textSecondaryDark
-                        : AppColors.textSecondaryLight,
+                  onAbrir: _abrirItem,
+                  letras: estadoDasLetras,
+                  onBaixarLetras: _baixarLetras,
+                  vazio: _Vazio(
+                    busca: _busca,
+                    hinario: _hinario,
+                    total: songs.hinosDe(_hinario.id).length,
+                    naBiblioteca: indice.total,
+                    isDark: isDark,
                   ),
                 ),
               ),
-          ],
-        ],
-      ],
+            ],
+          );
+        }
+
+        return Focus(
+          focusNode: _focoDaTela,
+          autofocus: false,
+          onKeyEvent: (n, e) => _teclas(n, e, visao),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ...cabeca,
+                Expanded(child: conteudo),
+              ],
+            ),
+          ),
+        );
+      },
     );
 
     if (widget.embutida) return corpo;
@@ -715,206 +767,85 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
             ? 'Escolher hino pelo número'
             : 'Hino pelo número'),
       ),
-      body: corpo,
+      body: ColunaCentral(largura: 720, child: corpo),
     );
   }
 }
 
 // ─── Peças da tela ────────────────────────────────────────────────────────
 
-/// Os hinários, na ordem da pessoa — e é ela quem arrasta.
+/// As duas formas de achar o hino: digitando o número, ou vendo todos.
 ///
-/// POR QUE ISTO VIROU UMA LISTA DE PÉ
-///
-/// Eram duas pastilhas lado a lado, e lado a lado não há "arrastar para
-/// cima". O preço são uns 50 px a mais antes do teclado, numa tela de 375 px;
-/// o que se ganha é a igreja que canta do Cantor Cristão poder deixá-lo em
-/// primeiro **e o app abrir nele**, em vez de tocar na pastilha certa toda
-/// vez que abre a tela, sempre com a igreja esperando.
-///
-/// A alça fica visível, e o mesmo movimento está no menu de cada linha:
-/// arrastar exige firmeza na mão, e metade deste ministério tem mais de
-/// sessenta anos.
-class _SeletorDeHinario extends StatelessWidget {
-  final List<Hinario> ordem;
-  final Hinario escolhido;
+/// Abas com texto, e não um ícone: quem chega aqui na hora do culto procura
+/// "o número" e, se não lembra, "a lista".
+class _AbasDaVisao extends StatelessWidget {
+  final _Visao visao;
   final bool isDark;
-  final ValueChanged<Hinario> onEscolher;
-  final void Function(int de, int para) onReordenar;
-  final void Function(Hinario h, int passos) onMover;
+  final ValueChanged<_Visao> onEscolher;
 
-  const _SeletorDeHinario({
-    required this.ordem,
-    required this.escolhido,
+  const _AbasDaVisao({
+    required this.visao,
     required this.isDark,
     required this.onEscolher,
-    required this.onReordenar,
-    required this.onMover,
   });
 
   @override
   Widget build(BuildContext context) {
-    return ReorderableListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      // Lista rolável aninhada diz o próprio recuo, senão herda o do
-      // MediaQuery — que aqui é a barra inteira da aba Músicas, e abriria um
-      // buraco de 110 px no meio da tela. Já aconteceu, na Bíblia.
-      padding: EdgeInsets.zero,
-      buildDefaultDragHandles: false,
-      itemCount: ordem.length,
-      onReorder: onReordenar,
-      itemBuilder: (context, i) {
-        final h = ordem[i];
-        final ativo = h.id == escolhido.id;
-        return Padding(
-          key: ValueKey(h.id),
-          padding: const EdgeInsets.only(bottom: 8),
-          child: Material(
-            color: ativo
-                ? AppColors.blue
-                : (isDark
-                    ? Colors.white10
-                    : Colors.black.withValues(alpha: 0.05)),
-            borderRadius: BorderRadius.circular(12),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () => onEscolher(h),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(6, 4, 4, 4),
-                child: Row(
-                  children: [
-                    ReorderableDragStartListener(
-                      index: i,
-                      child: Padding(
-                        padding: const EdgeInsets.all(8),
-                        child: Icon(
-                          Icons.drag_indicator_rounded,
-                          size: 20,
-                          color: ativo
-                              ? Colors.white70
-                              : (isDark
-                                  ? AppColors.textSecondaryDark
-                                  : AppColors.textSecondaryLight),
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      child: Text(
-                        h.nome,
-                        style: TextStyle(
-                          fontFamily: 'Poppins',
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: ativo
-                              ? Colors.white
-                              : (isDark
-                                  ? AppColors.textPrimaryDark
-                                  : AppColors.textPrimaryLight),
-                        ),
-                      ),
-                    ),
-                    if (i == 0)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 4),
-                        child: Text(
-                          'abre aqui',
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            fontSize: 11,
-                            fontWeight: FontWeight.w500,
-                            color: ativo
-                                ? Colors.white70
-                                : (isDark
-                                    ? AppColors.textSecondaryDark
-                                    : AppColors.textSecondaryLight),
-                          ),
-                        ),
-                      ),
-                    PopupMenuButton<int>(
-                      icon: Icon(
-                        Icons.more_vert_rounded,
-                        size: 19,
-                        color: ativo
-                            ? Colors.white70
-                            : (isDark
-                                ? AppColors.textSecondaryDark
-                                : AppColors.textSecondaryLight),
-                      ),
-                      tooltip: 'Mover ${h.nome}',
-                      onSelected: (passos) => onMover(h, passos),
-                      itemBuilder: (_) => [
-                        // A opção que não tem para onde ir some, em vez de
-                        // aparecer e não fazer nada — toque que não responde
-                        // é o jeito de a pessoa achar que o app travou.
-                        if (i > 0)
-                          const PopupMenuItem(
-                            value: -1,
-                            child: Row(children: [
-                              Icon(Icons.arrow_upward_rounded, size: 18),
-                              SizedBox(width: 10),
-                              Text('Mover para cima'),
-                            ]),
-                          ),
-                        if (i < ordem.length - 1)
-                          const PopupMenuItem(
-                            value: 1,
-                            child: Row(children: [
-                              Icon(Icons.arrow_downward_rounded, size: 18),
-                              SizedBox(width: 10),
-                              Text('Mover para baixo'),
-                            ]),
-                          ),
-                      ],
-                    ),
-                  ],
+    Widget aba(_Visao v, IconData icone, String rotulo) {
+      final ativa = v == visao;
+      final cor = ativa
+          ? AppColors.blue
+          : (isDark
+              ? AppColors.textSecondaryDark
+              : AppColors.textSecondaryLight);
+      return Expanded(
+        child: Semantics(
+          button: true,
+          selected: ativa,
+          child: InkWell(
+            onTap: () => onEscolher(v),
+            child: Container(
+              height: 42,
+              decoration: BoxDecoration(
+                border: Border(
+                  bottom: BorderSide(
+                    color: ativa ? AppColors.blue : Colors.transparent,
+                    width: 3,
+                  ),
                 ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(icone, size: 19, color: cor),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      rotulo,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 13.5,
+                        fontWeight: ativa ? FontWeight.w600 : FontWeight.w500,
+                        color: cor,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-        );
-      },
-    );
-  }
-}
-
-class _Mostrador extends StatelessWidget {
-  final String sigla;
-  final String digitado;
-  final bool isDark;
-
-  const _Mostrador({
-    required this.sigla,
-    required this.digitado,
-    required this.isDark,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final vazio = digitado.isEmpty;
-    return Container(
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(vertical: 18),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Text(
-        vazio ? 'Digite o número' : '$sigla $digitado',
-        style: TextStyle(
-          fontFamily: 'Poppins',
-          fontSize: vazio ? 17 : 42,
-          fontWeight: vazio ? FontWeight.w500 : FontWeight.w700,
-          height: 1.1,
-          color: vazio
-              ? (isDark
-                  ? AppColors.textSecondaryDark
-                  : AppColors.textSecondaryLight)
-              : (isDark
-                  ? AppColors.textPrimaryDark
-                  : AppColors.textPrimaryLight),
         ),
-      ),
+      );
+    }
+
+    return Row(
+      children: [
+        aba(_Visao.numero, Icons.dialpad_rounded, 'Digitar o número'),
+        aba(_Visao.lista, Icons.format_list_numbered_rounded,
+            'Ver todos os hinos'),
+      ],
     );
   }
 }
@@ -1002,116 +933,6 @@ class _Recado extends StatelessWidget {
   }
 }
 
-class _Teclado extends StatelessWidget {
-  final bool isDark;
-  final ValueChanged<String> onDigito;
-  final VoidCallback onApagar;
-  final VoidCallback onLimpar;
-  final bool podeApagar;
-
-  const _Teclado({
-    required this.isDark,
-    required this.onDigito,
-    required this.onApagar,
-    required this.onLimpar,
-    required this.podeApagar,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        for (final linha in const [
-          ['1', '2', '3'],
-          ['4', '5', '6'],
-          ['7', '8', '9'],
-        ])
-          Row(
-            children: linha
-                .map((d) => _Tecla(
-                      rotulo: d,
-                      isDark: isDark,
-                      onTap: () => onDigito(d),
-                    ))
-                .toList(),
-          ),
-        Row(
-          children: [
-            _Tecla(
-              rotulo: 'C',
-              isDark: isDark,
-              suave: true,
-              onTap: podeApagar ? onLimpar : null,
-            ),
-            _Tecla(rotulo: '0', isDark: isDark, onTap: () => onDigito('0')),
-            _Tecla(
-              rotulo: '⌫',
-              isDark: isDark,
-              suave: true,
-              onTap: podeApagar ? onApagar : null,
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _Tecla extends StatelessWidget {
-  final String rotulo;
-  final bool isDark;
-  final bool suave;
-  final VoidCallback? onTap;
-
-  const _Tecla({
-    required this.rotulo,
-    required this.isDark,
-    this.onTap,
-    this.suave = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final desligada = onTap == null;
-    return Expanded(
-      child: Padding(
-        padding: const EdgeInsets.all(5),
-        child: Material(
-          color: suave
-              ? (isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.04))
-              : (isDark ? Colors.white12 : Colors.white),
-          borderRadius: BorderRadius.circular(14),
-          elevation: suave ? 0 : 1,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(14),
-            onTap: onTap,
-            // Alto de propósito: é tela usada de pé, com a igreja esperando,
-            // e tecla pequena erra.
-            child: SizedBox(
-              height: 62,
-              child: Center(
-                child: Text(
-                  rotulo,
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
-                    color: desligada
-                        ? (isDark ? Colors.white24 : Colors.black26)
-                        : (isDark
-                            ? AppColors.textPrimaryDark
-                            : AppColors.textPrimaryLight),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _UltimosAbertos extends StatelessWidget {
   final bool isDark;
   final ValueChanged<SongModel> onAbrir;
@@ -1144,65 +965,28 @@ class _UltimosAbertos extends StatelessWidget {
                 : AppColors.textSecondaryLight,
           ),
         ),
-        const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: abertos.map((h) {
-            final hin = hinarioPorId(h.hinario);
-            return ActionChip(
-              label: Text('${hin?.sigla ?? ''} ${h.numero}'),
-              onPressed: () => onAbrir(h),
-            );
-          }).toList(),
-        ),
-      ],
-    );
-  }
-}
-
-class _LinhaDeHino extends StatelessWidget {
-  final SongModel hino;
-  final Hinario hinario;
-  final bool isDark;
-  final VoidCallback onAbrir;
-
-  const _LinhaDeHino({
-    required this.hino,
-    required this.hinario,
-    required this.isDark,
-    required this.onAbrir,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      leading: SizedBox(
-        width: 46,
-        child: Text(
-          '${hino.numero}',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontFamily: 'Poppins',
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            color: AppColors.blue,
+        const SizedBox(height: 6),
+        // Uma fila só, que rola para o lado: um Wrap quebraria em várias
+        // linhas e comeria a tela que o teclado precisa.
+        SizedBox(
+          height: 40,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: EdgeInsets.zero,
+            children: [
+              for (final h in abertos)
+                Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: ActionChip(
+                    label:
+                        Text('${hinarioPorId(h.hinario)?.sigla ?? ''} ${h.numero}'),
+                    onPressed: () => onAbrir(h),
+                  ),
+                ),
+            ],
           ),
         ),
-      ),
-      title: Text(
-        hino.name,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          fontFamily: 'Poppins',
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      subtitle: Text('Tom ${hino.originalKey}'),
-      onTap: onAbrir,
+      ],
     );
   }
 }
@@ -1237,53 +1021,6 @@ class _Procurando extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-/// Um hino que está na biblioteca e não no repertório.
-class _LinhaDaBiblioteca extends StatelessWidget {
-  final int numero;
-  final String titulo;
-  final bool isDark;
-  final VoidCallback onAbrir;
-
-  const _LinhaDaBiblioteca({
-    required this.numero,
-    required this.titulo,
-    required this.isDark,
-    required this.onAbrir,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-      leading: SizedBox(
-        width: 46,
-        child: Text(
-          '$numero',
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            fontFamily: 'Poppins',
-            fontSize: 17,
-            fontWeight: FontWeight.w700,
-            color: AppColors.blue,
-          ),
-        ),
-      ),
-      title: Text(
-        titulo,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          fontFamily: 'Poppins',
-          fontSize: 15,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-      subtitle: const Text('Toque para ler'),
-      onTap: onAbrir,
     );
   }
 }
