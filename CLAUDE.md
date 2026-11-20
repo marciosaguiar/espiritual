@@ -2197,9 +2197,13 @@ da CI, e um teste que só passa na CI não prova que passa onde se publica.
    estavam), importou, e conferiu no celular os hinos 583, 584, 200 e 201.
    Cantor: o texto colado pelo dono ficou no histórico da sessão, então foi
    **EXECUTADO de verdade** contra o motor (ver "O texto do Cantor Cristão") —
-   581 hinos, do 1 ao 581. **Foi para o app, mas com o hinário errado** (ver
-   "Hinário errado"): a gravação no Firestore funcionou, e por isso o engano
-   apareceu.
+   581 hinos, do 1 ao 581. **Primeiro foi para o app com o hinário errado**
+   (ver "Hinário errado"); depois de re-importado no lugar certo, o dono
+   conferiu no iPhone (20/11/2026): Harpa 15 "Conversão" e 581 "Castelo
+   Forte"; Cantor 15 "A Deus Demos Glória", 100 "Jesus Ressuscitado" e 581 "A
+   Única Esperança", com a letra em minúsculas e os marcadores `[1]`/`[côro]`.
+   A gravação no Firestore pelo Dart, portanto, funcionou nas duas
+   bibliotecas — o item 3 abaixo segue valendo só para o emulador.
 2. **A tela num navegador de verdade a 375 px.** Só há testes de widget, com a
    fonte de teste (mais larga que a Poppins) e sem estouro de layout. Rodar o
    app e fotografar, como na rodada de 19/11, ainda falta.
@@ -2423,8 +2427,13 @@ biblioteca" e o nome no título protegem esse caso — e dependem de a pessoa le
 Um passo seguinte possível é comparar também com o índice do OUTRO hinário
 ("estes títulos são os do Cantor Cristão"), ao custo de uma leitura a mais.
 
-**Para consertar a biblioteca errada:** importar o Cantor com o chip "Cantor
-Cristão" e a Harpa de novo, com o chip "Harpa Cristã", da mesma fonte de antes.
+**Como foi consertado (20/11/2026):** importar a Harpa de novo, com o chip
+"Harpa Cristã", e o Cantor, com o chip "Cantor Cristão", da mesma fonte de
+antes. Houve um tropeço no caminho: o dono achou que tinha importado o Cantor,
+mas a confirmação ficou aberta e nunca tocou em "Importar" — o teclado do
+Cantor dizia "ainda não está no repertório" para todo número. **A tela de
+importar mostra "Já há N hinos…" ou "Ainda não há hinos…" logo abaixo dos
+hinários:** é a primeira coisa a olhar quando o teclado não acha um hino.
 Re-importar grava por cima, e as músicas já postas no repertório não mudam (o
 hino vira música de `songs` só quando é usado, e daí é uma cópia).
 
