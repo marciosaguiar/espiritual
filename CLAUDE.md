@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 870 testes
+flutter test                   # 917 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -28,6 +28,30 @@ Para ver o app em vários tamanhos de tela (sem Firebase, sem navegador):
 ```bash
 CAPTURAR_EM=/pasta/das/fotos flutter test ferramentas/captura/capturar_telas_test.dart
 # opcionais: LARGURAS=375,768,1280,1920  TELAS=inicio,hinarios  TEMAS=claro,escuro
+```
+
+Num navegador de verdade (Chromium + Playwright, sem Firebase): prova que o
+detalhe abre AO LADO, clicando com o mouse a 1280, 1920 e 2400 px:
+
+```bash
+flutter build web --release -t ferramentas/captura/main_demo.dart \
+    --base-href / --pwa-strategy=none --no-web-resources-cdn
+node ferramentas/captura/provar_ao_lado.mjs build/web /pasta/das/fotos
+```
+
+Para MEDIR a abertura do app (a `main()` de verdade, o service worker e o
+Firestore com cache, contra o emulador, num Chromium com a rede e o processador
+de um celular) — ver "A abertura do app" abaixo:
+
+```bash
+SEMENTE_EM=/tmp/semente.json flutter test ferramentas/medir/gerar_semente_test.dart
+firebase emulators:start --only auth,firestore --project espiritual-d2403   # com auth no firebase.json
+node ferramentas/medir/semear.mjs /tmp/semente.json
+flutter build web --release --base-href / --pwa-strategy=none --no-web-resources-cdn \
+    --dart-define=EMULADOR=true --dart-define=MEDIR=true
+node ferramentas/medir/carimbar_sw.mjs build/web
+PERFIL=lento REPETICOES=3 node ferramentas/medir/medir_abertura.mjs build/web /tmp/medidas.json
+node ferramentas/medir/comparar.mjs antes.json depois.json
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -50,7 +74,7 @@ nem de Flutter:
 
 ```bash
 node --test worker/teste/*.mjs               # 83 testes
-node --test web/teste/*.mjs                  # 11 testes do service worker
+node --test web/teste/*.mjs                  # 16 testes do service worker
 node --test ferramentas/teste/*.mjs          # 22 testes das rotinas diárias
 ```
 
@@ -2191,7 +2215,8 @@ passar:
   A suíte inteira foi rodada em `TZ=America/Sao_Paulo` e em UTC: 656 nos dois
   (675 depois de ler o texto real da Harpa; 710 depois do Cantor Cristão;
   724 depois dos cultos do mesmo dia; 740 depois da trava de hinário errado; 870 depois dos
-  hinários compactos e do app no computador — ver as seções abaixo).
+  hinários compactos e do app no computador; 917 depois de abrir ao lado e da abertura
+  rápida — ver as seções abaixo).
   **Ao mexer em data, rode também `TZ=America/Sao_Paulo flutter test`.**
 
 Os dois dizem a mesma coisa: o computador do dono é o ambiente que mais difere
@@ -2623,6 +2648,216 @@ Guia que descreve a tela de antes é pior que guia nenhum: ele faz a pessoa
 achar que o app está quebrado. Então o "Como usar o app" (Perfil → Ajuda) e o
 manual do administrador foram reescritos junto com a navegação, na mesma
 entrega — nunca depois.
+
+### Abrir ao lado de verdade (20/11/2026)
+
+O dono conferiu a tela larga num Chrome de 2.400 px e achou o que as fotos de
+teste não achavam: **tocar numa música abria a tela cheia, e o painel da
+direita seguia dizendo "Escolha uma música".** A causa era uma só: a faixa
+"Sugestão de repertório" abria a música por `Navigator.push`, o único caminho
+que não passava por `abrirTela`. O teste da rodada anterior tocava na PRIMEIRA
+música da tela, que por acaso era da lista comum.
+
+**A regra que sai disto:** todo teste de "abre ao lado" toca em CADA lugar de
+onde o item pode ser aberto, e a prova final é num navegador de verdade.
+
+- **Três caminhos que ainda abriam por cima, e agora abrem ao lado:** a
+  sugestão; o botão "+" da Escala (o `context` da função ficava ACIMA do painel
+  de detalhe, então `abrirTela` não o achava — o culto recém-criado cobria a
+  lista); e o toque num aviso de culto (`MainScreen._abrirCulto` empurrava a
+  tela por cima de tudo; agora pede à aba da Escala, por `PedidoDeCulto`, que
+  abre no próprio painel). **Ficam por cima, de propósito:** os cartões do
+  Início (o Início não é mestre-detalhe) e as telas abertas pela raiz
+  (projetar, adicionar música).
+- **Esc fecha o detalhe**, um nível por vez (`maybePop` no `Navigator` do
+  painel), e **nunca** quando: a aba não está à vista (`AbaVisivel` — o
+  `IndexedStack` mantém todas montadas e o teclado chegaria às quatro de uma
+  vez); há janela de pergunta por cima (o Esc é dela); ou a pessoa digita num
+  campo COM texto dentro do painel (ali o Esc é "limpar", e fechar levaria a
+  anotação junto). Botão de "expandir para tela cheia" **não foi feito**: o
+  detalhe já tem a seta de voltar, e um segundo caminho para a mesma coisa só
+  daria o que errar.
+- **Sugestão de repertório virou uma faixa recolhida**, de outra cor, e a lista
+  ganhou o título "Todas as músicas (N)". **Nenhuma música sai da lista por
+  estar sugerida:** quem a procura pelo nome tem de achá-la onde sempre esteve
+  (a opção de não repetir criaria buracos justamente na lista em que se
+  procura). Fechada de partida e lembrada no aparelho: o Repertório serve
+  primeiro a quem procura música; a sugestão é para quem quer ideias.
+- **A letra aparecia como uma coluna de ~360 px no meio da tela.** Um
+  `SingleChildScrollView` dentro de um `Column` ENCOLHE até a largura do que
+  tem dentro, e o `Column` o centraliza; no celular ninguém via, porque a linha
+  já enche a tela. Agora `SizedBox(width: infinity)`.
+- **Linha do hino que quebra no meio da frase:** em tela larga a letra encolhe
+  o tamanho até a linha mais comprida caber (`tamanhoQueCabe`, função pura,
+  nunca abaixo de 16). **No celular nada muda** (quem canta quer a letra
+  grande, mesmo que quebre), e **depois do A+/A− o tamanho é EXATO, o da
+  pessoa** — sem isso o botão pareceria quebrado. A cifra nunca quebra (rola
+  para o lado).
+
+**O que só um navegador de verdade mostrou** (`ferramentas/captura/
+provar_ao_lado.mjs`, sobre o demo compilado para a web, `main_demo.dart`):
+
+- **Clicar no espaço vazio de uma linha não fazia nada.** O `GestureDetector`
+  do `ComMao` só valia onde havia texto ou ícone: as duas primeiras linhas da
+  sugestão abriam (o nome ia até o ponto do clique) e a terceira e a quarta não.
+  `ComMao` agora é `opaque`. Vale para todo cartão clicável do app.
+- **Com o detalhe aberto ao lado, a lista e a navegação SUMIAM da árvore de
+  acessibilidade.** O `Navigator` do painel põe uma barreira de rota, e ela
+  bloqueia a semântica de tudo o que foi pintado antes na mesma fronteira — que
+  era a tela inteira. Num monitor, um leitor de tela não via a barra lateral
+  nem a lista. Conserto: `Semantics(container, explicitChildNodes)` em volta do
+  `Navigator` do painel.
+- **O `OuvinteDeEntrada` (dedo ou mouse) existia e nunca foi posto no app.** Os
+  testes chamavam `EntradaDoUsuario.registrar` à mão, e no app de verdade a
+  resposta era sempre "mouse". Agora está no `builder` do `MaterialApp`, e um
+  teste confere o `main.dart`.
+
+**Como a prova roda:** o demo (sem Firebase, dados inventados de
+`test/utilitarios/`) é compilado para a web, servido, e o Playwright **clica
+com o mouse de verdade** a 1280, 1920 e 2400 px; o resultado é lido da árvore
+de semântica do Flutter (texto de cada widget com sua posição), não de pixels.
+Duas coisas custaram tempo: o mouse do Playwright derruba a página DEPOIS de a
+semântica ser ligada (então cada cenário clica primeiro e só no fim liga a
+semântica), e um contêiner traz o texto de todos os filhos e começa na
+esquerda da tela (então a conferência de posição usa o MENOR elemento que tem o
+texto). **Medido:** na primeira passada do navegador, as linhas 3 e 4 da
+sugestão não abriram nada (o defeito do espaço vazio acima) e a lista sumia da
+semântica; depois dos dois consertos, os 8 cenários passam nas três larguras.
+Nos testes de widget, com a sugestão voltando a abrir por `Navigator.push`, os
+dois testes de "tocar na sugestão" reprovam, e sem o `Builder` do "+" o do
+culto criado também — conferido quebrando de propósito.
+
+### A abertura do app (20/11/2026)
+
+O dono sente o app lento no iPhone. **Medi antes de mexer** — e o que a medida
+mostrou não era o que eu teria apostado: o gargalo não era o banco nem a tela,
+era o que o app pedia à rede e o que ele construía antes de precisar.
+
+**Como se mediu** (`ferramentas/medir/`) — e o que isto NÃO é:
+
+- O app de verdade (a mesma `main()`, o service worker, o Firestore com cache),
+  compilado com `--dart-define=EMULADOR=true --dart-define=MEDIR=true` — as
+  duas só existem nessa compilação e somem da normal — falando com o emulador
+  de Auth e Firestore. Banco do tamanho do ministério (`gerar_semente_test.dart`
+  + `semear.mjs`, com os PRÓPRIOS modelos do app): 16 pessoas, 42 músicas, 107
+  cultos, 50 mensagens, 3 equipes.
+- Perfil **lento** = o do Lighthouse para celular: **1,6 Mbps, 150 ms de
+  latência, processador 4× mais lento**. Perfil **rápido** = 20 Mbps, 40 ms, sem
+  freio no processador. Três repetições, vale a mediana.
+- **A rede é UMA linha, dividida entre a página e o service worker.** O
+  servidor de medição imita o GitHub Pages (gzip, ETag, 10 min de cache) e
+  limita a banda. O freio do Chrome (CDP) só alcança a página: o service worker
+  é outro alvo e ficava de fora, escondendo justamente a disputa que mais pesa
+  na primeira abertura. O que vem do Google (fontes, SDK do Firebase) passa pela
+  mesma linha, com as três viagens extras de uma conexão nova.
+- **Não é um iPhone.** É Chromium, e não WebKit; **sem placa gráfica** (desenha
+  por software: a 3× de resolução cada quadro levava ~65 ms e até as respostas
+  do banco ficavam na fila — o mesmo login até o Início com dados levou 22 s a
+  2× e 4 s a 1×, por isso a medição é a 1×); com o emulador, e não o Firestore
+  de verdade. A ordem de grandeza e o "quem pesa mais" valem; o número do
+  iPhone não é este.
+- Marcas de tempo dentro do app (`marcar`, em `core/platform/marcas*.dart`):
+  `dart-main`, `firebase-pronto`, `flutter-first-frame`, `escutas-iniciando`,
+  `musicas-recebidas`, `cultos-recebidos` e `inicio-com-dados` — o primeiro
+  quadro com cultos E músicas na tela, que é o "posso usar" que a pessoa sente.
+
+**Onde o tempo ia, no perfil lento:**
+
+- **Primeira abertura:** 3,6 MB (canvaskit 2,1, `main.dart.js` 1,05, fontes
+  0,45) em 1,6 Mbps são ~18 s só de download. A primeira tela do Flutter saía
+  em **29,7 s**.
+- **Duas filas na mesma linha.** O service worker se registrava no `load` e
+  começava a instalar o cache NA HORA em que o app ainda baixava o motor
+  gráfico: eram 42 arquivos e **21 MB** (as duas versões do canvaskit, os
+  `.symbols`, o `wimp`), para um app que usa um canvaskit e nunca abre um
+  `.symbols`. E o Flutter baixava a Roboto de `fonts.gstatic.com` antes do
+  `main` — um servidor de fora, conexão nova, quatro viagens.
+- **Abrir de novo: 14,8 s até o Início com dados, e ~10 s disso era
+  processador.** A cada abertura o navegador baixava **446 KB de fontes de
+  emoji e de símbolos do Google**. Vinham do 👋 da saudação e, muito
+  provavelmente, do texto das abas escondidas — o `IndexedStack` constrói TODAS
+  as abas, e as escondidas medem o texto (as duas coisas mudaram juntas, e não
+  separei qual pesa mais). E as cinco abas eram construídas antes de o Início
+  pedir os dados.
+- **Achado de passagem, e era defeito:** na PRIMEIRA instalação o service worker
+  assumia a página aberta e o `controllerchange` a RECARREGAVA — numa linha
+  lenta, minutos depois de abrir, com a pessoa já digitando. Recarregar é para a
+  versão nova trocar a velha; na primeira não há velha.
+
+**O que mudou** (nesta ordem de tamanho do efeito):
+
+1. **O service worker espera o app desenhar a 1ª tela (+2 s) para se
+   registrar**, não instala mais `.symbols`, `wimp` nem a versão do canvaskit
+   que o navegador não usa (a conta é a do `flutter.js`: `Intl.v8BreakIterator`
+   e `Intl.Segmenter` → "chromium", senão a comum — o iPhone). **Decidido no
+   `sw.js`, e não só no carimbo da publicação:** uma regra errada no workflow
+   custa uma publicação inteira; no `sw.js`, não. E a primeira instalação não
+   recarrega a página.
+2. **Sem emoji no Início, e abas sob demanda.** O 👋 saiu. As abas são
+   construídas na primeira visita e DEPOIS ficam (guardam busca, rolagem e o que
+   foi digitado, como antes). Um teste varre o Início procurando emoji.
+3. **A fonte da cifra (JetBrains Mono, 89 KB) deixou de ser baixada antes do
+   primeiro quadro.** Virou ativo, carregado por `FonteMono` quando a música, o
+   editor ou o Modo ao vivo abrem — e sozinha 4 s depois da abertura. Se a cifra
+   abrir antes, o texto se mede de novo quando a fonte entra.
+4. **O nome "Roboto" existe no pacote**, apontando para uma cópia de 616 bytes
+   da Poppins com um só caractere. Sem o nome, o motor baixa a Roboto do Google
+   na abertura. O app inteiro já escreve em Poppins; só o nome faltava. (Apontar
+   para a Poppins inteira também funcionava, mas baixava 71 KB duas vezes.)
+5. **Dicas de rede no `index.html`**: `preconnect` aos três servidores do Google
+   que o app usa e `modulepreload` dos três arquivos do SDK do Firebase (175 KB)
+   — que o Flutter só pedia DEPOIS de o Dart começar. A versão (10.11.1) é a do
+   `firebase_core_web` do `pubspec.lock`, e um teste confere que as duas não se
+   separam.
+6. **Escutas na ordem do que o Início precisa** (cultos, músicas, pessoas,
+   mensagens); "está digitando" só começa quando o chat abre; a agenda fixa
+   espera 1,5 s.
+
+**Resultado (mediana de 3, ms desde o início da navegação):**
+
+| | antes | depois |
+|---|---|---|
+| **Lento** — 1ª tela do Flutter, 1ª abertura | 29,7 s | 20,5 s |
+| **Lento** — entrar até o Início com dados | 17,2 s | 6,3 s |
+| **Lento** — abrir de novo, 1ª tela | 5,6 s | 2,7 s |
+| **Lento** — abrir de novo, Início com dados | 14,8 s | **5,4 s** |
+| **Rápido** — abrir de novo, Início com dados | 4,2 s | **2,0 s** |
+
+**As metas, com franqueza:**
+
+- **Abrir de novo em menos de 2 s até o Início com dados: atingida no perfil
+  rápido (1,96 s — no limite, não com folga) e NÃO no lento (5,4 s).** No lento o
+  processador 4× gasta ~2 s só para o `main` do Dart começar (o motor gráfico
+  ligando e o código sendo lido), antes de qualquer coisa do app. O que ainda
+  custa no rápido, medido: o motor + o Dart (~0,7 s), a conferência da sessão no
+  Google (o plugin do Auth faz `Firebase.initializeApp` esperar o
+  `accounts:lookup`, uma ida e volta de rede), a construção do Início e a leitura
+  do cache do Firestore. Menos de 2 s no celular com internet ruim exigiria
+  cortar o `main` do Dart, e isso é o motor do Flutter.
+- **Primeira abertura: limitada pelo tamanho, não pelo código.** ~3,6 MB a 1,6
+  Mbps são 18 s de download; o que se tirou foi o que NÃO devia estar na fila
+  (fila do service worker, fontes de fora, emoji). Abaixo disso só reduzindo
+  bytes — e o plano grátis não oferece brotli (o GitHub Pages serve gzip) nem CDN
+  própria. **Carregar código sob demanda (`deferred as`)** foi avaliado e NÃO
+  feito: o ganho possível é uma fração de `main.dart.js` (Bíblia, importar
+  hinário, projetar, Painel do líder), por uma mudança que atravessa telas e
+  testes. Como nada foi adiado, **a trava de tamanho não mudou de sentido** e
+  segue medindo `main.dart.js`.
+- **O iPhone não foi medido.** Quem decide é abrir o app instalado e olhar:
+  o que mudou nele, em ordem de confiança, é a fila do service worker (o
+  carimbo punha as duas versões do canvaskit na lista, então o Safari também
+  baixava a "chromium", que nunca usa), o emoji e a Roboto.
+
+**Como o dono confere sem ferramenta:** limpar os dados do site, abrir o app,
+esperar, fechar e abrir de novo. A segunda abertura é a que tem de ser rápida; a
+primeira depende da internet.
+
+**Limites conhecidos:** o primeiro login depois de limpar o aparelho ainda baixa
+tudo (é a "primeira abertura"); quem fecha o app e o abre em menos de 5 s cai na
+trava do cache do Firestore (que o navegador só solta em 5 s) e usa o cache em
+memória — mais lento, mas inteiro; e o Safari do iPhone pode tratar
+`modulepreload` e `Intl.Segmenter` de forma diferente do Chromium (o `sw.js` cai
+no canvaskit comum, que é o que o Safari usa, mas isso não foi visto lá).
 
 ## O que não existe (e o relatório de auditoria aponta)
 
