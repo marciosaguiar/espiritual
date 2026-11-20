@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 917 testes
+flutter test                   # 1007 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -54,6 +54,22 @@ PERFIL=lento REPETICOES=3 node ferramentas/medir/medir_abertura.mjs build/web /t
 node ferramentas/medir/comparar.mjs antes.json depois.json
 ```
 
+Para CONTAR quantos documentos o banco entrega (a leitura que o Firebase cobra)
+e para PROVAR, num Chromium com a rede cortada, que o app funciona sem internet —
+ver "Offline primeiro":
+
+```bash
+flutter build web --release --base-href / --pwa-strategy=none --no-web-resources-cdn \
+    --dart-define=EMULADOR=true --dart-define=MEDIR=true --dart-define=PORTA_FIRESTORE=8081
+node ferramentas/medir/carimbar_sw.mjs build/web
+# com o emulador de pé (auth + firestore):
+node ferramentas/medir/semear.mjs /tmp/semente.json
+node ferramentas/medir/semear_biblioteca.mjs /tmp/semente.json    # 2 hinários + cifras, texto INVENTADO
+COM_PREPARO=1 node ferramentas/medir/medir_leituras.mjs build/web /tmp/leituras.json
+node ferramentas/medir/semear.mjs /tmp/semente.json && node ferramentas/medir/semear_biblioteca.mjs /tmp/semente.json
+node ferramentas/medir/provar_offline.mjs build/web /pasta/das/fotos
+```
+
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
 app: um erro nelas só aparece quando alguém não consegue entrar.
 
@@ -73,8 +89,8 @@ O mini-servidor dos avisos tem testes próprios, que não precisam de emulador
 nem de Flutter:
 
 ```bash
-node --test worker/teste/*.mjs               # 83 testes
-node --test web/teste/*.mjs                  # 16 testes do service worker
+node --test worker/teste/*.mjs               # 104 testes
+node --test web/teste/*.mjs                  # 24 testes do service worker
 node --test ferramentas/teste/*.mjs          # 22 testes das rotinas diárias
 ```
 
@@ -2858,6 +2874,413 @@ trava do cache do Firestore (que o navegador só solta em 5 s) e usa o cache em
 memória — mais lento, mas inteiro; e o Safari do iPhone pode tratar
 `modulepreload` e `Intl.Segmenter` de forma diferente do Chromium (o `sw.js` cai
 no canvaskit comum, que é o que o Safari usa, mas isso não foi visto lá).
+
+### Offline primeiro (20/11/2026)
+
+Pedido: o app funcionar quase todo sem internet — sinal ruim dentro da igreja, e
+abertura rápida da segunda vez em diante. **Só dependem de rede**: as mensagens
+novas do chat, os avisos, as confirmações chegando aos OUTROS aparelhos e a
+sincronia do Modo ao vivo. O resto abre do aparelho, na hora, e se atualiza em
+segundo plano sem a pessoa perceber.
+
+#### O que funciona e o que não funciona sem internet
+
+**Funciona** (do aparelho, e provado num Chromium com a rede cortada — ver
+"Provas"):
+
+- **Abrir o app**: sessão, músicas, cultos, pessoas e conversa saem de uma cópia
+  guardada, ANTES de o Firebase terminar de ligar.
+- **Repertório**: nomes, letras e as **cifras das músicas que o aparelho já
+  trouxe** (a preparação traz as do repertório inteiro, uma leitura por música).
+  Meu tom, minhas anotações e favoritos: o cache do Firestore + a fila dele.
+- **Hinários**: abrir pelo número, buscar pelo nome, ver todos — dos hinos já
+  baixados (a preparação traz os dois hinários aos poucos; qualquer hino aberto
+  uma vez também fica).
+- **Bíblia**: a tradução que a pessoa lê é baixada pela preparação; a outra, na
+  primeira vez que for aberta.
+- **Escala**: os cultos da janela de leitura (60 dias para trás, 90 à frente).
+- **Confirmar e desmarcar presença, corrigir música e cifra, escrever mensagem de
+  texto**: entram numa fila, aparecem na hora com "Esperando a internet" e vão
+  sozinhos quando o sinal volta — mesmo que o app seja fechado no meio.
+- **Áudio do chat que já foi ouvido** toca do aparelho.
+
+**Não funciona** (e o que a pessoa vê):
+
+- Mensagens novas dos outros, reações, "visto por", digitando: precisam do banco.
+- **Enviar mensagem de VOZ**: diz na hora "Sem internet…" — é a única coisa do
+  chat que não espera na fila (ver decisões).
+- Avisos (push) e "Testar aviso".
+- Modo ao vivo: a rolagem e o play locais funcionam; a sincronia entre
+  aparelhos não.
+- Tudo o que só o líder faz e é uma transação (montar o culto, cadastrar música
+  nova, arquivar, importar hinário, aprovar membros): precisa de internet e mostra
+  o erro de rede de sempre. **Não foi coberto por esta rodada.**
+- **Hino que nunca foi baixado**, sem internet: a tela diz "Sem internet, e este
+  hino ainda não foi baixado neste aparelho" — em vez de esperar o Firestore
+  desistir.
+
+#### Como é feito
+
+1. **O app NÃO espera o Firebase para abrir** (`AppFirebase`, `main()`). Medido
+   na rodada anterior: `Firebase.initializeApp` é um dos maiores trechos até o
+   Início, porque o plugin do Auth faz a inicialização esperar a conferência da
+   sessão no Google. Agora `main()` desenha o app e liga o Firebase em paralelo;
+   as escutas e a conferência da sessão esperam `AppFirebase.pronto`.
+   - **Ligar falhar NÃO derruba o app.** Sem internet o SDK (que vem de
+     `www.gstatic.com`) pode nem carregar, e `initializeApp` lança. Isso trocava
+     o app inteiro por uma tela de "falta configurar" — o contrário de funcionar
+     sem sinal. Agora `pronto` nunca completa com erro: a ligação é tentada de
+     novo (2, 5, 15, 30 s) e **no instante em que a internet volta**.
+   - **Cópia no aparelho** (`SnapshotLocal`): músicas, cultos, pessoas e conversa
+     guardados em JSON no IndexedDB (Timestamp vira `{"$ts":[seg,nanos]}`, porque
+     `jsonEncode` lança nele). `_AppEntry` espera essa leitura (teto de 800 ms)
+     antes de pôr o Início na tela — sem esperar, o Início sairia vazio por um
+     quadro e depois se encheria. **É só o que se mostra enquanto a verdade não
+     chega**: o banco responde e substitui tudo.
+   - A sessão abre pelo cadastro guardado (`checkSession`); se o Firebase disser
+     que não há conta, vai para a tela de entrar. O cadastro guardado só vale se
+     for da MESMA conta (`cached.id == account.uid`).
+2. **O service worker guarda o SDK do Firebase** (`web/sw.js`). Era um buraco que
+   só apareceu ao provar a abertura sem rede: o SDK mora fora do nosso domínio,
+   o cache nunca o guardou, e dependia do cache comum do navegador, que o iPhone
+   esvazia quando quer. Agora: caixa à parte (`sdk-firebase-<versão>`, que a troca
+   de versão do app não apaga), "cache primeiro, rede se faltar", e só resposta
+   completa e boa entra (o cache vem ANTES da rede: uma ruim ficaria para
+   sempre). A versão (10.11.1) tem de ser a mesma no `index.html`, no `sw.js` e no
+   `pubspec.lock` — um teste confere os três.
+3. **A fila de envio é nossa, e só onde precisa** (`FilaDeEnvio`). O Firestore
+   enfileira `set` e `update` sozinho, mas o `Future` deles só completa no
+   servidor, e **transação não roda sem rede** — e presença e edição de campo são
+   transações. Cada item vai para o IndexedDB (`fila:v1`), é enviado um por vez,
+   para no primeiro "sem rede" (os outros esperariam o prazo, um a um, para falhar
+   igual), e tenta de novo com espera crescente (5 s a 5 min), na volta do sinal e a
+   cada 30 s.
+   - **Presença**: o último desejo vale (confirmar, desmarcar, confirmar = UM
+     envio, com o estado final).
+   - **Edição de música e de cifra**: por CAMPO, com a **base** de que a pessoa
+     partiu. Duas edições seguidas da mesma música viram um item só e ficam com a
+     base da PRIMEIRA — é ela que prova se alguém mexeu antes.
+   - **Mensagem de texto**: fica na fila do próprio Firestore (sobrevive a fechar o
+     app) e aparece com o relógio no lugar dos tiques (`hasPendingWrites`). Se o
+     banco a recusar depois, ela some da tela — e vira um recado no Início, com o
+     TEXTO, para a pessoa poder mandar de novo.
+   - **Quem espera o resultado só é liberado DEPOIS de a fila notificar**: antes,
+     `confirmPresence` voltava com o erro e a tela ainda mostrava a presença
+     marcada por alguns microssegundos. Pego por um teste.
+   - **O que está pendente aparece POR CIMA do que veio do banco** (`_servidor` +
+     `_comPendencias` nos providers): uma resposta velha do banco não desfaz o que
+     a pessoa acabou de fazer.
+   - **Sair da conta descarta a fila** e avisa antes ("Você tem N alterações que
+     ainda não foram enviadas… Se sair agora, elas se perdem"): o aparelho pode
+     passar para outra pessoa, e nada que ficou esperando pode ser enviado em
+     nome dela.
+4. **Conflito: quem chega primeiro AO BANCO vence, e o atrasado é avisado.**
+   Definido e testado (`fusao_de_edicao.dart`):
+   - Ao enviar, compara cada campo com o que está no banco AGORA: **igual à base**
+     (ninguém mexeu) → aplica; **já igual ao que eu queria** → nada a gravar, e
+     não é perda; **diferente de ambos** → outra pessoa mexeu antes: a minha NÃO
+     sobrescreve.
+   - **Campos diferentes não brigam**: eu mudei o tom, ela mudou o nome, os dois
+     valem. Uma edição pode entrar em parte e perder em parte.
+   - **Quem perdeu recebe um recado no Início** (`AvisoDeSincronia`), com o que
+     ficou e o que era seu ("Nome: você pôs 'A', mas outra pessoa já tinha mudado
+     para 'B'. Ficou 'B'."), e **"Aplicar a minha mesmo assim"**, que põe de novo
+     na fila só os campos perdidos, agora contra o valor que ficou. O recado
+     **não some sozinho**: só sai em "Entendi" (um aviso que sumisse seria a falha
+     silenciosa que este app não aceita).
+   - **Recusa definitiva** (sem permissão, culto que não existe mais): sai da fila.
+     Se a pessoa está esperando na tela (menos de 12 s), o erro aparece na hora;
+     se foi embora, vira recado.
+   - **Por que "o primeiro a chegar" e não "o mais recente":** a hora do relógio
+     de dois celulares não se compara (um pode estar adiantado), e o servidor é o
+     único que decide a ordem.
+5. **Leitura sem rede**:
+   - `ArranjosLocais` (cifras), `HinosLocais` (índice e letra de cada hino),
+     `SnapshotLocal` e `AudiosLocais` moram no IndexedDB, **independentes do
+     Firebase**: abrir "o hino 15" é uma leitura de disco. Cada letra leva a
+     MARCA da importação de que veio; quando o líder importa de novo, a marca
+     muda e a cópia velha deixa de valer.
+   - **Com cópia, o banco atualiza em segundo plano e a falha dele não é erro.**
+     `carregarIndice` devolve na hora o que o aparelho tem. Só espera o banco
+     quando não há cópia, ou quando o índice já estava na memória e venceu (os 20
+     minutos de sempre) — a semântica de antes, que os testes antigos protegem.
+   - **Cifra: cópia vale 15 minutos** (`ArranjosLocais.validade`). Antes, TODA
+     abertura de música lia o arranjo no banco (uma leitura), mesmo com a cifra já
+     na tela. Dentro do prazo a cópia basta; depois, o banco é consultado em
+     segundo plano — e uma cifra corrigida por outro líder chega na abertura
+     seguinte.
+   - **A resposta do banco só substitui o que está na tela se ele de fato
+     respondeu** (`lerArranjoDoServidor` devolve `ok`): `getArrangement` devolvia
+     nulo para "esta música não tem cifra" e para "não consegui perguntar", e quem
+     trata os dois igual apaga da tela uma cifra que existe só porque o sinal caiu.
+6. **Preparação em segundo plano, com ORÇAMENTO** (`PreparoOffline`). Ver "A conta
+   das leituras" — é onde o plano grátis aperta. Roda 8 s depois de o banco ligar e
+   de novo aos 60 s; é seguro repetir. Ordem: cifras do repertório (uma leitura
+   cada; "não tem cifra" também é resposta guardada), índice de cada hinário, letras
+   dos hinos em páginas de 50 por número, hinário por hinário na ordem que a pessoa
+   escolheu, e a Bíblia (um arquivo, **não passa pelo banco**, então não gasta
+   leitura).
+7. **Áudios do chat** só baixam quando a pessoa toca; depois ficam no aparelho com
+   **limite de 12 MB**, soltando o que foi ouvido há mais tempo (`planejarDespejo`,
+   pura). Áudio maior que o limite inteiro NÃO esvazia o cache: não se guarda.
+8. **O aparelho apagou os dados do site** (o iPhone faz isso quando falta espaço).
+   O app deixa DUAS marcas em lugares que o navegador guarda separados
+   (`localStorage` e IndexedDB) e confere ao abrir: as duas → tudo certo; nenhuma
+   → primeira vez; **só uma → apagaram um dos lugares**. Aí o app esquece o que é
+   DERIVADO (cota do dia, progresso, cifras, hinos, cópia, áudios) e baixa de novo
+   aos poucos, sem erro e sem pedir nada. **A fila de envio e os recados NUNCA são
+   tocados**: o que a pessoa fez e não chegou ao banco é dela. O app também pede
+   `navigator.storage.persist()`.
+   - **O limite que nenhum código esconde:** se o navegador apagar TUDO, a sessão
+     do Firebase vai junto (mora no mesmo IndexedDB), e a pessoa precisa entrar de
+     novo — uma vez. Provado: apagado tudo, o app abre na tela de entrar, sem erro,
+     e entrando os dados voltam sozinhos. Pedir a senha não é "pedir algo por
+     causa do apagamento": é a conta que se foi.
+9. **A faixa de rede só fala quando faz diferença** (`textoDaFaixa`, pura): nada
+   com internet e nada pendente; nada nos primeiros 10 s sem internet (elevador,
+   troca de wi-fi); "Sem internet. O app está mostrando o que já baixou" depois
+   disso; "Atualizado há X" só se os dados passam de 30 min; "Enviando N
+   alterações…" só se uma ação demora mais de 5 s COM internet. **Ela empurra o
+   conteúdo para baixo em vez de flutuar**: o rodapé do chat é o campo de texto, e
+   uma pílula flutuando o cobriria. **A árvore tem a mesma forma com e sem faixa**:
+   se o filho mudasse de lugar quando ela aparece, a aba seria reconstruída e a
+   busca digitada se perderia por causa de um elevador.
+   - "Atualizado há X" parte da **última vez que o BANCO respondeu de verdade**
+     (snapshot que não veio do cache — por isso `includeMetadataChanges: true`),
+     e com internet e uma escuta aberta ela é empurrada para agora a cada minuto.
+
+#### Decisões que tomei sozinho (e por quê)
+
+- **Fila própria só onde o Firestore não dá conta.** Mensagem de texto e
+  preferências pessoais (tom, anotação, favoritos) ficam na fila do SDK, com
+  espera de 2–4 s e SEM `await` no servidor. Duplicar a fila para elas criaria
+  dois lugares que discordam.
+- **Mensagem de voz NÃO espera na fila.** Pesa até 800 KB, e guardá-la à espera de
+  sinal faria a pessoa achar que foi enviada — e chegar horas depois, fora de hora.
+- **Mensagem que chega tarde NÃO dispara aviso**: o Worker só avisa se foi
+  escrita há menos de 2 minutos (a trava contra reavisar mensagem velha), e está
+  certa: ninguém quer o "oi" de uma hora atrás. Vale também para a presença
+  confirmada sem sinal: o líder só é avisado se ela chegar em 2 minutos.
+- **"Primeiro a chegar ao banco vence"** em vez de mesclar texto: letra e cifra
+  são texto corrido, e mesclar dois textos editados por pessoas diferentes
+  produz um terceiro texto que ninguém escreveu.
+- **Cota diária de preparação: 250 leituras por aparelho — e ela se CALA em dia
+  movimentado** (4+ aberturas do app no dia). 250 é o equivalente a mais UMA abertura
+  fria por aparelho; num domingo com seis, 30 pessoas já passam de 43 mil só
+  abrindo, e somar 7.500 estouraria os 50 mil. A trava de dia movimentado entrou
+  DEPOIS da prova em navegador e é coberta por teste de unidade (e mutação), não
+  pela prova. Ver a conta abaixo.
+- **A cópia de uma cifra vale 15 minutos**, não "para sempre": cifra errada no
+  domingo é o erro mais caro deste app.
+- **Editar música parte da música COMO ESTÁ AGORA** (`_viva`), não da cópia de
+  quando a tela abriu: com a fila, a conta de "o que mudei" seria feita contra o
+  valor errado e desfaria, de carona, o que outra pessoa mudou.
+- **Sair da conta descarta a fila**, com aviso antes.
+- **A mensagem recusada tarde some da tela e volta como recado com o texto**:
+  deixá-la na tela como "enviada" seria mentir; sumir sem recado, também.
+
+#### Armadilhas desta rodada (o que custou caro)
+
+- **`Firebase.apps` LANÇA na web** antes de o plugin ligar ("Null check operator
+  used on a null value"). A primeira versão de "tentar ligar de novo" perguntava
+  a ele se o app já existia — e o app ficou sem banco, em silêncio, em toda
+  abertura. Os testes de unidade passavam (não têm Firebase); **quem achou foi a
+  medição com o app de verdade**: 0 documentos entregues numa abertura que
+  devia entregar 238. Agora guarda-se o próprio resultado de `initializeApp`
+  (`_appDoFirebaseCriado`) e se trata `duplicate-app`.
+- **O service worker NÃO guardava o SDK do Firebase** (ver "Como é feito", 2).
+  Sem rede, o SDK não carregava, `initializeApp` lançava, e a abertura virava a
+  tela de "falta configurar". Só apareceu desenhando a prova de abrir o app com a
+  rede cortada.
+- **O emulador do Firestore IGNORA o `resumeToken`.** O app mandou o token em
+  todas as aberturas "quentes" (6 e 11 pedidos com ele) e o emulador entregou
+  os 221 documentos mesmo assim. Então **a abertura quente NÃO é medível por ele**:
+  o zero dela, em produção, vem da regra de 30 minutos do Firebase (documentada),
+  não de uma medida minha. O que se mediu foi o que dá: quantos documentos uma
+  consulta nova entrega (= o custo de cada abertura depois de 30 min parado).
+  **Isto também corrige a rodada anterior**: lá escrevi "medido: 202 → zero" a
+  partir do que o SDK reporta ao app (`docChanges` vazio depois da resposta do
+  servidor), que não distingue "o servidor mandou só o que mudou" de "mandou
+  tudo e o SDK comparou". O número de produção continua valendo pela regra, não
+  pela medida.
+- **Os scripts de medição não terminavam**: o proxy e o servidor deixam conexões
+  abertas, o processo não sai, e uma sequência de medições esperava o primeiro
+  para sempre — enquanto as execuções seguintes disputavam a mesma porta do proxy.
+  Os números dessa fase foram descartados e refeitos, uma instância de cada vez.
+  Todo script de medição agora termina com `process.exit`.
+- **Estado estático entre testes.** `Armazem` (e a cópia do hinário nele) é
+  estático: um teste que lê um hino deixava o hino para o teste seguinte, e 15
+  testes antigos reprovaram por isso. Todo teste que mexe nele começa com
+  `setUp(Armazem.esvaziar)`.
+- **Um teste de fila reprovou por ordem de microssegundos**: `enfileirar`
+  devolvia o resultado ANTES de a fila notificar, então a tela ainda mostrava a
+  presença marcada. Quem espera só é liberado depois de salvar e notificar.
+- **Mutação que sobreviveu**: tirar `indice.remove(id)` do cache de áudio não
+  reprovava nada, porque o teste regravava um áudio sem outro mais antigo ao lado.
+  O teste agora regrava com um terceiro que seria despejado à toa.
+- **`getArrangement` devolvia nulo para duas coisas** ("não tem cifra" e "não
+  consegui perguntar"): o mesmo erro de `lerDoc`, já registrado. Agora
+  `lerArranjoDoServidor` devolve `ok`.
+- **O Início dizia "nada pendente" com um recado de edição perdida na tela**:
+  os recados não vêm de um Provider, e a linha não os escutava.
+
+- **A ordem salva dos hinários é VAZIA por padrão.** A preparação a usava direto
+  e nunca baixou um hino — o orçamento parava nas cifras, sem erro. Os testes
+  passavam listas explícitas. Foi a medição no navegador que mostrou
+  (`PreparoOffline.idsDosHinarios`, com teste do caso vazio).
+- **Vazio vindo do CACHE não é resposta** (`ignorarVazioDoCache`). Sem rede e com o
+  cache do Firestore vazio, a primeira notificação é uma lista vazia marcada
+  `fromCache` — e é a única. Tratada como verdade, apagava os cultos restaurados do
+  aparelho ("Nenhum culto marcado") e, 2 s depois, regravava a cópia vazia por cima
+  da boa. Cultos, músicas, conversa e pessoas. Só o SERVIDOR diz "não há nada".
+- **O service worker guardava a resposta de QUALQUER navegação no lugar do
+  `index.html`.** Abrir uma imagem do escopo fazia o app abrir como imagem, para
+  sempre (o cache vem antes da rede). Só resposta HTML atualiza.
+- **O motor do Flutter derruba a página quando se toca com a semântica ligada**
+  (com mouse, com toque e com evento de DOM — os três). O roteiro de prova TOCA por
+  coordenadas e só no fim liga a semântica para LER. As coordenadas são as do app a
+  390 px; uma tela que mude de lugar reprova o cenário e deixa a foto.
+- **O CI da rodada passada estava VERMELHO e ninguém viu** (5 testes: abrir_ao_lado,
+  campo_multilinha, letra_em_tela_larga, projetar_tela, responsivo). Passavam aqui e
+  no Mac; no Flutter 3.50.0 exato da CI o aviso "fontsChange" que o motor manda ao
+  carregar a fonte da cifra chega depois do fim do teste ("An animation is still
+  running even after the widget tree was disposed"). Conserto: `FonteMono.desligada`
+  + `test/flutter_test_config.dart`. **Não foi possível rodar o Flutter exato da CI
+  aqui: só a CI confirma.** Quem olha o verde precisa olhar o CI, não só o
+  `publicar.sh`.
+- **A trava do tamanho passa do limite com esta rodada**: +71.659 bytes (3.844.913 →
+  3.916.572, mesmo Flutter) dão ~4.115.673 na CI (deslocamento medido de ~199 KB), 11 KB
+  acima do limite de 4.104.004. A base dos DOIS workflows subiu para 4.115.673 —
+  **uma estimativa; vale o que a CI imprimir.** Ainda: **os workflows do meu clone
+  estavam desatualizados** (BASE 3.868.219 e 3.610.328, enquanto o repositório
+  publicado tem 4.001.604 nos dois), porque o Mac editou a base por fora. O patch dos
+  workflows foi montado contra o conteúdo do repositório publicado, não contra o meu
+  clone, e a aplicação foi provada num repositório de teste com deslocamento de
+  linhas.
+
+#### A conta das leituras (plano grátis: 50 mil por dia)
+
+O que se MEDIU, com um proxy entre o app e o emulador que conta os documentos
+entregues (`ferramentas/medir/medir_leituras.mjs`; o app é compilado com
+`--dart-define=PORTA_FIRESTORE=8081`):
+
+| | antes | depois |
+|---|---|---|
+| Abertura fria (entrar e ver o Início): documentos entregues | 238 | 238 |
+| Abertura "quente" no emulador | 221 | 221 |
+| Abrir uma música (cifra) | 1 leitura por abertura | 0 a 1 (nenhuma por 15 min) |
+| Preparação, dia 1 | 0 | 250 (limite 250) |
+| Preparação, dia 2 | 0 | 250 (limite 250) |
+
+**O 221 "quente" NÃO é o custo de produção.** O app mandou o `resumeToken` em
+todas as aberturas quentes e o emulador devolveu tudo de novo — ele não
+implementa a regra. Em produção, escuta religada em menos de 30 minutos só é
+cobrada pelo que MUDOU (regra documentada do Firebase, não medida aqui). O que
+a medida dá é o custo de uma consulta NOVA: 238 documentos, que é o
+que cada abertura depois de 30 min parado custa.
+
+**A conta por dia, para 30 pessoas** (aberturas frias × 238 + músicas
+abertas + preparação), contra os 50 mil:
+
+| Cada pessoa por dia | antes | depois, 1ª semana | depois, regime |
+|---|---|---|---|
+| 1 abertura fria, 5 músicas | 7.290 (14%) | 14.670 (29%) | 7.170 (14%) |
+| 3 aberturas frias, 10 músicas | 21.720 (43%) | 29.010 (58%) | 21.510 (43%) |
+| 6 aberturas frias (domingo), 15 músicas | 43.290 (86%) | 42.990 (85%) | 42.990 (85%) |
+
+- **A preparação é o único custo novo, e é limitada**: no máximo 250 por
+  aparelho por dia, só enquanto os dois hinários (1.221 documentos) e as cifras
+  (uma leitura por música) não estão inteiros — da ordem de uma semana —, e
+  depois disso zero. Sem o teto, baixar tudo no primeiro dia seria 30 × ~1.260 =
+  ~38 mil leituras só nisso.
+- **O que cai**: abrir música deixou de custar uma leitura por abertura.
+- **Não está na conta**: o que o chat, os cultos e as confirmações mudam durante
+  o dia (os mesmos de antes), e as leituras que a PESSOA provoca de propósito
+  (abrir um hino que não foi baixado, "Trazer" as letras).
+
+#### Provas (Chromium com a rede cortada)
+
+`ferramentas/medir/provar_offline.mjs`. **A rede é cortada em TRÊS lugares**: o
+servidor do app, o proxy do emulador e os endereços do Google (SDK e login) —
+`context.setOffline` só pega a página, e o service worker continuaria enxergando
+o servidor. Um teste que passa porque algo respondeu por baixo dos panos não
+prova nada. A tela é lida pela árvore de semântica do Flutter e se toca por
+eventos de DOM (o mouse do Playwright derruba a página com a semântica ligada).
+
+- ✔ entrou com internet e o Início tem dados (2531 ms)
+- ✔ a preparação guardou as cifras do repertório (42 cifras)
+- ✔ a preparação guardou letras de hinos, dentro do orçamento (207 hinos da Harpa, 250 leituras de 250)
+- ✔ a Bíblia foi baixada (um arquivo, fora do banco)
+- ✔ o SDK do Firebase está guardado no aparelho (3 arquivos) (3 arquivos)
+- ✔ abre o app e mostra o Início com dados (1490 ms)
+- ✔ o cartão do culto está na tela
+- ✔ confirmar presença: fica "Esperando a internet" e NÃO dá erro
+- ✔ a confirmação está na fila, guardada no aparelho (1 item(ns))
+- ✔ a faixa "Sem internet" aparece (só depois de 10 s)
+- ✔ depois de fechar e abrir de novo, a confirmação continua pendente
+- ✔ lê uma música com a CIFRA, sem internet (4 ms)
+- ✔ abre o hino 77 da Harpa pelo número, sem internet (34 ms)
+- ✔ hino que nunca foi baixado: o app diz que falta internet (sem travar)
+- ✔ lê Gênesis 1 da Bíblia, sem internet (31 ms)
+- ✔ vê a escala dos cultos, sem internet (13 cultos à vista)
+- ✔ a presença chegou ao banco sozinha
+- ✔ a fila esvaziou (0 item(ns))
+- ✔ a faixa de rede sumiu
+- ✔ o carimbo "confirmadoEm" foi gravado junto (o aviso ao líder depende dele)
+- ✔ apagado o armazém do app: abre sozinho, sem erro e sem pedir nada (2347 ms)
+- ✔ e não caiu na tela de entrar
+- ✔ o app baixou as cifras de novo por conta própria (42 cifras de volta)
+- ✔ as marcas de conferência foram refeitas
+- ✔ apagado TUDO (login incluído): o app abre na tela de entrar, sem erro
+- ✔ entrando de novo, os dados voltam sozinhos (2492 ms)
+
+**26 de 26**, depois de achar e consertar quatro defeitos que só o navegador mostrou (ver "Armadilhas"). As fotos ficam em `/tmp/provas-offline` (não vão para o repositório: são telas de um banco de teste).
+
+#### Velocidade (o medidor da rodada passada, 3 repetições, mesma máquina e mesmo dia)
+
+| | rodada passada | agora, versão ANTERIOR (mesmo dia) | agora, versão NOVA |
+|---|---|---|---|
+| *Celular com internet ruim* | | | |
+| 1ª abertura — 1ª tela | 20,5 s | 20,4 s | 20,6 s |
+| Entrar até o Início com dados | 6,3 s | 6,1 s | 6,0 s |
+| Abrir de novo — 1ª tela | 2,7 s | 2,4 s | 2,3 s |
+| **Abrir de novo — Início com dados** | 5,4 s | 5,1 s | 4,6 s |
+| *Rede e máquina decentes (20 Mbps, 40 ms, CPU sem freio)* | | | |
+| Abrir de novo — 1ª tela | 0,8 s | 0,8 s | 0,7 s |
+| **Abrir de novo — Início com dados** | 2,0 s | 1,8 s | 1,8 s |
+
+"Versão anterior" é o commit `666697c` recompilado agora, com as mesmas flags: a
+coluna "rodada passada" vem dos JSONs de ontem e serve só de referência (a
+máquina e o dia mudam).
+
+- **Abrir de novo, Início com dados — celular lento: ~5,1 s → ~4,6 s** (a versão
+  anterior, medida hoje; 5,4 s na rodada passada). **Rápido: ~1,84 s → ~1,76 s**
+  (1,96 s na rodada passada): continua abaixo de 2 s, com folga maior.
+- **O ganho é modesto no celular lento, e a razão é de CPU:** o app agora desenha
+  com a cópia do aparelho sem esperar o Firebase, mas ler e decodificar a cópia
+  (JSON de 107 cultos, 42 músicas, 16 pessoas, 50 mensagens) também custa, e com o
+  processador 4× mais lento isso pesa. O que ficou de graça foi esperar a rede.
+- **Primeira abertura (lento): 20,4 s → 20,6 s — PIOROU ~0,27 s (1,3%)**, e nas
+  três repetições. A meta era não piorar, e **não foi cumprida à risca**: o código
+  cresceu ~72 KB (+ `offline.js`), e isso é baixado antes da primeira tela.
+  É pouco, mas é real, e fica dito.
+- Entrar até o Início com dados: sem diferença (6,06 s → 5,99 s, dentro do ruído).
+
+#### O que NÃO foi medido
+
+- **O Safari do iPhone**, nada. Tudo foi num Chromium. Não se viu lá: se o service
+  worker assume a página a tempo de guardar a Bíblia na preparação; se
+  `navigator.storage.persist()` é concedido ao app instalado; quando e como o iOS
+  apaga os dados (e se leva o IndexedDB do app e o login juntos, como se supõe);
+  como o Firestore se porta com cache persistente no WebKit; e o tempo de
+  abertura. **O que o iPhone decide** — abrir o app instalado em modo avião — é a
+  prova que falta, e está nos passos da página de entrega.
+- A regra dos 30 minutos do Firebase (o emulador a ignora).
+- Leituras de produção de um domingo inteiro.
+- O que as telas do líder (montar culto, cadastrar música, importar hinário)
+  fazem sem internet.
+- O CI com o Flutter exato: o conserto dos 5 testes (ver "Armadilhas") só se
+  confirma lá.
 
 ## O que não existe (e o relatório de auditoria aponta)
 
