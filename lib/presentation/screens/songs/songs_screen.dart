@@ -14,7 +14,7 @@ import '../biblia/biblia_screen.dart';
 import '../../widgets/songs/sugestoes_do_dia.dart';
 import '../../widgets/songs/colar_cifra.dart';
 import '../../widgets/songs/faixa_cifra_copiada.dart';
-import '../../widgets/common/glass.dart';
+import '../../widgets/common/responsivo.dart';
 
 class SongsScreen extends StatefulWidget {
   const SongsScreen({super.key});
@@ -84,7 +84,7 @@ class _SongsScreenState extends State<SongsScreen>
     final topInset =
         MediaQuery.of(context).padding.top + kToolbarHeight + alturaDaBarra;
 
-    return Scaffold(
+    final lista = Scaffold(
       extendBodyBehindAppBar: true,
       appBar: AppBar(
         backgroundColor: Colors.transparent,
@@ -107,10 +107,7 @@ class _SongsScreenState extends State<SongsScreen>
             IconButton(
               icon: const Icon(Icons.add_rounded),
               onPressed: () {
-                Navigator.push(
-                  context,
-                  GlassPageRoute(builder: (_) => const AddSongScreen()),
-                );
+                abrirTela(context, (_) => const AddSongScreen());
               },
             ),
         ],
@@ -228,6 +225,30 @@ class _SongsScreenState extends State<SongsScreen>
             padding: EdgeInsets.only(top: topInset),
             child: const BibliaScreen(embutida: true),
           ),
+      },
+    );
+
+    // Tela larga: a lista fica à esquerda e a música (ou o hino, ou o
+    // capítulo) abre à direita, sem o vai-e-volta de uma tela empilhando
+    // sobre a outra. No celular `MestreDetalhe` devolve só a lista.
+    return MestreDetalhe(
+      mestre: lista,
+      vazioIcone: switch (_secao) {
+        SecaoDeMusicas.repertorio => Icons.queue_music_rounded,
+        SecaoDeMusicas.hinarios => Icons.library_music_rounded,
+        SecaoDeMusicas.biblia => Icons.menu_book_rounded,
+      },
+      vazioTitulo: switch (_secao) {
+        SecaoDeMusicas.repertorio => 'Escolha uma música',
+        SecaoDeMusicas.hinarios => 'Escolha um hino',
+        SecaoDeMusicas.biblia => 'Escolha um capítulo',
+      },
+      vazioTexto: switch (_secao) {
+        SecaoDeMusicas.repertorio =>
+          'A letra, a cifra e o tom abrem aqui, ao lado da lista.',
+        SecaoDeMusicas.hinarios =>
+          'Digite o número ou toque num hino da lista: a letra abre aqui.',
+        SecaoDeMusicas.biblia => 'O texto abre aqui, ao lado da lista de livros.',
       },
     );
   }
@@ -540,12 +561,7 @@ class _SongListTile extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          GlassPageRoute(
-            builder: (_) => SongDetailScreen(song: song),
-          ),
-        );
+        abrirTela(context, (_) => SongDetailScreen(song: song));
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 8),

@@ -21,6 +21,7 @@ import 'importar_hinario_screen.dart';
 import 'members_screen.dart';
 import 'teams_screen.dart';
 import '../../widgets/common/glass.dart';
+import '../../widgets/common/responsivo.dart';
 import '../../widgets/common/install_banner.dart';
 import '../../widgets/common/selecao_de_funcoes.dart';
 import '../../widgets/common/recuperacao_por_email.dart';
@@ -501,60 +502,78 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ],
           ));
 
-  void _abrirPainelDoLider() => _abrirEm(
-      'Painel do líder',
-      (ctx) => Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // A saúde do sistema vem PRIMEIRO: é a única coisa aqui que pode
-              // estar quebrada agora.
-              const CartaoSaude(),
-              const SizedBox(height: 14),
-              _SettingRow(
-                icon: Icons.groups_rounded,
-                label: 'Membros e pedidos de entrada',
-                trailing: const _SeloPendentes(),
-                onTap: () => Navigator.push(
-                  ctx,
-                  GlassPageRoute(builder: (_) => const MembersScreen()),
+  /// O Painel do líder: as ferramentas de quem cuida do ministério.
+  ///
+  /// Em tela larga a lista fica à esquerda e a ferramenta escolhida abre à
+  /// direita — o líder que aprova um pedido, ajusta uma equipe e confere a
+  /// saúde do sistema trabalha sem ficar indo e voltando. No celular, cada uma
+  /// abre por cima, como sempre.
+  void _abrirPainelDoLider() {
+    Navigator.push(
+      context,
+      GlassPageRoute(
+        larguraMaxima: 1240,
+        builder: (ctx) => Scaffold(
+          appBar: AppBar(title: const Text('Painel do líder')),
+          body: SafeArea(
+            child: MestreDetalhe(
+              vazioIcone: Icons.admin_panel_settings_outlined,
+              vazioTitulo: 'Escolha uma ferramenta',
+              vazioTexto: 'Membros, equipes, agenda fixa e o hinário abrem '
+                  'aqui, ao lado da lista.',
+              mestre: Builder(
+                builder: (ctx) => SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 20, 60),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // A saúde do sistema vem PRIMEIRO: é a única coisa aqui
+                      // que pode estar quebrada agora.
+                      const CartaoSaude(),
+                      const SizedBox(height: 14),
+                      _SettingRow(
+                        icon: Icons.groups_rounded,
+                        label: 'Membros e pedidos de entrada',
+                        trailing: const _SeloPendentes(),
+                        onTap: () =>
+                            abrirTela(ctx, (_) => const MembersScreen()),
+                      ),
+                      const SizedBox(height: 8),
+                      _SettingRow(
+                        icon: Icons.diversity_3_rounded,
+                        label: 'Equipes',
+                        trailing: const Icon(Icons.chevron_right_rounded,
+                            color: AppColors.textSecondaryLight),
+                        onTap: () => abrirTela(ctx, (_) => const TeamsScreen()),
+                      ),
+                      const SizedBox(height: 8),
+                      _SettingRow(
+                        icon: Icons.event_repeat_rounded,
+                        label: 'Agenda fixa',
+                        trailing: const Icon(Icons.chevron_right_rounded,
+                            color: AppColors.textSecondaryLight),
+                        onTap: () =>
+                            abrirTela(ctx, (_) => const FixedScheduleScreen()),
+                      ),
+                      const SizedBox(height: 8),
+                      _SettingRow(
+                        icon: Icons.library_books_rounded,
+                        label: 'Importar hinário',
+                        trailing: const Icon(Icons.chevron_right_rounded,
+                            color: AppColors.textSecondaryLight),
+                        onTap: () => abrirTela(
+                            ctx, (_) => const ImportarHinarioScreen()),
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
-              _SettingRow(
-                icon: Icons.diversity_3_rounded,
-                label: 'Equipes',
-                trailing: const Icon(Icons.chevron_right_rounded,
-                    color: AppColors.textSecondaryLight),
-                onTap: () => Navigator.push(
-                  ctx,
-                  GlassPageRoute(builder: (_) => const TeamsScreen()),
-                ),
-              ),
-              const SizedBox(height: 8),
-              _SettingRow(
-                icon: Icons.event_repeat_rounded,
-                label: 'Agenda fixa',
-                trailing: const Icon(Icons.chevron_right_rounded,
-                    color: AppColors.textSecondaryLight),
-                onTap: () => Navigator.push(
-                  ctx,
-                  GlassPageRoute(builder: (_) => const FixedScheduleScreen()),
-                ),
-              ),
-              const SizedBox(height: 8),
-              _SettingRow(
-                icon: Icons.library_books_rounded,
-                label: 'Importar hinário',
-                trailing: const Icon(Icons.chevron_right_rounded,
-                    color: AppColors.textSecondaryLight),
-                onTap: () => Navigator.push(
-                  ctx,
-                  GlassPageRoute(
-                      builder: (_) => const ImportarHinarioScreen()),
-                ),
-              ),
-            ],
-          ));
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
   /// "Tons salvos": o tom em que EU toco cada música.
   ///
@@ -660,113 +679,153 @@ class _ProfileScreenState extends State<ProfileScreen> {
             pinned: true,
             backgroundColor: Colors.transparent,
             surfaceTintColor: Colors.transparent,
-            flexibleSpace: Stack(
-              fit: StackFit.expand,
-              children: [
-                // Frosted glass that shows once the gradient header collapses.
-                ClipRect(
-                  child: BackdropFilter(
-                    filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
-                    child: Container(
-                      color: isDark
-                          ? const Color(0x8C141019)
-                          : Colors.white.withOpacity(0.55),
-                    ),
-                  ),
-                ),
-                FlexibleSpaceBar(
-                  background: Container(
-                    decoration: const BoxDecoration(
-                      gradient: AppColors.primaryGradient,
-                    ),
-                    child: SafeArea(
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const SizedBox(height: 20),
-                          // Avatar
-                          Stack(
-                            children: [
-                              CircleAvatar(
-                                radius: 48,
-                                backgroundColor: Colors.white.withOpacity(0.3),
-                                child: Text(
-                                  // `''[0]` LANÇA, e aqui derrubaria a aba Perfil
-                                  // inteira — um cadastro com o nome em branco
-                                  // (mexido no console, ou gravado pela metade)
-                                  // não pode fazer isso. Mesma armadilha do culto.
-                                  user.name.trim().isEmpty
-                                      ? '?'
-                                      : user.name.trim()[0].toUpperCase(),
-                                  style: const TextStyle(
-                                    fontFamily: 'Poppins',
-                                    fontSize: 36,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            user.name,
-                            style: const TextStyle(
-                              fontFamily: 'Poppins',
-                              fontSize: 20,
-                              fontWeight: FontWeight.w700,
-                              color: Colors.white,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  user.isAdmin
-                                      ? '👑 ${user.role.label}'
-                                      : '🎵 ${user.role.label}',
-                                  style: const TextStyle(
-                                    fontFamily: 'Poppins',
-                                    fontSize: 12,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.white.withOpacity(0.2),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: Text(
-                                  '${user.instrument.emoji} ${user.instrument.label}',
-                                  style: const TextStyle(
-                                    fontFamily: 'Poppins',
-                                    fontSize: 12,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+            flexibleSpace: LayoutBuilder(
+              builder: (context, c) {
+                // QUANTO DO CABEÇALHO AINDA ESTÁ ABERTO: 1 = inteiro, 0 =
+                // recolhido na barra de cima.
+                //
+                // O conteúdo (avatar, nome, etiquetas) tem altura fixa, e o
+                // cabeçalho encolhe ao rolar. Antes o conteúdo continuava do
+                // mesmo tamanho e a barra o cortava ao meio — o avatar ficava
+                // pela metade —, e no fim sobrava uma barra de vidro vazia. Agora
+                // o conteúdo ENCOLHE junto com o cabeçalho (FittedBox) e some
+                // antes de ficar pequeno demais, e a barra recolhida mostra uma
+                // versão compacta: avatar pequeno e nome.
+                final topo = MediaQuery.paddingOf(context).top;
+                final recolhido = kToolbarHeight + topo;
+                final t = ((c.maxHeight - recolhido) / (240 - kToolbarHeight))
+                    .clamp(0.0, 1.0);
+                final inicial = user.name.trim().isEmpty
+                    ? '?'
+                    // `''[0]` LANÇA, e aqui derrubaria a aba Perfil inteira —
+                    // um cadastro com o nome em branco (mexido no console, ou
+                    // gravado pela metade) não pode fazer isso. Mesma armadilha
+                    // do culto.
+                    : user.name.trim()[0].toUpperCase();
+
+                return Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // Frosted glass that shows once the gradient header collapses.
+                    ClipRect(
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 26, sigmaY: 26),
+                        child: Container(
+                          color: isDark
+                              ? const Color(0x8C141019)
+                              : Colors.white.withOpacity(0.55),
+                        ),
                       ),
                     ),
-                  ),
-                ),
-              ],
+                    Opacity(
+                      opacity: t,
+                      child: Container(
+                        decoration: const BoxDecoration(
+                          gradient: AppColors.primaryGradient,
+                        ),
+                        padding: EdgeInsets.only(top: topo, bottom: 8),
+                        child: Center(
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Opacity(
+                              opacity: ((t - 0.25) / 0.75).clamp(0.0, 1.0),
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  CircleAvatar(
+                                    radius: 48,
+                                    backgroundColor:
+                                        Colors.white.withOpacity(0.3),
+                                    child: Text(
+                                      inicial,
+                                      style: const TextStyle(
+                                        fontFamily: 'Poppins',
+                                        fontSize: 36,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    user.name,
+                                    style: const TextStyle(
+                                      fontFamily: 'Poppins',
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Row(
+                                    mainAxisAlignment:
+                                        MainAxisAlignment.center,
+                                    children: [
+                                      _EtiquetaDoPerfil(
+                                        user.isAdmin
+                                            ? '👑 ${user.role.label}'
+                                            : '🎵 ${user.role.label}',
+                                      ),
+                                      const SizedBox(width: 8),
+                                      _EtiquetaDoPerfil(
+                                        '${user.instrument.emoji} ${user.instrument.label}',
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    // Recolhido: uma barra comum, com o avatar pequeno e o nome.
+                    Opacity(
+                      opacity: (1 - t * 3).clamp(0.0, 1.0),
+                      child: Padding(
+                        padding: EdgeInsets.only(top: topo, left: 56, right: 56),
+                        child: Center(
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              CircleAvatar(
+                                radius: 15,
+                                backgroundColor:
+                                    AppColors.blue.withOpacity(0.15),
+                                child: Text(
+                                  inicial,
+                                  style: const TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.blue,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Flexible(
+                                child: Text(
+                                  user.name,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontFamily: 'Poppins',
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                    color: isDark
+                                        ? AppColors.textPrimaryDark
+                                        : AppColors.textPrimaryLight,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
             actions: [
               IconButton(
@@ -976,6 +1035,32 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// A pastilha clara do cabeçalho do Perfil ("👑 Líder", "🎤 Cantor(a)").
+class _EtiquetaDoPerfil extends StatelessWidget {
+  final String texto;
+  const _EtiquetaDoPerfil(this.texto);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(0.2),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        texto,
+        style: const TextStyle(
+          fontFamily: 'Poppins',
+          fontSize: 12,
+          color: Colors.white,
+          fontWeight: FontWeight.w500,
+        ),
       ),
     );
   }

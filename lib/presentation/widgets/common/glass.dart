@@ -203,10 +203,30 @@ class GlassBackdrop extends StatelessWidget {
 /// frame (the gradients in [AppColors] have no alpha), so the animation covers
 /// what is below. Nothing changes in how the screen looks once it arrives: it
 /// paints the same backdrop the app was painting behind it.
+///
+/// **Largura máxima.** Numa janela larga, uma tela empilhada esticaria até a
+/// borda — uma lista de membros de 2.400 px não se lê. O fundo continua
+/// cobrindo a janela inteira, e só o conteúdo fica numa coluna centralizada de
+/// [larguraMaxima]. No celular a coluna é mais larga que a tela e nada muda.
 class GlassPageRoute<T> extends MaterialPageRoute<T> {
+  /// Largura máxima padrão de uma tela aberta por cima: confortável para
+  /// listas e formulários, sem parecer uma faixa estreita num monitor.
+  static const double larguraPadrao = 980;
+
   GlassPageRoute({
     required WidgetBuilder builder,
+    double larguraMaxima = larguraPadrao,
     super.settings,
     super.fullscreenDialog,
-  }) : super(builder: (context) => GlassBackdrop(child: builder(context)));
+  }) : super(
+          builder: (context) => GlassBackdrop(
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxWidth: larguraMaxima),
+                child: builder(context),
+              ),
+            ),
+          ),
+        );
 }

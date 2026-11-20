@@ -10,7 +10,7 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/models/scale_model.dart';
 import '../../../data/services/firestore_service.dart';
 import 'scale_detail_screen.dart';
-import '../../widgets/common/glass.dart';
+import '../../widgets/common/responsivo.dart';
 
 class ScaleScreen extends StatefulWidget {
   const ScaleScreen({super.key});
@@ -47,7 +47,7 @@ class _ScaleScreenState extends State<ScaleScreen> {
     final cultosPorDia =
         scale.getServicesPerDay(_focusedDay.year, _focusedDay.month);
 
-    return Scaffold(
+    final calendario = Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         flexibleSpace: ClipRect(
@@ -208,6 +208,16 @@ class _ScaleScreenState extends State<ScaleScreen> {
         ],
       ),
     );
+
+    // O calendário e a lista à esquerda; o culto aberto à direita. O líder que
+    // monta a escala vê a lista E o culto, sem ir e voltar a cada um.
+    return MestreDetalhe(
+      mestre: calendario,
+      vazioIcone: Icons.event_available_rounded,
+      vazioTitulo: 'Escolha um culto',
+      vazioTexto: 'Quem toca, as músicas e as confirmações de presença abrem '
+          'aqui, ao lado do calendário.',
+    );
   }
 
   void _showCreateScaleDialog(
@@ -362,12 +372,7 @@ class _ScaleScreenState extends State<ScaleScreen> {
                   );
                   return;
                 }
-                Navigator.push(
-                  context,
-                  GlassPageRoute(
-                    builder: (_) => ScaleDetailScreen(scale: newScale),
-                  ),
-                );
+                abrirTela(context, (_) => ScaleDetailScreen(scale: newScale));
               },
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.blue),
               child: const Text('Criar'),
@@ -494,12 +499,7 @@ class _ServiceCard extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          GlassPageRoute(
-            builder: (_) => ScaleDetailScreen(scale: scale),
-          ),
-        );
+        abrirTela(context, (_) => ScaleDetailScreen(scale: scale));
       },
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),

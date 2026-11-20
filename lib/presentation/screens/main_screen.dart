@@ -17,6 +17,7 @@ import '../../../core/utils/compartilhado.dart';
 import '../../data/services/avisos_service.dart';
 import '../../data/services/local_storage_service.dart';
 import '../widgets/common/glass.dart';
+import '../widgets/common/responsivo.dart';
 import 'home/home_screen.dart';
 import 'songs/songs_screen.dart';
 import 'songs/add_song_screen.dart';
@@ -45,6 +46,11 @@ class _MainScreenState extends State<MainScreen> {
   late int _currentIndex = widget.abaInicial;
   AuthProvider? _auth;
 
+  /// A fila de pedidos de entrada, criada UMA vez. Criada a cada `build`, o
+  /// StreamBuilder reassinava a consulta toda vez que se trocava de aba — e
+  /// cada reassinatura é leitura cobrada.
+  Stream<List<UserModel>>? _pendentes;
+
   /// Guards against generating twice in one session.
   bool _gerou = false;
 
@@ -63,16 +69,24 @@ class _MainScreenState extends State<MainScreen> {
   static const int _abaPerfil = 4;
 
   late final List<Widget> _screens = [
-    HomeScreen(
-      onAbrirPerfil: () => _goToTab(_abaPerfil),
-      onAbrirChat: () => _goToTab(_abaChat),
-      onAbrirEscala: () => _goToTab(_abaEscala),
-      onAbrirMembros: _abrirMembros,
+    // Cada aba tem a largura em que se lê bem. Sem isto, num monitor de 1920
+    // px o chat vira uma linha de 2.400 px e o Início, um vazio com um cartão
+    // esticado. No celular nada disto tem efeito: a coluna é mais larga que a
+    // tela.
+    ColunaCentral(
+      largura: Porte.colunaLarga,
+      child: HomeScreen(
+        onAbrirPerfil: () => _goToTab(_abaPerfil),
+        onAbrirChat: () => _goToTab(_abaChat),
+        onAbrirEscala: () => _goToTab(_abaEscala),
+        onAbrirMembros: _abrirMembros,
+      ),
     ),
+    // Músicas e Escala têm lista E detalhe lado a lado, e usam a largura toda.
     const SongsScreen(),
     const ScaleScreen(),
-    ChatScreen(escutas: widget.escutas),
-    ProfileScreen(onAbrirMusicas: _abrirMusicasCom),
+    ColunaCentral(child: ChatScreen(escutas: widget.escutas)),
+    ColunaCentral(child: ProfileScreen(onAbrirMusicas: _abrirMusicasCom)),
   ];
 
   @override
@@ -294,6 +308,43 @@ class _MainScreenState extends State<MainScreen> {
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final lateral = Porte.lateral(context);
+    final larga = MediaQuery.sizeOf(context).width >= Porte.navegacaoLarga;
+    final admin = context.watch<AuthProvider>().isAdmin;
+
+    // O selo precisa aparecer sem o líder ir procurar: quem está esperando não
+    // vê NADA do app, e um pedido esquecido por dias é uma pessoa achando que
+    // o app não funciona.
+    Widget montar(int pendentes) {
+      final pilha = IndexedStack(index: _currentIndex, children: _screens);
+      return Scaffold(
+        // Tela larga: a navegação vai para o lado, onde há espaço, e a barra
+        // de baixo some. No celular, tudo como sempre foi.
+        body: lateral
+            ? Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _NavLateral(
+                    currentIndex: _currentIndex,
+                    onTap: _goToTab,
+                    isDark: isDark,
+                    larga: larga,
+                    pendentes: pendentes,
+                  ),
+                  Expanded(child: pilha),
+                ],
+              )
+            : pilha,
+        bottomNavigationBar: lateral
+            ? null
+            : _GlassNavBar(
+                currentIndex: _currentIndex,
+                onTap: _goToTab,
+                isDark: isDark,
+                pendentes: pendentes,
+              ),
+      );
+    }
 
     // O gesto de arrastar da borda esquerda, no app instalado, é um "voltar"
     // do navegador. Na raiz não há tela para onde voltar, e o Flutter
@@ -310,33 +361,221 @@ class _MainScreenState extends State<MainScreen> {
         // Início, em vez de não fazer nada.
         if (_currentIndex != 0) _goToTab(0);
       },
-      child: Scaffold(
-        body: IndexedStack(
-          index: _currentIndex,
-          children: _screens,
+      child: admin
+          ? StreamBuilder<List<UserModel>>(
+              stream: _pendentes ??= AuthService.watchPendentes(),
+              builder: (_, snap) => montar(snap.data?.length ?? 0),
+            )
+          : montar(0),
+    );
+  }
+}
+
+/// A navegação das telas largas: uma coluna de vidro à esquerda.
+///
+/// Estreita (só ícone e nome embaixo, como a barra de baixo) em tablet, e larga
+/// (nome ao lado do ícone) a partir de [Porte.navegacaoLarga]. Tem o que o
+/// mouse espera: a mãozinha e um realce ao passar por cima.
+class _NavLateral extends StatelessWidget {
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+  final bool isDark;
+  final bool larga;
+  final int pendentes;
+
+  const _NavLateral({
+    required this.currentIndex,
+    required this.onTap,
+    required this.isDark,
+    required this.larga,
+    required this.pendentes,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cor =
+        isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
+    return SafeArea(
+      right: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 12, 0, 12),
+        child: GlassContainer(
+          blur: 28,
+          radius: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 14),
+          child: SizedBox(
+            width: larga ? 196 : 68,
+            child: Column(
+              children: [
+                if (larga)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 4, 10, 0),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.music_note_rounded,
+                            size: 24, color: AppColors.blue),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            AppStrings.appName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: cor,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  const Icon(Icons.music_note_rounded,
+                      size: 26, color: AppColors.blue),
+                const SizedBox(height: 18),
+                for (var i = 0; i < _abas.length; i++)
+                  _ItemLateral(
+                    outlined: _abas[i].$1,
+                    filled: _abas[i].$2,
+                    label: _abas[i].$3,
+                    selected: i == currentIndex,
+                    isDark: isDark,
+                    larga: larga,
+                    badge: i == _abas.length - 1 ? pendentes : 0,
+                    onTap: () => onTap(i),
+                  ),
+              ],
+            ),
+          ),
         ),
-        bottomNavigationBar: context.watch<AuthProvider>().isAdmin
-            // O selo precisa aparecer sem o líder ir procurar: quem está
-            // esperando não vê NADA do app, e um pedido esquecido por dias é
-            // uma pessoa achando que o app não funciona.
-            ? StreamBuilder<List<UserModel>>(
-                stream: AuthService.watchPendentes(),
-                builder: (_, snap) => _GlassNavBar(
-                  currentIndex: _currentIndex,
-                  onTap: _goToTab,
-                  isDark: isDark,
-                  pendentes: snap.data?.length ?? 0,
-                ),
-              )
-            : _GlassNavBar(
-                currentIndex: _currentIndex,
-                onTap: _goToTab,
-                isDark: isDark,
-              ),
       ),
     );
   }
 }
+
+class _ItemLateral extends StatelessWidget {
+  final IconData outlined;
+  final IconData filled;
+  final String label;
+  final bool selected;
+  final bool isDark;
+  final bool larga;
+  final int badge;
+  final VoidCallback onTap;
+
+  const _ItemLateral({
+    required this.outlined,
+    required this.filled,
+    required this.label,
+    required this.selected,
+    required this.isDark,
+    required this.larga,
+    required this.onTap,
+    this.badge = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cor = selected
+        ? AppColors.blue
+        : (isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight);
+
+    final icone = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Icon(selected ? filled : outlined, size: 23, color: cor),
+        if (badge > 0)
+          Positioned(
+            top: -5,
+            right: -8,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+              constraints: const BoxConstraints(minWidth: 17),
+              decoration: BoxDecoration(
+                color: AppColors.red,
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Text(
+                badge > 9 ? '9+' : '$badge',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: Colors.white,
+                  height: 1.3,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
+
+    final texto = Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        fontFamily: 'Poppins',
+        fontSize: larga ? 14 : 10.5,
+        fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+        color: cor,
+      ),
+    );
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: label,
+      child: AoPassarOMouse(
+        onTap: onTap,
+        builder: (context, passando) => AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          curve: Curves.easeOut,
+          margin: const EdgeInsets.symmetric(vertical: 2),
+          padding: larga
+              ? const EdgeInsets.symmetric(horizontal: 12, vertical: 12)
+              : const EdgeInsets.symmetric(vertical: 9),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppColors.blue.withValues(alpha: 0.14)
+                : (passando
+                    ? (isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.black.withValues(alpha: 0.05))
+                    : Colors.transparent),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: larga
+              ? Row(children: [icone, const SizedBox(width: 12), Expanded(child: texto)])
+              : Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [icone, const SizedBox(height: 3), texto],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// As cinco abas, na ordem da barra de baixo e da navegação lateral.
+const _abas = [
+  (Icons.home_outlined, Icons.home_rounded, AppStrings.home),
+  (Icons.music_note_outlined, Icons.music_note_rounded, AppStrings.songs),
+  (
+    Icons.calendar_month_outlined,
+    Icons.calendar_month_rounded,
+    AppStrings.scale
+  ),
+  (
+    Icons.chat_bubble_outline_rounded,
+    Icons.chat_bubble_rounded,
+    AppStrings.chat
+  ),
+  (Icons.person_outline_rounded, Icons.person_rounded, AppStrings.profile),
+];
 
 class _GlassNavBar extends StatelessWidget {
   final int currentIndex;
@@ -353,21 +592,7 @@ class _GlassNavBar extends StatelessWidget {
     this.pendentes = 0,
   });
 
-  static const _items = [
-    (Icons.home_outlined, Icons.home_rounded, AppStrings.home),
-    (Icons.music_note_outlined, Icons.music_note_rounded, AppStrings.songs),
-    (
-      Icons.calendar_month_outlined,
-      Icons.calendar_month_rounded,
-      AppStrings.scale
-    ),
-    (
-      Icons.chat_bubble_outline_rounded,
-      Icons.chat_bubble_rounded,
-      AppStrings.chat
-    ),
-    (Icons.person_outline_rounded, Icons.person_rounded, AppStrings.profile),
-  ];
+  static const _items = _abas;
 
   @override
   Widget build(BuildContext context) {

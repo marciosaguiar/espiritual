@@ -209,7 +209,13 @@ class BibliotecaProvider extends ChangeNotifier {
     if (r.gravados > 0) {
       _hinos.removeWhere((k, _) => k.startsWith('${hinario.id}:'));
       _letras.remove(hinario.id);
-      await LocalStorageService.esquecerLetrasDoHinario(hinario.id);
+      try {
+        await LocalStorageService.esquecerLetrasDoHinario(hinario.id);
+      } catch (_) {
+        // É só um cache de leitura: falhar em limpá-lo não pode transformar
+        // numa importação com erro algo que já foi gravado no banco. A marca
+        // do índice já faz o aparelho tratar as letras como velhas.
+      }
       await carregarIndice(hinario.id, forcar: true);
     }
     return r;

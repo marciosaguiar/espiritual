@@ -35,173 +35,13 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:intl/date_symbol_data_local.dart';
-import 'package:provider/provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-import 'package:levitasync/core/theme/app_theme.dart';
-import 'package:levitasync/data/models/hino_da_biblioteca.dart';
-import 'package:levitasync/data/models/user_model.dart';
-import 'package:levitasync/data/services/auth_service.dart';
-import 'package:levitasync/data/services/local_storage_service.dart';
-import 'package:levitasync/presentation/providers/agenda_provider.dart';
-import 'package:levitasync/presentation/providers/auth_provider.dart';
-import 'package:levitasync/presentation/providers/biblioteca_provider.dart';
-import 'package:levitasync/presentation/providers/chat_provider.dart';
-import 'package:levitasync/presentation/providers/saude_provider.dart';
-import 'package:levitasync/presentation/providers/scale_provider.dart';
-import 'package:levitasync/presentation/providers/songs_provider.dart';
-import 'package:levitasync/presentation/providers/theme_provider.dart';
-import 'package:levitasync/presentation/screens/main_screen.dart';
-import 'package:levitasync/presentation/widgets/common/glass.dart';
 
-import 'dados_inventados.dart';
-
-/// O líder da foto. Estende o AuthProvider de verdade, trocando só o que
-/// falaria com o banco.
-class _AuthInventado extends AuthProvider {
-  @override
-  UserModel? get user => lider;
-
-  @override
-  bool get isAdmin => true;
-
-  @override
-  AuthStatus get status => AuthStatus.authenticated;
-
-  @override
-  List<UserModel> get pessoas => ministerio;
-
-  @override
-  Map<String, String> get nomes => {for (final p in ministerio) p.id: p.name};
-
-  @override
-  String? get emailDeRecuperacao => 'ana@exemplo.com';
-
-  @override
-  void ouvirPessoas() {}
-
-  @override
-  Future<void> conferirRecuperacao() async {}
-}
+import '../../test/utilitarios/app_inventado.dart';
 
 final _chave = GlobalKey();
 
-class _Tamanho {
-  final int largura;
-  final int altura;
-  final double escala;
-  const _Tamanho(this.largura, this.altura, this.escala);
-}
-
-/// 375 sai em dobro (é celular, e o olho espera nitidez); o resto em 1×, para
-/// as páginas de entrega não passarem de poucos megabytes.
-const _tamanhos = {
-  375: _Tamanho(375, 812, 2),
-  768: _Tamanho(768, 1024, 1),
-  1280: _Tamanho(1280, 800, 1),
-  1920: _Tamanho(1920, 1080, 1),
-};
-
-Future<void> _carregarFontes() async {
-  Future<void> carregar(String familia, List<String> arquivos) async {
-    final loader = FontLoader(familia);
-    for (final a in arquivos) {
-      loader.addFont(Future.value(ByteData.sublistView(File(a).readAsBytesSync())));
-    }
-    await loader.load();
-  }
-
-  await carregar('Poppins', [
-    'assets/fonts/Poppins-Regular.ttf',
-    'assets/fonts/Poppins-Medium.ttf',
-    'assets/fonts/Poppins-SemiBold.ttf',
-    'assets/fonts/Poppins-Bold.ttf',
-  ]);
-  await carregar('JetBrainsMono', ['assets/fonts/JetBrainsMono.ttf']);
-  final flutter = Platform.environment['FLUTTER_ROOT'] ??
-      File(Platform.resolvedExecutable).parent.parent.parent.parent.path;
-  final icones =
-      '$flutter/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf';
-  await carregar('MaterialIcons', [
-    if (File(icones).existsSync()) icones,
-  ]);
-}
-
-Future<void> _montar(
-  WidgetTester t, {
-  required _Tamanho tam,
-  required bool escuro,
-  required int aba,
-}) async {
-  t.view.physicalSize = Size(tam.largura * tam.escala, tam.altura * tam.escala);
-  t.view.devicePixelRatio = tam.escala;
-
-  SharedPreferences.setMockInitialValues({});
-  await LocalStorageService.init();
-  await initializeDateFormatting('pt_BR');
-
-  AuthService.pendentesParaTeste =
-      Stream<List<UserModel>>.value(const []).asBroadcastStream();
-
-  final songs = SongsProvider()..carregarParaTeste(repertorioInventado());
-  final scale = ScaleProvider()..carregarParaTeste(cultosInventados());
-  final chat = ChatProvider()..carregarParaTeste(conversaInventada());
-  final biblioteca = BibliotecaProvider(
-    lerIndice: (id) async => (
-      indice: indiceInventado(id, id == 'harpa' ? 640 : 581),
-      error: null
-    ),
-    lerHino: (id, n) async => (
-      hino: HinoDaBiblioteca(
-        hinario: id,
-        numero: n,
-        titulo: tituloInventado(n),
-        letra: letraInventada(n),
-      ),
-      error: null
-    ),
-  );
-
-  await t.pumpWidget(
-    RepaintBoundary(
-      key: _chave,
-      child: MultiProvider(
-        providers: [
-          ChangeNotifierProvider(create: (_) => ThemeProvider()),
-          ChangeNotifierProvider<AuthProvider>.value(value: _AuthInventado()),
-          ChangeNotifierProvider<SongsProvider>.value(value: songs),
-          ChangeNotifierProvider<BibliotecaProvider>.value(value: biblioteca),
-          ChangeNotifierProvider<ScaleProvider>.value(value: scale),
-          ChangeNotifierProvider<ChatProvider>.value(value: chat),
-          ChangeNotifierProvider(create: (_) => AgendaProvider()),
-          ChangeNotifierProvider(create: (_) => SaudeProvider()),
-        ],
-        child: MaterialApp(
-          debugShowCheckedModeBanner: false,
-          theme: AppTheme.lightTheme,
-          darkTheme: AppTheme.darkTheme,
-          themeMode: escuro ? ThemeMode.dark : ThemeMode.light,
-          builder: (context, child) =>
-              GlassBackdrop(child: child ?? const SizedBox.shrink()),
-          home: MainScreen(abaInicial: aba, escutas: false),
-        ),
-      ),
-    ),
-  );
-  await _assentar(t);
-}
-
-/// Deixa as animações acabarem sem esperar as que nunca acabam (indicadores
-/// de progresso, cursor piscando): `pumpAndSettle` ficaria preso nelas.
-Future<void> _assentar(WidgetTester t) async {
-  for (var i = 0; i < 6; i++) {
-    await t.pump(const Duration(milliseconds: 250));
-  }
-}
-
-Future<void> _foto(WidgetTester t, String arquivo, _Tamanho tam) async {
+Future<void> _foto(WidgetTester t, String arquivo, Tamanho tam) async {
   final fronteira = t.renderObject<RenderRepaintBoundary>(find.byKey(_chave));
   await t.runAsync(() async {
     final imagem = await fronteira.toImage(pixelRatio: tam.escala);
@@ -214,7 +54,7 @@ Future<void> _foto(WidgetTester t, String arquivo, _Tamanho tam) async {
 
 Future<void> _tocar(WidgetTester t, Finder f) async {
   await t.tap(f.first, warnIfMissed: false);
-  await _assentar(t);
+  await assentar(t);
 }
 
 /// Cada tela: a aba em que o app abre e o que tocar até chegar nela.
@@ -239,10 +79,20 @@ final _telas = <_Tela>[
     await _tocar(t, find.text('Hinários'));
     await _tocar(t, find.text('Ver todos os hinos'));
     await t.enterText(find.byType(TextField), 'promessa firmes');
-    await _assentar(t);
+    await assentar(t);
   }),
   const _Tela('chat', 3),
   const _Tela('perfil', 4),
+  // Rolada: é quando o cabeçalho do Perfil encolhe, e onde o avatar ficava
+  // cortado.
+  _Tela('perfil-rolado', 4, (t) async {
+    await t.drag(find.byType(CustomScrollView).first, const Offset(0, -110));
+    await assentar(t);
+  }),
+  _Tela('perfil-recolhido', 4, (t) async {
+    await t.drag(find.byType(CustomScrollView).first, const Offset(0, -400));
+    await assentar(t);
+  }),
 ];
 
 void main() {
@@ -265,15 +115,16 @@ void main() {
   final nomes = lista('TELAS', _telas.map((e) => e.nome).toList());
   final temas = lista('TEMAS', ['claro', 'escuro']);
 
-  setUpAll(_carregarFontes);
+  setUpAll(carregarFontes);
 
   for (final largura in larguras) {
-    final tam = _tamanhos[largura]!;
+    final tam = tamanhos[largura]!;
     for (final tema in temas) {
       for (final tela in _telas.where((e) => nomes.contains(e.nome))) {
         testWidgets('$largura ${tema.padRight(6)} ${tela.nome}', (t) async {
           addTearDown(t.view.reset);
-          await _montar(t, tam: tam, escuro: tema == 'escuro', aba: tela.aba);
+          await montarApp(t,
+              tam: tam, escuro: tema == 'escuro', aba: tela.aba, chave: _chave);
           if (tela.depois != null) await tela.depois!(t);
           await _foto(t, '$saida/$largura-$tema-${tela.nome}.png', tam);
           // Desmonta, para o relógio do MainScreen não ficar pendente.

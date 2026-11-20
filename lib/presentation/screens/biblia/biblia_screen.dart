@@ -6,7 +6,7 @@ import '../../widgets/biblia/versiculo_do_dia.dart';
 import '../../../core/constants/livros_biblia.dart';
 import '../../../data/services/biblia_service.dart';
 import '../../providers/biblia_provider.dart';
-import '../../widgets/common/glass.dart';
+import '../../widgets/common/responsivo.dart';
 import 'biblia_leitura_screen.dart';
 
 /// A porta da Bíblia: escolher a tradução, achar o livro, abrir o capítulo.
@@ -77,13 +77,11 @@ class _BibliaCorpoState extends State<_BibliaCorpo> {
 
   void _lerCapitulo(BuildContext context, LivroBiblia livro, int capitulo) {
     final provider = context.read<BibliaProvider>();
-    Navigator.push(
+    abrirTela(
       context,
-      GlassPageRoute(
-        builder: (_) => ChangeNotifierProvider.value(
-          value: provider,
-          child: BibliaLeituraScreen(livro: livro, capitulo: capitulo),
-        ),
+      (_) => ChangeNotifierProvider.value(
+        value: provider,
+        child: BibliaLeituraScreen(livro: livro, capitulo: capitulo),
       ),
     );
   }

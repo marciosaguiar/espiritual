@@ -168,14 +168,15 @@ class _HomeScreenState extends State<HomeScreen> {
           SliverToBoxAdapter(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
+              child: LayoutBuilder(
+                builder: (context, c) {
                   // O aviso de robô parado vem ANTES de tudo: é o único
                   // cartão desta tela que ninguém mais vai ver se não for
                   // agora, e cada dia de silêncio é um culto sem escala ou um
                   // lembrete que não chegou.
-                  AvisoDeSaude(onAbrir: widget.onAbrirPerfil ?? () {}),
+                  final saude = AvisoDeSaude(
+                    onAbrir: widget.onAbrirPerfil ?? () {},
+                  );
 
                   // UM CARTÃO SÓ DE CULTO.
                   //
@@ -183,54 +184,91 @@ class _HomeScreenState extends State<HomeScreen> {
                   // compromisso" no topo e "Próximo culto" no fim da tela,
                   // com o Início inteiro entre eles. Quem estava escalado lia
                   // a mesma informação duas vezes e tinha de descobrir que
-                  // eram o mesmo culto; quem não estava via um cartão vermelho
-                  // some e o outro aparecer, sem entender a diferença.
+                  // eram o mesmo culto; quem não estava via um cartão
+                  // vermelho sumir e o outro aparecer, sem entender a
+                  // diferença.
                   //
-                  // Agora é um: se eu estou escalado, ele fala comigo e traz o
-                  // botão de confirmar; se não, mostra o próximo culto do
+                  // Agora é um: se eu estou escalado, ele fala comigo e traz
+                  // o botão de confirmar; se não, mostra o próximo culto do
                   // ministério. Nos dois casos, o toque abre o culto.
-                  _CartaoDoCulto(scale: nextScale, songs: songs),
-
-                  // O repertório do meu próximo culto, cada música abrindo
-                  // no toque, no tom e na função daquele culto. Fica junto do
-                  // cartão do culto porque é a mesma pergunta — "o que eu
-                  // toco no domingo?" — e são duas partes da resposta.
-                  const MinhasProximasMusicas(),
+                  //
+                  // O repertório do meu próximo culto, cada música abrindo no
+                  // toque, no tom e na função daquele culto, fica junto do
+                  // cartão: é a mesma pergunta — "o que eu toco no domingo?" —
+                  // e são duas partes da resposta.
+                  final doCulto = <Widget>[
+                    _CartaoDoCulto(scale: nextScale, songs: songs),
+                    const MinhasProximasMusicas(),
+                  ];
 
                   // As pendências, e SÓ quando existem: pedidos de entrada e
                   // culto sem escala, para o líder; mensagens novas, para
                   // todos.
-                  Pendencias(
-                    onAbrirChat: widget.onAbrirChat,
-                    onAbrirMembros: widget.onAbrirMembros,
-                    onAbrirEscala: widget.onAbrirEscala,
-                  ),
+                  //
+                  // OS DOIS CONVITES FICAM NO FIM, e isso foi medido. Eles
+                  // abriam a tela, e a 375 px os dois juntos empurravam o
+                  // cartão do culto para fora do primeiro olhar. Nenhum dos
+                  // dois é "agora" — instalar e cadastrar e-mail são coisas de
+                  // uma vez na vida —, e os dois somem sozinhos quando estão
+                  // feitos.
+                  //
+                  // O que SAIU desta tela, e para onde foi: "Hino pelo
+                  // número" e o atalho da Bíblia → aba Músicas; versículo do
+                  // dia → topo da Bíblia; sugestões do dia → Repertório.
+                  final aviso = <Widget>[
+                    Pendencias(
+                      onAbrirChat: widget.onAbrirChat,
+                      onAbrirMembros: widget.onAbrirMembros,
+                      onAbrirEscala: widget.onAbrirEscala,
+                    ),
+                    const InstallBanner(),
+                    const _CartaoRecuperarSenha(),
+                    NadaPendente(mostrar: _nadaPendente(context)),
+                  ];
 
-                  // OS DOIS CONVITES FICAM NO FIM, e isso foi medido.
-                  //
-                  // Eles abriam a tela, e a 375 px os dois juntos empurravam
-                  // o cartão do culto para fora do primeiro olhar: quem abria
-                  // o app para ver se toca amanhã tinha de rolar para
-                  // descobrir. Nenhum dos dois é "agora" — instalar e
-                  // cadastrar e-mail são coisas de uma vez na vida —, e os
-                  // dois somem sozinhos quando estão feitos.
-                  const InstallBanner(),
-                  const _CartaoRecuperarSenha(),
-
-                  // O que SAIU desta tela, e para onde foi:
-                  //
-                  //   · "Hino pelo número"  → aba Músicas, seção Hinários
-                  //   · atalho da Bíblia    → aba Músicas, seção Bíblia
-                  //   · versículo do dia    → topo da Bíblia
-                  //   · sugestões do dia    → aba Músicas, no Repertório
-                  //
-                  // Nenhum deles respondia "o que eu preciso fazer agora", e
-                  // os dois primeiros repetiam a barra de baixo. Nada
-                  // desapareceu: tudo mudou de endereço para o lugar onde se
-                  // procura aquilo.
-                  NadaPendente(mostrar: _nadaPendente(context)),
-                  const SizedBox(height: 100),
-                ],
+                  // Em tela larga as duas metades da pergunta ficam lado a
+                  // lado: o que eu toco, à esquerda; o que está esperando por
+                  // mim, à direita. Em celular, uma coluna só, como sempre.
+                  final lado = c.maxWidth >= 860;
+                  if (!lado) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        saude,
+                        ...doCulto,
+                        ...aviso,
+                        const SizedBox(height: 100),
+                      ],
+                    );
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      saude,
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 6,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: doCulto,
+                            ),
+                          ),
+                          const SizedBox(width: 24),
+                          Expanded(
+                            flex: 4,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: aviso,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 40),
+                    ],
+                  );
+                },
               ),
             ),
           ),
