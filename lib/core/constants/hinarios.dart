@@ -159,10 +159,11 @@ List<String> movido(List<String> ordem, String id, int passos) {
 /// a pessoa descobrir, no meio do culto, que a lista está diferente da que
 /// ela acabou de ver.
 enum OrdemDosHinos {
-  numero('numero', 'Pelo número'),
-  nome('nome', 'Pelo nome (A–Z)'),
-  maisTocados('tocados', 'Mais tocados no ministério'),
-  favoritos('favoritos', 'Meus favoritos primeiro');
+  numero('numero', 'Pelo número', 'Número'),
+  nome('nome', 'Pelo nome (A–Z)', 'A–Z'),
+  nomeDescendente('nome_z_a', 'Pelo nome (Z–A)', 'Z–A'),
+  maisTocados('tocados', 'Mais tocados no ministério', 'Mais tocados'),
+  favoritos('favoritos', 'Meus favoritos primeiro', 'Favoritos');
 
   /// O que vai gravado no aparelho. Curto e estável: trocar um destes faria a
   /// escolha de todo mundo voltar para "pelo número" sem aviso.
@@ -171,7 +172,11 @@ enum OrdemDosHinos {
   /// Como a linha do menu se lê.
   final String rotulo;
 
-  const OrdemDosHinos(this.id, this.rotulo);
+  /// Como a pastilha se lê. Cabe na fila de pastilhas de uma tela de 375 px,
+  /// onde "Mais tocados no ministério" não caberia.
+  final String curto;
+
+  const OrdemDosHinos(this.id, this.rotulo, this.curto);
 }
 
 /// O nome do hino sem o "HC 15 · " que o app grava no título.

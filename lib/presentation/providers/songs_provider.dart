@@ -339,6 +339,12 @@ class SongsProvider extends ChangeNotifier {
               .compareTo(nomeComparavel(nomeSemHinario(b.name)));
           return c != 0 ? c : porNumero(a, b);
         });
+      case OrdemDosHinos.nomeDescendente:
+        saida.sort((a, b) {
+          final c = nomeComparavel(nomeSemHinario(b.name))
+              .compareTo(nomeComparavel(nomeSemHinario(a.name)));
+          return c != 0 ? c : porNumero(a, b);
+        });
       case OrdemDosHinos.maisTocados:
         saida.sort((a, b) {
           final c =
