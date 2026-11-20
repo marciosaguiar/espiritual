@@ -64,7 +64,11 @@ class _Wa {
 }
 
 class ChatScreen extends StatefulWidget {
-  const ChatScreen({super.key});
+  /// Liga as escutas do banco (leituras, "visto por"). Desligado só pelo
+  /// roteiro que fotografa as telas sem Firebase.
+  final bool escutas;
+
+  const ChatScreen({super.key, this.escutas = true});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -130,16 +134,18 @@ class _ChatScreenState extends State<ChatScreen> {
     // O "@" no texto abre a lista de quem mencionar.
     _messageCtrl.addListener(_olharPorMencao);
 
-    _escutaLeituras = LeiturasService.escutar().listen((l) {
-      if (mounted) setState(() => _leituras = l);
-    }, onError: (_) {
-      // Sem as leituras, as bolhas ficam com um tique cinza. É o pior caso
-      // seguro: nunca dois tiques azuis adivinhados.
-    });
+    if (widget.escutas) {
+      _escutaLeituras = LeiturasService.escutar().listen((l) {
+        if (mounted) setState(() => _leituras = l);
+      }, onError: (_) {
+        // Sem as leituras, as bolhas ficam com um tique cinza. É o pior caso
+        // seguro: nunca dois tiques azuis adivinhados.
+      });
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _marcarComoLido();
-    });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _marcarComoLido();
+      });
+    }
   }
 
   void _onMessagesChanged() {

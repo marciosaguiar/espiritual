@@ -27,14 +27,22 @@ import 'profile/profile_screen.dart';
 import 'profile/members_screen.dart';
 
 class MainScreen extends StatefulWidget {
-  const MainScreen({super.key});
+  /// A aba que abre primeiro. Só o roteiro de captura de telas usa algo
+  /// diferente de 0.
+  final int abaInicial;
+
+  /// Liga as escutas do banco. Desligado, a tela mostra o que os providers já
+  /// têm na memória — é o que permite fotografar o app sem Firebase.
+  final bool escutas;
+
+  const MainScreen({super.key, this.abaInicial = 0, this.escutas = true});
 
   @override
   State<MainScreen> createState() => _MainScreenState();
 }
 
 class _MainScreenState extends State<MainScreen> {
-  int _currentIndex = 0;
+  late int _currentIndex = widget.abaInicial;
   AuthProvider? _auth;
 
   /// Guards against generating twice in one session.
@@ -63,7 +71,7 @@ class _MainScreenState extends State<MainScreen> {
     ),
     const SongsScreen(),
     const ScaleScreen(),
-    const ChatScreen(),
+    ChatScreen(escutas: widget.escutas),
     ProfileScreen(onAbrirMusicas: _abrirMusicasCom),
   ];
 
@@ -204,6 +212,7 @@ class _MainScreenState extends State<MainScreen> {
 
   void _initData() {
     _auth = context.read<AuthProvider>();
+    if (!widget.escutas) return;
     final songs = context.read<SongsProvider>();
     final scale = context.read<ScaleProvider>();
     final chat = context.read<ChatProvider>();

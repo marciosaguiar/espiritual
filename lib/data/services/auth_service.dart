@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -378,7 +379,14 @@ class AuthService {
   /// Quem está esperando o líder. Consulta filtrada de propósito: o resultado
   /// quase sempre vem vazio, e o selo em Perfil não pode custar a leitura da
   /// lista inteira de membros a cada abertura do app.
+  @visibleForTesting
+  static Stream<List<UserModel>>? pendentesParaTeste;
+
   static Stream<List<UserModel>> watchPendentes() {
+    // Costura de teste: o roteiro que fotografa as telas não tem banco, e o
+    // selo é desenhado dentro do `build`, onde falar com o Firestore lançaria.
+    final falso = pendentesParaTeste;
+    if (falso != null) return falso;
     return _db
         .collection(_collection)
         .where('role', isEqualTo: 'pendente')

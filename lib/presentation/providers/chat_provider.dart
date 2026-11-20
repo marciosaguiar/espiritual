@@ -41,6 +41,16 @@ class ChatProvider extends ChangeNotifier {
   /// Users currently typing (best-effort, filtered for freshness by callers).
   List<TypingUser> get typing => _typing;
 
+  /// Põe mensagens na memória sem falar com o banco (testes e captura de
+  /// telas).
+  @visibleForTesting
+  void carregarParaTeste(List<MessageModel> mensagens) {
+    _messages = mensagens;
+    _isLoading = false;
+    _error = null;
+    notifyListeners();
+  }
+
   void listenToMessages() {
     if (_messagesSub != null) return;
     _isLoading = true;

@@ -48,6 +48,18 @@ class SongsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Põe músicas na memória sem falar com o banco. Só os testes e o roteiro de
+  /// captura de telas usam: é o que permite fotografar o app com o repertório
+  /// do tamanho do ministério sem emulador nenhum.
+  @visibleForTesting
+  void carregarParaTeste(List<SongModel> musicas) {
+    _songs = musicas;
+    _isLoading = false;
+    _error = null;
+    _applyFilter();
+    notifyListeners();
+  }
+
   void listenToSongs() {
     // Guard against stacking multiple subscriptions (e.g. re-login).
     if (_songsSub != null) return;
