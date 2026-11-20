@@ -559,7 +559,7 @@ class _SongListTile extends StatelessWidget {
         context.select<SongsProvider, bool>((s) => s.isOffline(song.id));
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return GestureDetector(
+    return ComMao(
       onTap: () {
         abrirTela(context, (_) => SongDetailScreen(song: song));
       },

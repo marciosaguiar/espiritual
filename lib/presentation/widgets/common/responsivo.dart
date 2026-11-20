@@ -178,6 +178,24 @@ class _AoPassarOMouseState extends State<AoPassarOMouse> {
   }
 }
 
+/// Um bloco clicável com a mãozinha do mouse. É o `GestureDetector` de sempre,
+/// que no mouse não mostrava que dava para clicar — num computador, um cartão
+/// que não muda o cursor parece enfeite.
+class ComMao extends StatelessWidget {
+  final VoidCallback? onTap;
+  final Widget child;
+
+  const ComMao({super.key, this.onTap, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      cursor: onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
+      child: GestureDetector(onTap: onTap, child: child),
+    );
+  }
+}
+
 // ─── Lista e detalhe lado a lado ──────────────────────────────────────────
 
 /// O painel da direita de um [MestreDetalhe]: onde as telas "abertas por

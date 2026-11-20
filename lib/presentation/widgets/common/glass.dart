@@ -126,7 +126,12 @@ class GlassCard extends StatelessWidget {
       child: child,
     );
     if (onTap == null) return card;
-    return GestureDetector(onTap: onTap, child: card);
+    // A mãozinha: num computador, um cartão clicável que não muda o cursor
+    // parece enfeite.
+    return MouseRegion(
+      cursor: SystemMouseCursors.click,
+      child: GestureDetector(onTap: onTap, child: card),
+    );
   }
 }
 

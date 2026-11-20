@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/platform/tela_acesa.dart';
 import '../../../core/utils/chord_transposer.dart';
+import '../../../core/utils/projetar_letra.dart';
 import '../../../core/utils/mapa_da_musica.dart';
 import '../../../data/models/ao_vivo_model.dart';
 import '../../../data/models/scale_model.dart';
@@ -183,8 +184,8 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
 
     setState(() => _entrandoHino = true);
     final novas = ScaleModel.comMusicaExtra(_refs, hino.id);
-    final erro = await context.read<ScaleProvider>()
-        .setSongs(widget.culto.id, novas);
+    final erro =
+        await context.read<ScaleProvider>().setSongs(widget.culto.id, novas);
     if (!mounted) return;
 
     if (erro != null) {
@@ -288,7 +289,8 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
       final mudou = e.musica != _musica || e.ancora != _ancora;
       if (mudou) {
         setState(() {
-          _musica = e.musica.clamp(0, _musicas.isEmpty ? 0 : _musicas.length - 1);
+          _musica =
+              e.musica.clamp(0, _musicas.isEmpty ? 0 : _musicas.length - 1);
           _ancora = e.ancora;
         });
         _rolarAte(_ancora);
@@ -516,26 +518,68 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
     // refletor em cima. O tema do app não vale aqui de propósito.
     return Theme(
       data: ThemeData.dark(useMaterial3: true),
-      child: Scaffold(
-        backgroundColor: const Color(0xFF07090C),
-        body: SafeArea(
-          child: _carregando
-              ? const Center(child: CircularProgressIndicator())
-              : _musicas.isEmpty
-                  ? _semMusicas()
-                  : Column(
-                      children: [
-                        _barraDeCima(),
-                        if (_avisoDaTela.isNotEmpty) _faixaDeAviso(),
-                        if (widget.culto.observations.trim().isNotEmpty)
-                          _observacoes(),
-                        Expanded(child: _leitura()),
-                        _barraDeBaixo(),
-                      ],
-                    ),
+      child: Focus(
+        autofocus: true,
+        onKeyEvent: _teclas,
+        child: Scaffold(
+          backgroundColor: const Color(0xFF07090C),
+          body: SafeArea(
+            child: _carregando
+                ? const Center(child: CircularProgressIndicator())
+                : _musicas.isEmpty
+                    ? _semMusicas()
+                    : Column(
+                        children: [
+                          _barraDeCima(),
+                          if (_avisoDaTela.isNotEmpty) _faixaDeAviso(),
+                          if (widget.culto.observations.trim().isNotEmpty)
+                            _observacoes(),
+                          Expanded(child: _leitura()),
+                          _barraDeBaixo(),
+                        ],
+                      ),
+          ),
         ),
       ),
     );
+  }
+
+  /// O teclado de quem conduz no computador: as MESMAS ações dos botões da
+  /// barra de baixo, e nenhuma a mais.
+  ///
+  /// Espaço, → ou ↓ vão à próxima parte; ← ou ↑, à anterior; Shift+→ e Shift+←
+  /// trocam de música; Esc sai. É o jeito de passar a letra sem tirar a mão do
+  /// teclado — e de projetar do mesmo computador que conduz o culto.
+  KeyEventResult _teclas(FocusNode _, KeyEvent e) {
+    if (e is! KeyDownEvent) return KeyEventResult.ignored;
+    final acao = acaoDaTecla(
+      e.logicalKey,
+      shift: HardwareKeyboard.instance.isShiftPressed,
+    );
+    if (acao == null) return KeyEventResult.ignored;
+    if (acao == AcaoDoPalco.sair) {
+      Navigator.of(context).maybePop();
+      return KeyEventResult.handled;
+    }
+    final m = _atual;
+    if (m == null) return KeyEventResult.ignored;
+    switch (acao) {
+      case AcaoDoPalco.proxima:
+        _irParaAncora(m.mapa.proximaParte(_ancora));
+      case AcaoDoPalco.anterior:
+        _irParaAncora(m.mapa.parteAnterior(_ancora));
+      case AcaoDoPalco.proximaMusica:
+        _trocarMusica(1);
+      case AcaoDoPalco.musicaAnterior:
+        _trocarMusica(-1);
+      case AcaoDoPalco.primeira:
+        _irParaAncora(0);
+      case AcaoDoPalco.ultima:
+        _irParaAncora(m.mapa.ancoras.length - 1);
+      case AcaoDoPalco.telaCheia || AcaoDoPalco.sair:
+        return KeyEventResult.ignored;
+    }
+    return KeyEventResult.handled;
   }
 
   /// O combinado do culto, aqui também — RECOLHIDO por padrão.
@@ -594,7 +638,8 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.music_off_rounded, size: 46, color: Colors.white38),
+            const Icon(Icons.music_off_rounded,
+                size: 46, color: Colors.white38),
             const SizedBox(height: 14),
             const Text(
               'Este culto ainda não tem músicas',
@@ -843,7 +888,8 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
 
     return NotificationListener<ScrollNotification>(
       onNotification: (n) {
-        if (n is UserScrollNotification && n.direction != ScrollDirection.idle) {
+        if (n is UserScrollNotification &&
+            n.direction != ScrollDirection.idle) {
           if (_souOCondutor) {
             _rolagemDoCondutor();
           } else if (_seguindo) {
@@ -945,7 +991,8 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
                     min: 1.5,
                     max: 12,
                     divisions: 21,
-                    label: '${_segundosPorLinha.toStringAsFixed(1)} s por linha',
+                    label:
+                        '${_segundosPorLinha.toStringAsFixed(1)} s por linha',
                     onChanged: (v) {
                       setState(() => _segundosPorLinha = v);
                       if (_automatico) {
@@ -990,8 +1037,7 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
                 tooltip: 'Parte anterior',
                 icon: const Icon(Icons.keyboard_double_arrow_up_rounded,
                     size: 26, color: Colors.white70),
-                onPressed: () =>
-                    _irParaAncora(m.mapa.parteAnterior(_ancora)),
+                onPressed: () => _irParaAncora(m.mapa.parteAnterior(_ancora)),
               ),
               // O botão grande. Área de toque generosa de propósito: é
               // apertado com o instrumento na mão, sem olhar.
@@ -1013,8 +1059,9 @@ class _ModoAoVivoScreenState extends State<ModoAoVivoScreen> {
                             fontWeight: FontWeight.w700),
                       ),
                       style: FilledButton.styleFrom(
-                        backgroundColor:
-                            _souOCondutor ? AppColors.blue : const Color(0xFF263040),
+                        backgroundColor: _souOCondutor
+                            ? AppColors.blue
+                            : const Color(0xFF263040),
                       ),
                     ),
                   ),

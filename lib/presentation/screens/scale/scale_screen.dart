@@ -497,7 +497,7 @@ class _ServiceCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    return GestureDetector(
+    return ComMao(
       onTap: () {
         abrirTela(context, (_) => ScaleDetailScreen(scale: scale));
       },
