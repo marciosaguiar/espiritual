@@ -127,7 +127,16 @@ jobs:
           # das entregas anteriores, que já vinham comendo a folga.
           # A base passa a ser o que a CI mediu. Trocar nos DOIS workflows
           # (ci.yml e web-preview.yml), no mesmo commit.
-          BASE=4001604
+          # 20/11/2026: a rodada "offline primeiro" é código de verdade (fila de
+          # envio, política de conflito, cópia no aparelho, preparação em segundo
+          # plano, faixa de rede, recados) e acrescentou 71.659 bytes (medido
+          # antes e depois, no mesmo Flutter: 3.844.913 → 3.916.572). Na CI, com
+          # o mesmo deslocamento de ~199 KB entre esta máquina e ela, isso dá
+          # ~4.115.673 — 11 KB ACIMA do limite anterior (4.104.004).
+          # ESTE NÚMERO É UMA ESTIMATIVA: a base passa a ser o que a CI imprimir
+          # ("main.dart.js: N bytes") e vale conferir o log da primeira execução.
+          # Trocar nos DOIS workflows (ci.yml e web-preview.yml), no mesmo commit.
+          BASE=4115673
           FOLGA=102400
           TAMANHO=$(wc -c < build/web/main.dart.js)
           LIMITE=$((BASE + FOLGA))
