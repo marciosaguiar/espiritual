@@ -19,6 +19,7 @@
 /// fonte a pede.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
 class FonteMono {
@@ -29,6 +30,22 @@ class FonteMono {
 
   static Future<void>? _carregando;
 
+  /// Só os testes ligam (ver `test/flutter_test_config.dart`): `garantir` passa
+  /// a não carregar nada.
+  ///
+  /// **Por que existe:** carregar a fonte faz o motor mandar o aviso
+  /// "fontsChange", e o Flutter reage agendando um quadro. Se o aviso chega
+  /// DEPOIS de o teste terminar, o teste reprova com "An animation is still
+  /// running even after the widget tree was disposed". Aqui, com o motor
+  /// antigo, o aviso nunca chegava e tudo passava; **no Flutter 3.50.0 da CI ele
+  /// chegou, e 5 testes reprovaram** (abrir_ao_lado, campo_multilinha,
+  /// letra_em_tela_larga, projetar_tela, responsivo) — todos os que abrem a
+  /// tela da música ou o campo de cifra. A corrida entre o aviso e o fim do
+  /// teste depende de versão e de máquina; desligar o carregamento a tira do
+  /// caminho em vez de torcer para ela ganhar.
+  @visibleForTesting
+  static bool desligada = false;
+
   /// Registra a fonte, uma vez só. Quem chama de novo recebe o mesmo
   /// `Future`, então pedir de várias telas não baixa nem registra de novo.
   ///
@@ -37,6 +54,7 @@ class FonteMono {
   static Future<void> garantir() => _carregando ??= _carregar();
 
   static Future<void> _carregar() async {
+    if (desligada) return;
     try {
       final loader = FontLoader(familia)..addFont(rootBundle.load(arquivo));
       await loader.load();
