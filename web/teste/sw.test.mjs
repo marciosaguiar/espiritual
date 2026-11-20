@@ -222,3 +222,86 @@ test('push com corpo `null` não derruba o service worker', async () => {
   assert.equal(sw.notificacoes.length, 1);
   assert.equal(sw.notificacoes[0].title, 'LevitaSync');
 });
+
+// ─── O que o service worker guarda na instalação ────────────────────────────
+//
+// MEDIDO no build: o carimbo da publicação punha 42 arquivos e 21 MB no cache
+// — as duas versões do canvaskit, os `.symbols` (nomes de função, só servem a
+// quem depura) e o `wimp`. Tudo isso ia pela mesma linha que o app usava para
+// abrir pela primeira vez, num celular com internet ruim.
+
+const LISTA_DO_BUILD = [
+  './', 'index.html', 'flutter_bootstrap.js', 'main.dart.js',
+  'assets/assets/fonts/Poppins-Regular.ttf',
+  'canvaskit/canvaskit.js', 'canvaskit/canvaskit.wasm',
+  'canvaskit/canvaskit.js.symbols',
+  'canvaskit/chromium/canvaskit.js', 'canvaskit/chromium/canvaskit.wasm',
+  'canvaskit/chromium/canvaskit.js.symbols',
+  'canvaskit/wimp.js', 'canvaskit/wimp.js.symbols',
+];
+
+const INTL_CHROME = { v8BreakIterator: class {}, Segmenter: class {} };
+const INTL_SAFARI = { Segmenter: class {} }; // sem v8BreakIterator
+
+/// Dispara a instalação e devolve os caminhos que foram para o cache.
+async function instalar({ lista = LISTA_DO_BUILD, intl }) {
+  const ouvintes = {};
+  const guardados = [];
+  const self = {
+    addEventListener(nome, fn) { (ouvintes[nome] ??= []).push(fn); },
+    skipWaiting() {},
+    location: { origin: 'https://exemplo.app' },
+    registration: { scope: 'https://exemplo.app/' },
+    clients: { claim: () => Promise.resolve(), matchAll: () => Promise.resolve([]) },
+    LISTA_DO_BUILD: lista,
+    VERSAO_DO_BUILD: 'teste',
+  };
+  const caches = {
+    open: async () => ({ add: async (c) => { guardados.push(c); } }),
+    keys: async () => [],
+    delete: async () => true,
+    match: async () => undefined,
+  };
+  new Function('self', 'caches', 'fetch', 'console', 'Intl', CODIGO)(
+    self, caches, undefined, { warn() {}, log() {} }, intl);
+  let espera;
+  ouvintes.install[0]({ waitUntil: (p) => { espera = p; } });
+  await espera;
+  return guardados;
+}
+
+test('Chrome: guarda a versão "chromium" do canvaskit e NÃO a comum', async () => {
+  const g = await instalar({ intl: INTL_CHROME });
+  assert.ok(g.includes('canvaskit/chromium/canvaskit.wasm'));
+  assert.ok(g.includes('canvaskit/chromium/canvaskit.js'));
+  assert.ok(!g.includes('canvaskit/canvaskit.wasm'), 'baixou o motor que o Chrome não usa');
+});
+
+test('iPhone (Safari): guarda a versão comum e NÃO a "chromium"', async () => {
+  const g = await instalar({ intl: INTL_SAFARI });
+  assert.ok(g.includes('canvaskit/canvaskit.wasm'));
+  assert.ok(g.includes('canvaskit/canvaskit.js'));
+  assert.ok(!g.some((c) => c.startsWith('canvaskit/chromium/')),
+    'o iPhone baixaria 2 MB de motor que nunca vai usar');
+});
+
+test('nunca guarda `.symbols` nem o wimp, em nenhum navegador', async () => {
+  for (const intl of [INTL_CHROME, INTL_SAFARI]) {
+    const g = await instalar({ intl });
+    assert.ok(!g.some((c) => c.endsWith('.symbols')), '.symbols entrou no cache');
+    assert.ok(!g.some((c) => c.startsWith('canvaskit/wimp')), 'wimp entrou no cache');
+  }
+});
+
+test('o resto do esqueleto continua: página, código e fontes', async () => {
+  const g = await instalar({ intl: INTL_SAFARI });
+  for (const c of ['./', 'index.html', 'flutter_bootstrap.js', 'main.dart.js',
+    'assets/assets/fonts/Poppins-Regular.ttf']) {
+    assert.ok(g.includes(c), `faltou ${c}`);
+  }
+});
+
+test('sem a lista do build (desenvolvimento) usa o esqueleto mínimo', async () => {
+  const g = await instalar({ lista: null, intl: INTL_CHROME });
+  assert.deepEqual(g, ['./', 'index.html', 'flutter_bootstrap.js', 'main.dart.js']);
+});

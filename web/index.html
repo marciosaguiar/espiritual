@@ -36,6 +36,22 @@
 
   <link rel="icon" type="image/png" href="favicon.png"/>
 
+  <!-- DICAS DE REDE para o que o app vai buscar logo depois de ligar.
+       O Flutter carrega o SDK do Firebase de www.gstatic.com só DEPOIS de o
+       Dart começar (~175 KB em três arquivos, numa conexão nova ao Google), e
+       confere a sessão em identitytoolkit.googleapis.com ANTES do primeiro
+       quadro. Sem estas linhas, tudo isso espera o código do app terminar de
+       baixar e rodar — e a conexão (DNS, TCP, TLS: três viagens) é feita só
+       então. Com elas, o navegador faz isso EM PARALELO com o download do app.
+       A versão (10.11.1) é a que o `firebase_core_web` do pubspec.lock carrega;
+       um teste confere que não saiu de sincronia. -->
+  <link rel="preconnect" href="https://www.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+  <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.11.1/firebase-app.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.11.1/firebase-auth.js">
+  <link rel="modulepreload" href="https://www.gstatic.com/firebasejs/10.11.1/firebase-firestore.js">
+
   <title>LevitaSync</title>
   <link rel="manifest" href="manifest.json">
 
@@ -278,13 +294,38 @@
         faixa.classList.remove('aparecendo');
       });
 
+      // Recarregar é para a versão NOVA assumir o lugar da velha. Na PRIMEIRA
+      // instalação não há versão velha: o service worker assume a página que
+      // já está aberta e carregada, e recarregá-la seria jogar fora o app no
+      // meio do uso — numa linha lenta, a instalação termina minutos depois
+      // da abertura, quando a pessoa já está digitando. Só vale recarregar se
+      // a página JÁ tinha um controlador quando abriu.
+      var tinhaControlador = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.addEventListener('controllerchange', function () {
+        if (!tinhaControlador) { tinhaControlador = true; return; }
         if (jaRecarregou) return;
         jaRecarregou = true;
         window.location.reload();
       });
 
-      window.addEventListener('load', function () {
+      // O registro espera o app DESENHAR a primeira tela (e mais 2 s). Quem
+      // registra no `load` faz o navegador começar a instalar o cache NA HORA
+      // em que o app ainda está baixando o motor gráfico e as fontes — duas
+      // filas disputando a mesma linha, e quem perde é a abertura. Se o
+      // Flutter nunca avisar, registra em 20 s mesmo assim.
+      var carregou = document.readyState === 'complete';
+      var desenhou = false;
+      var registrou = false;
+      function talvezRegistrar() {
+        if (carregou && desenhou) setTimeout(registrar, 2000);
+      }
+      window.addEventListener('load', function () { carregou = true; talvezRegistrar(); });
+      window.addEventListener('flutter-first-frame', function () { desenhou = true; talvezRegistrar(); });
+      setTimeout(registrar, 20000);
+
+      function registrar() {
+        if (registrou) return;
+        registrou = true;
         navigator.serviceWorker.register('sw.js').then(function (reg) {
           // Pode já haver uma versão esperando desde a sessão anterior —
           // justamente o caso que obrigava a fechar o app duas vezes.
@@ -309,7 +350,7 @@
           // Sem cache o app continua funcionando, só mais devagar.
           console.warn('[levita] service worker não registrou:', e);
         });
-      });
+      }
 
       // O iOS só procura versão nova numa carga de página de verdade, e um
       // app na tela de início quase nunca faz uma. Então perguntamos quando

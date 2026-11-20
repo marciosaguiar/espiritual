@@ -39,8 +39,39 @@
 const VERSAO = self.VERSAO_DO_BUILD || 'desenvolvimento';
 const CACHE = `levitasync-${VERSAO}`;
 
-const ESQUELETO = self.LISTA_DO_BUILD ||
-    ['./', 'index.html', 'flutter_bootstrap.js', 'main.dart.js'];
+// O que NÃO vale guardar, decidido aqui e não só na publicação: a lista do
+// build é a que a publicação carimba, e uma regra errada lá custa uma
+// publicação inteira para corrigir.
+//
+// MEDIDO: o carimbo punha 42 arquivos e 21 MB no cache — as duas versões do
+// canvaskit (6,9 MB e 5,5 MB), os arquivos `.symbols` (nomes de função, só
+// servem a quem depura) e o `wimp`. No celular, isso ia pela mesma linha que
+// o app usava para abrir pela primeira vez.
+//
+// O Flutter usa UMA das versões do canvaskit, escolhida pelo navegador: a
+// "chromium" onde existem `Intl.v8BreakIterator` e `Intl.Segmenter` (Chrome,
+// Edge), e a comum nos outros — Safari, ou seja, o iPhone, e Firefox. É a
+// mesma conta do `flutter.js`; se um dia ela divergir, o que falta vem da
+// rede na primeira vez e é guardado depois, como qualquer outro arquivo.
+function usaCanvaskitChromium() {
+  try {
+    return typeof Intl.v8BreakIterator !== 'undefined' &&
+        typeof Intl.Segmenter !== 'undefined';
+  } catch (_) {
+    return false;
+  }
+}
+
+const NUNCA_GUARDAR = new RegExp(
+  '\\.symbols$' +
+  '|^canvaskit/wimp' +
+  (usaCanvaskitChromium()
+    ? '|^canvaskit/canvaskit\\.(js|wasm)$'
+    : '|^canvaskit/chromium/'));
+
+const ESQUELETO = (self.LISTA_DO_BUILD ||
+    ['./', 'index.html', 'flutter_bootstrap.js', 'main.dart.js'])
+    .filter((caminho) => !NUNCA_GUARDAR.test(caminho));
 
 self.addEventListener('install', (evento) => {
   // Nada de `skipWaiting()` aqui. Assumir na instalação trocaria o código
