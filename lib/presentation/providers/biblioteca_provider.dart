@@ -5,6 +5,7 @@ import '../../core/utils/importar_hinario.dart';
 import '../../data/models/hino_da_biblioteca.dart';
 import '../../data/models/song_model.dart';
 import '../../data/services/firestore_service.dart';
+import '../../data/services/local_storage_service.dart';
 import '../../core/utils/crypto_utils.dart';
 
 /// A biblioteca de hinários: o texto que o líder importou.
@@ -19,6 +20,9 @@ typedef LeitorDeIndice = Future<({IndiceDoHinario? indice, String? error})>
 
 typedef LeitorDeHino = Future<({HinoDaBiblioteca? hino, String? error})>
     Function(String hinarioId, int numero);
+
+typedef LeitorDeLetras = Future<({Map<int, String>? letras, String? error})>
+    Function(String hinarioId);
 
 typedef GravadorDeHinos = Future<({int gravados, String? error})> Function({
   required Hinario hinario,
@@ -42,13 +46,16 @@ class BibliotecaProvider extends ChangeNotifier {
     LeitorDeHino? lerHino,
     GravadorDeHinos? gravarHinos,
     GravadorDeMusica? gravarMusica,
+    LeitorDeLetras? lerLetras,
     DateTime Function()? agora,
-  })  : _lerIndiceNoBanco = lerIndice ?? FirestoreService.lerIndiceDoHinario,
+  })  : _lerLetrasNoBanco = lerLetras ?? FirestoreService.lerTodasAsLetras,
+        _lerIndiceNoBanco = lerIndice ?? FirestoreService.lerIndiceDoHinario,
         _lerHinoNoBanco = lerHino ?? FirestoreService.lerHinoDaBiblioteca,
         _gravarHinos = gravarHinos ?? FirestoreService.importarHinario,
         _gravarMusica = gravarMusica ?? FirestoreService.addSong,
         _agora = agora ?? DateTime.now;
 
+  final LeitorDeLetras _lerLetrasNoBanco;
   final LeitorDeIndice _lerIndiceNoBanco;
   final LeitorDeHino _lerHinoNoBanco;
   final GravadorDeHinos _gravarHinos;
@@ -106,6 +113,59 @@ class BibliotecaProvider extends ChangeNotifier {
     }
   }
 
+  // ─── As letras no aparelho (a busca por trecho) ───────────────────────────
+
+  final Map<String, Map<int, String>> _letras = {};
+  final Set<String> _baixandoLetras = {};
+
+  /// As letras que este aparelho tem do hinário — vazio se nunca as trouxe, ou
+  /// se o líder importou de novo depois (a marca mudou e o que está guardado
+  /// ficou velho: mostrar uma letra corrigida pela metade seria pior que
+  /// oferecer baixar de novo).
+  Map<int, String> letrasDe(String hinarioId) {
+    final em = _letras[hinarioId];
+    if (em != null) return em;
+    final guardadas = LocalStorageService.letrasDoHinario(hinarioId);
+    if (guardadas == null) return const {};
+    if (_indices.containsKey(hinarioId) &&
+        guardadas.marca != _indices[hinarioId]!.marca) {
+      return const {};
+    }
+    return _letras[hinarioId] = guardadas.letras;
+  }
+
+  /// A busca já pode ler dentro das letras deste hinário?
+  bool letrasProntas(String hinarioId) => letrasDe(hinarioId).isNotEmpty;
+
+  bool baixandoLetras(String hinarioId) => _baixandoLetras.contains(hinarioId);
+
+  /// Traz as letras de todos os hinos do hinário e guarda neste aparelho.
+  /// Devolve null quando dá certo, ou o motivo.
+  ///
+  /// **Custa uma leitura por hino** (640 na Harpa), e é por isso que só roda
+  /// quando a pessoa pede. Duas chamadas ao mesmo tempo não duplicam a conta.
+  Future<String?> baixarLetras(Hinario hinario) async {
+    if (_baixandoLetras.contains(hinario.id)) return null;
+    _baixandoLetras.add(hinario.id);
+    notifyListeners();
+    try {
+      // A marca vem do índice de AGORA; sem ele não há como saber, depois, se
+      // o que ficou guardado ainda vale.
+      final erroDoIndice = await carregarIndice(hinario.id);
+      if (erroDoIndice != null) return erroDoIndice;
+      final r = await _lerLetrasNoBanco(hinario.id);
+      if (r.error != null) return r.error;
+      final letras = r.letras!;
+      _letras[hinario.id] = letras;
+      await LocalStorageService.salvarLetrasDoHinario(
+          hinario.id, letras, indiceDe(hinario.id).marca);
+      return null;
+    } finally {
+      _baixandoLetras.remove(hinario.id);
+      notifyListeners();
+    }
+  }
+
   /// O hino da biblioteca, ou nulo se ela não o tem.
   ///
   /// Confere o índice ANTES de ler a letra: número que não está no índice
@@ -148,6 +208,8 @@ class BibliotecaProvider extends ChangeNotifier {
     // Mesmo com erro: parte pode ter entrado.
     if (r.gravados > 0) {
       _hinos.removeWhere((k, _) => k.startsWith('${hinario.id}:'));
+      _letras.remove(hinario.id);
+      await LocalStorageService.esquecerLetrasDoHinario(hinario.id);
       await carregarIndice(hinario.id, forcar: true);
     }
     return r;

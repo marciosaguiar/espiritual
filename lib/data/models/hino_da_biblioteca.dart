@@ -108,10 +108,28 @@ class IndiceDoHinario {
   final String hinario;
   final Map<int, String> titulos;
 
-  const IndiceDoHinario({required this.hinario, this.titulos = const {}});
+  /// Quando o líder importou pela última vez (hora do servidor). Nula num
+  /// índice que acabou de ser montado em memória, ainda sem ter voltado do
+  /// banco.
+  final DateTime? atualizadoEm;
+
+  const IndiceDoHinario({
+    required this.hinario,
+    this.titulos = const {},
+    this.atualizadoEm,
+  });
 
   /// Hinário que ninguém importou ainda.
-  const IndiceDoHinario.vazio(this.hinario) : titulos = const {};
+  const IndiceDoHinario.vazio(this.hinario)
+      : titulos = const {},
+        atualizadoEm = null;
+
+  /// Uma marca do que está na biblioteca AGORA. As letras que o aparelho
+  /// guardou levam esta marca: quando o líder importa de novo (corrigindo um
+  /// texto), a marca muda, e o aparelho sabe que o que guardou ficou velho.
+  String get marca => atualizadoEm != null
+      ? '${atualizadoEm!.millisecondsSinceEpoch}'
+      : 'n$total';
 
   bool get vazio => titulos.isEmpty;
   int get total => titulos.length;
@@ -163,7 +181,12 @@ class IndiceDoHinario {
         saida[n] = v;
       }
     });
-    return IndiceDoHinario(hinario: hinario, titulos: saida);
+    final quando = data?['atualizadoEm'];
+    return IndiceDoHinario(
+      hinario: hinario,
+      titulos: saida,
+      atualizadoEm: quando is Timestamp ? quando.toDate() : null,
+    );
   }
 
   /// Este índice com os [hinos] por cima.
@@ -177,7 +200,8 @@ class IndiceDoHinario {
     for (final h in hinos) {
       saida[h.numero] = h.titulo;
     }
-    return IndiceDoHinario(hinario: hinario, titulos: saida);
+    return IndiceDoHinario(
+        hinario: hinario, titulos: saida, atualizadoEm: atualizadoEm);
   }
 
   /// Como vai para o banco: chaves em texto, porque mapa do Firestore só tem

@@ -207,6 +207,29 @@ class FirestoreService {
     }
   }
 
+  /// As letras de TODOS os hinos do hinário, numa consulta só.
+  ///
+  /// CUSTA UMA LEITURA POR HINO (640 na Harpa), e por isso só roda quando a
+  /// pessoa pede para procurar dentro das letras — nunca ao abrir o app. O
+  /// aparelho guarda o resultado, e daí em diante a busca não custa nada.
+  static Future<({Map<int, String>? letras, String? error})>
+      lerTodasAsLetras(String hinarioId) async {
+    try {
+      final r = await _hinosDa(hinarioId).get();
+      final saida = <int, String>{};
+      for (final doc in r.docs) {
+        final n = int.tryParse(doc.id);
+        final h = HinoDaBiblioteca.fromFirestore(hinarioId, doc.data());
+        if (n != null && h != null) saida[n] = h.letra;
+      }
+      return (letras: saida, error: null);
+    } on FirebaseException catch (e) {
+      return (letras: null, error: _describe(e, 'trazer as letras'));
+    } catch (e) {
+      return (letras: null, error: 'Não foi possível trazer as letras: $e');
+    }
+  }
+
   /// Grava os [hinos] lidos na biblioteca do [hinario].
   ///
   /// O id de cada hino é o número, então importar DE NOVO regrava por cima:
