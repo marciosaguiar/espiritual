@@ -22,6 +22,7 @@ import 'package:levitasync/data/models/aviso_de_sincronia.dart';
 import 'package:levitasync/data/models/hino_da_biblioteca.dart';
 import 'package:levitasync/data/models/scale_model.dart';
 import 'package:levitasync/data/models/song_model.dart';
+import 'package:levitasync/data/services/app_firebase.dart';
 import 'package:levitasync/data/services/arranjos_locais.dart';
 import 'package:levitasync/data/services/audios_locais.dart';
 import 'package:levitasync/data/services/avisos_de_sincronia.dart';
@@ -465,6 +466,17 @@ void main() {
           reason: 'letra de outra importação não vale');
     });
 
+    test('quem nunca arrastou um hinário (ordem salva VAZIA) recebe os dois, '
+        'na ordem de sempre — era o que deixava a preparação sem hino algum',
+        () {
+      expect(PreparoOffline.idsDosHinarios(const []), ['harpa', 'cantor']);
+      expect(PreparoOffline.idsDosHinarios(const ['cantor']),
+          ['cantor', 'harpa']);
+      expect(PreparoOffline.idsDosHinarios(const ['cantor', 'inexistente']),
+          ['cantor', 'harpa'],
+          reason: 'id que não existe mais é descartado');
+    });
+
     test('sem internet: não faz nada (e não gasta nada)', () async {
       final p = preparo(
           contadorDeCifras: [], contadorDePaginas: [], online: () => false);
@@ -707,6 +719,61 @@ void main() {
     });
   });
 
+  // ── ligar o Firebase sem internet ────────────────────────────────────────
+  group('o Firebase falha ao ligar (sem internet): o app NÃO cai', () {
+    tearDown(AppFirebase.esquecerParaTeste);
+
+    test('tenta de novo, e `pronto` só completa quando conseguiu — nunca com '
+        'erro', () async {
+      var tentativas = 0;
+      final f = AppFirebase.iniciar(() async {
+        tentativas++;
+        if (tentativas < 3) throw StateError('o SDK não carregou');
+      }, esperas: const [Duration(milliseconds: 5)]);
+      expect(await f, isNull);
+      expect(tentativas, 3);
+      expect(AppFirebase.falhas, 2);
+      expect(AppFirebase.ligado, isTrue);
+      expect(AppFirebase.ultimoErro.value, isNull,
+          reason: 'ligou: o recado da tela de abertura some');
+    });
+
+    test('enquanto não liga, o app sabe disso (e o motivo fica à mão)',
+        () async {
+      final dono = AppFirebase.iniciar(() async {
+        throw StateError('sem rede');
+      }, esperas: const [Duration(milliseconds: 5)]);
+      var completou = false;
+      dono.then((_) => completou = true);
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(completou, isFalse, reason: 'sem erro "definitivo": espera');
+      expect(AppFirebase.ligado, isFalse);
+      expect(AppFirebase.ultimoErro.value, contains('sem rede'));
+      expect(AppFirebase.falhas, greaterThan(1));
+    });
+
+    test('a internet que VOLTA corta a espera (não espera o prazo inteiro)',
+        () async {
+      Rede.definir(false);
+      var tentativas = 0;
+      final f = AppFirebase.iniciar(() async {
+        tentativas++;
+        if (tentativas == 1) throw StateError('sem rede');
+      }, esperas: const [Duration(minutes: 5)]);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(tentativas, 1);
+      Rede.definir(true); // o sinal volta
+      expect(await f.timeout(const Duration(seconds: 2)), isNull);
+      expect(tentativas, 2);
+    });
+
+    test('sem ninguém ter chamado `iniciar` (os testes), está pronto na hora',
+        () async {
+      expect(AppFirebase.ligado, isTrue);
+      expect(await AppFirebase.pronto, isNull);
+    });
+  });
+
   // ── os hinos abrem do aparelho ───────────────────────────────────────────
   group('hino pelo número, do aparelho', () {
     var lerIndiceDoBanco = 0;
@@ -894,6 +961,22 @@ void main() {
   });
 
   // ── o que é guardado como "vazio" nunca vale como verdade ────────────────
+  test('ArranjosLocais: a cópia vale 15 minutos; depois o servidor é '
+      'consultado de novo', () async {
+    final t0 = DateTime(2026, 11, 20, 10);
+    await ArranjosLocais.guardar(
+        ArrangementModel(
+            id: 'a', songId: 'm0', name: 'x', churchKey: 'G', chords: 'G',
+            updatedAt: t0),
+        agora: t0);
+    final g = (await ArranjosLocais.lerComIdade('m0'))!;
+    expect(g.arranjo!.chords, 'G');
+    expect(ArranjosLocais.aindaVale(g.em, t0.add(const Duration(minutes: 14))),
+        isTrue);
+    expect(ArranjosLocais.aindaVale(g.em, t0.add(const Duration(minutes: 16))),
+        isFalse);
+  });
+
   test('ArranjosLocais: a ausência guardada não vira uma cifra', () async {
     await ArranjosLocais.guardarAusencia('m9');
     expect(await ArranjosLocais.ler('m9'), isNull);
