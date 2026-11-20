@@ -479,6 +479,41 @@ void main() {
           reason: 'id que não existe mais é descartado');
     });
 
+    test('DIA MOVIMENTADO: a partir da 4ª abertura do app no dia a preparação '
+        'fica quieta (é a conta do plano grátis num domingo)', () async {
+      final hoje = DateTime(2026, 11, 22, 10); // um domingo
+      final cifras = <int>[];
+      PreparoOffline novo() => preparo(
+          contadorDeCifras: cifras,
+          contadorDePaginas: [],
+          agora: () => hoje);
+      for (var i = 1; i <= 3; i++) {
+        expect(await PreparoOffline.registrarAbertura(agora: hoje), i);
+      }
+      // 3 aberturas: ainda baixa.
+      final calmo = await novo().executar(idsDeMusicas: ['m0'], hinarios: []);
+      expect(calmo.parouPor, isNot('dia movimentado'));
+      expect(cifras.length, 1);
+
+      expect(await PreparoOffline.registrarAbertura(agora: hoje), 4);
+      final movimentado =
+          await novo().executar(idsDeMusicas: ['m1', 'm2'], hinarios: ['harpa']);
+      expect(movimentado.parouPor, 'dia movimentado');
+      expect(movimentado.leiturasGastas, 0);
+      expect(cifras.length, 1, reason: 'nenhuma leitura nova');
+
+      // No dia seguinte a conta recomeça e a preparação volta.
+      final amanha = DateTime(2026, 11, 23, 10);
+      expect(await PreparoOffline.registrarAbertura(agora: amanha), 1);
+      final volta = await preparo(
+              contadorDeCifras: cifras,
+              contadorDePaginas: [],
+              agora: () => amanha)
+          .executar(idsDeMusicas: ['m1'], hinarios: []);
+      expect(volta.parouPor, isNot('dia movimentado'));
+      expect(cifras.length, 2);
+    });
+
     test('sem internet: não faz nada (e não gasta nada)', () async {
       final p = preparo(
           contadorDeCifras: [], contadorDePaginas: [], online: () => false);

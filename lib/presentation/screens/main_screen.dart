@@ -335,6 +335,9 @@ class _MainScreenState extends State<MainScreen> {
     // chegou — e é seguro repetir: o que já foi feito não é pedido de novo.
     // (Na compilação de medição, mais cedo: a prova não pode esperar um
     // minuto para ver o que foi guardado.)
+    // Conta esta abertura: em dia movimentado a preparação fica quieta (ver
+    // `PreparoOffline.aberturasQueSilenciam`).
+    PreparoOffline.registrarAbertura();
     Timer(const Duration(seconds: _medindo ? 3 : 8), _prepararOffline);
     Timer(const Duration(seconds: _medindo ? 20 : 60), _prepararOffline);
 

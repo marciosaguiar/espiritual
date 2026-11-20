@@ -139,6 +139,52 @@ class PreparoOffline {
     }
   }
 
+  // ── dia movimentado ───────────────────────────────────────────────────────
+
+  static const String chaveDasAberturas = 'preparo:aberturas';
+
+  /// A partir de quantas aberturas do app no mesmo dia a preparação fica quieta.
+  ///
+  /// **É a conta do plano grátis.** Cada abertura de mais de 30 minutos depois
+  /// da anterior custa ~240 leituras (todos os documentos das escutas, de novo);
+  /// a preparação custa até 250 por dia — o equivalente a MAIS UMA abertura fria
+  /// por aparelho. Num domingo em que cada pessoa abre o app seis vezes, 30
+  /// pessoas gastam ~43 mil leituras só abrindo, e somar 7.500 da preparação
+  /// passaria dos 50 mil. Dia movimentado é justamente o dia de não baixar nada
+  /// de fundo: a preparação espera um dia calmo.
+  static const int aberturasQueSilenciam = 4;
+
+  /// Conta uma abertura do app hoje e devolve quantas já foram.
+  static Future<int> registrarAbertura({DateTime? agora}) async {
+    final hoje = OrcamentoDeLeituras.diaDe(agora ?? DateTime.now());
+    try {
+      final t = await Armazem.ler(chaveDasAberturas);
+      var n = 0;
+      if (t != null) {
+        final j = Map<String, dynamic>.from(jsonDecode(t) as Map);
+        if (j['dia'] == hoje) n = (j['n'] as num?)?.toInt() ?? 0;
+      }
+      n++;
+      await Armazem.gravar(chaveDasAberturas, jsonEncode({'dia': hoje, 'n': n}));
+      return n;
+    } catch (_) {
+      return 1;
+    }
+  }
+
+  Future<int> _aberturasHoje() async {
+    try {
+      final t = await Armazem.ler(chaveDasAberturas);
+      if (t == null) return 0;
+      final j = Map<String, dynamic>.from(jsonDecode(t) as Map);
+      return j['dia'] == OrcamentoDeLeituras.diaDe(agora())
+          ? (j['n'] as num?)?.toInt() ?? 0
+          : 0;
+    } catch (_) {
+      return 0;
+    }
+  }
+
   /// Os ids dos hinários na ordem em que a preparação os traz: primeiro o que
   /// a pessoa usa (a ordem que ela escolheu), depois os demais.
   ///
@@ -158,6 +204,9 @@ class PreparoOffline {
     String? traducaoDaBiblia,
   }) async {
     if (!online()) return const RelatorioDoPreparo(parouPor: 'sem internet');
+    if (await _aberturasHoje() >= aberturasQueSilenciam) {
+      return const RelatorioDoPreparo(parouPor: 'dia movimentado');
+    }
 
     var orcamento = await _lerOrcamento();
     var restante = orcamento.restante(agora(), limite: limiteDiario);
@@ -323,6 +372,7 @@ class PreparoOffline {
   static Future<void> esquecerOQueEDerivado() async {
     await Armazem.apagar(chaveDoOrcamento);
     await Armazem.apagar(chaveDoProgresso);
+    await Armazem.apagar(chaveDasAberturas);
     for (final k in await Armazem.chaves(chaveDaBiblia)) {
       await Armazem.apagar(k);
     }
