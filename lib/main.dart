@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuth;
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:provider/provider.dart';
@@ -21,6 +22,7 @@ import 'presentation/providers/chat_provider.dart';
 import 'presentation/screens/auth/login_screen.dart';
 import 'presentation/screens/auth/pending_screen.dart';
 import 'presentation/screens/main_screen.dart';
+import 'core/platform/marcas.dart';
 import 'presentation/widgets/common/glass.dart';
 import 'presentation/widgets/common/responsivo.dart';
 
@@ -47,7 +49,13 @@ import 'presentation/widgets/common/responsivo.dart';
   }
 }
 
+/// Só uma compilação de teste liga isto (`--dart-define=EMULADOR=true`): o app
+/// fala com o emulador do Firebase, na mesma máquina, em vez do banco de
+/// verdade. Constante — na compilação normal o trecho inteiro some.
+const bool _emulador = bool.fromEnvironment('EMULADOR');
+
 void main() async {
+  marcar('dart-main');
   // Desliga a integração do Flutter com o histórico do navegador.
   //
   // Por padrão o Flutter empilha uma entrada própria no histórico logo que
@@ -111,6 +119,14 @@ void main() async {
       // SDK ficar jogando fora o que acabou de guardar.
       FirebaseFirestore.instance.settings =
           const Settings(persistenceEnabled: true);
+
+      // Depois do `settings`: `useFirestoreEmulator` só troca o endereço, e
+      // atribuir `settings` depois jogaria o endereço fora.
+      if (_emulador) {
+        FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8080);
+        await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
+      }
+      marcar('firebase-pronto');
     } catch (e) {
       startupError = '$e';
     }
@@ -128,6 +144,7 @@ void main() async {
     return;
   }
 
+  marcar('dart-runapp');
   runApp(const LevitaSyncApp());
 }
 

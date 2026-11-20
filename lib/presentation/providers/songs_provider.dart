@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
+import '../../core/platform/marcas.dart';
 import '../../data/models/scale_model.dart';
 import '../../data/models/song_model.dart';
 import '../../data/services/firestore_service.dart';
@@ -65,6 +66,7 @@ class SongsProvider extends ChangeNotifier {
     if (_songsSub != null) return;
     _isLoading = true;
     _songsSub = FirestoreService.watchSongs().listen((songs) {
+      if (_songs.isEmpty) marcar('musicas-recebidas');
       _songs = songs;
       _isLoading = false;
       _error = null;

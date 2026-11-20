@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import '../../core/platform/marcas.dart';
 import '../../data/models/arrangement_model.dart';
 import '../../data/models/user_model.dart';
 import '../../data/services/auth_service.dart';
@@ -89,6 +90,7 @@ class AuthProvider extends ChangeNotifier {
       await LocalStorageService.clearSession();
       _user = null;
       _status = AuthStatus.unauthenticated;
+      marcar('sessao-resolvida');
       notifyListeners();
       return;
     }
@@ -104,6 +106,7 @@ class AuthProvider extends ChangeNotifier {
     if (cached != null) {
       _user = cached;
       _status = AuthStatus.authenticated;
+      marcar('sessao-resolvida');
       notifyListeners();
     } else {
       // Nothing cached: there is no screen to show yet, so the wait is real.

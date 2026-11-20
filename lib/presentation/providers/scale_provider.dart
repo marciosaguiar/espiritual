@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../../core/platform/marcas.dart';
 import '../../data/models/scale_model.dart';
 import '../../data/models/team_model.dart';
 import '../../data/services/avisos_service.dart';
@@ -21,6 +22,7 @@ class ScaleProvider extends ChangeNotifier {
   void listenToScales() {
     if (_scalesSub != null) return;
     _scalesSub = FirestoreService.watchScales().listen((scales) {
+      if (_scales.isEmpty) marcar('cultos-recebidos');
       _scales = scales;
       _error = null;
       notifyListeners();
