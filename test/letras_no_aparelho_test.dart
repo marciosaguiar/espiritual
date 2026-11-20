@@ -6,6 +6,7 @@
 // TODO o texto é inventado.
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:levitasync/core/platform/armazem.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:levitasync/core/constants/hinarios.dart';
 import 'package:levitasync/core/utils/importar_hinario.dart';
@@ -47,6 +48,10 @@ Future<void> _zerar() async {
 }
 
 void main() {
+  // O aparelho agora guarda o índice e as letras (armazém local): sem limpar,
+  // o que um teste leu sobraria para o seguinte.
+  setUp(Armazem.esvaziar);
+
   test('trazer guarda no aparelho, e outro provider as lê sem ir ao banco',
       () async {
     await _zerar();
@@ -76,6 +81,9 @@ void main() {
     b.importadoEm = DateTime.utc(2026, 11, 15); // corrigiu um texto
     final dois = b.provider();
     await dois.carregarIndice('harpa');
+    // O aparelho mostra o que já tem e o banco atualiza em segundo plano;
+    // quando ele responde, as letras velhas deixam de valer.
+    await dois.aguardarAtualizacoes();
     expect(dois.letrasProntas('harpa'), isFalse,
         reason: 'letra corrigida pela metade é pior que oferecer baixar');
   });

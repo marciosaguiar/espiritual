@@ -1,10 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../core/constants/hinarios.dart';
+import '../../core/platform/rede.dart';
 import '../../core/utils/importar_hinario.dart';
 import '../../data/models/hino_da_biblioteca.dart';
 import '../../data/models/song_model.dart';
 import '../../data/services/firestore_service.dart';
+import '../../data/services/hinos_locais.dart';
 import '../../data/services/local_storage_service.dart';
 import '../../core/utils/crypto_utils.dart';
 
@@ -97,20 +101,68 @@ class BibliotecaProvider extends ChangeNotifier {
     if (!forcar && !_venceu(hinarioId, _agora())) {
       return Future.value(null);
     }
-    return _carregando[hinarioId] ??= _lerIndice(hinarioId);
+    // Uma atualização em segundo plano já está a caminho: não há por que
+    // pedir outra, nem por que esperar por ela.
+    if (!forcar && _atualizando.contains(hinarioId)) return Future.value(null);
+    return _carregando[hinarioId] ??= _lerIndice(hinarioId, forcar);
   }
 
-  Future<String?> _lerIndice(String hinarioId) async {
+  final Set<String> _atualizando = {};
+  final Map<String, Future<String?>> _atualizacoes = {};
+
+  /// Espera as atualizações do índice que estão rodando em segundo plano.
+  /// A tela nunca precisa disto (ela se atualiza sozinha quando chegam); é
+  /// para os testes e para quem precisa saber que o banco já respondeu.
+  Future<void> aguardarAtualizacoes() async {
+    await Future.wait(_atualizacoes.values.toList());
+  }
+
+  Future<String?> _lerIndice(String hinarioId, bool forcar) async {
     try {
-      final r = await _lerIndiceNoBanco(hinarioId);
-      if (r.error != null) return r.error;
-      _indices[hinarioId] = r.indice!;
-      _carregadoEm[hinarioId] = _agora();
-      notifyListeners();
-      return null;
+      // 1) Primeira vez nesta abertura do app: o que o APARELHO já tem
+      // aparece na hora, sem rede e sem esperar o Firebase. É o que faz abrir
+      // o hino 15 funcionar dentro da igreja.
+      final jaEstavaEmMemoria = _indices.containsKey(hinarioId);
+      if (!jaEstavaEmMemoria) {
+        final local = await HinosLocais.lerIndice(hinarioId);
+        if (local != null && !_indices.containsKey(hinarioId)) {
+          _indices[hinarioId] = local;
+          notifyListeners();
+        }
+      }
+
+      // 2) Com cópia só do aparelho, o servidor atualiza em segundo plano: a
+      // pessoa não espera a rede para ver o que já tem, e uma falha dela não
+      // é erro. Quem PRECISA do dado novo (`forcar`, depois de importar)
+      // espera.
+      if (!jaEstavaEmMemoria && _indices.containsKey(hinarioId) && !forcar) {
+        _carregadoEm[hinarioId] = _agora();
+        _atualizando.add(hinarioId);
+        final f = _lerIndiceDoBanco(hinarioId, forcar: false)
+            .whenComplete(() => _atualizando.remove(hinarioId));
+        _atualizacoes[hinarioId] = f;
+        unawaited(f.whenComplete(() => _atualizacoes.remove(hinarioId)));
+        return null;
+      }
+      return await _lerIndiceDoBanco(hinarioId, forcar: forcar);
     } finally {
       _carregando.remove(hinarioId);
     }
+  }
+
+  Future<String?> _lerIndiceDoBanco(String hinarioId,
+      {required bool forcar}) async {
+    final r = await _lerIndiceNoBanco(hinarioId);
+    if (r.error != null) {
+      // Com o índice já na memória, a falha da rede não é erro: o que a
+      // pessoa vê continua valendo, e a próxima chamada tenta de novo.
+      return (_indices.containsKey(hinarioId) && !forcar) ? null : r.error;
+    }
+    _indices[hinarioId] = r.indice!;
+    _carregadoEm[hinarioId] = _agora();
+    notifyListeners();
+    await HinosLocais.guardarIndice(r.indice!);
+    return null;
   }
 
   // ─── As letras no aparelho (a busca por trecho) ───────────────────────────
@@ -157,6 +209,17 @@ class BibliotecaProvider extends ChangeNotifier {
       if (r.error != null) return r.error;
       final letras = r.letras!;
       _letras[hinario.id] = letras;
+      // E cada hino fica disponível para abrir pelo número sem internet.
+      final indice = indiceDe(hinario.id);
+      unawaited(HinosLocais.guardarHinos([
+        for (final e in letras.entries)
+          if (indice.tituloDe(e.key) != null)
+            HinoDaBiblioteca(
+                hinario: hinario.id,
+                numero: e.key,
+                titulo: indice.tituloDe(e.key)!,
+                letra: e.value),
+      ], indice.marca));
       await LocalStorageService.salvarLetrasDoHinario(
           hinario.id, letras, indiceDe(hinario.id).marca);
       return null;
@@ -183,8 +246,48 @@ class BibliotecaProvider extends ChangeNotifier {
     if (erro != null) return (hino: null, error: erro);
     if (!indiceDe(hinario.id).tem(numero)) return (hino: null, error: null);
 
+    // A cópia do aparelho vale enquanto a marca da importação for a mesma.
+    final marca = indiceDe(hinario.id).marca;
+    final local = await HinosLocais.lerHino(hinario.id, numero, marcaAtual: marca);
+    if (local != null) {
+      _hinos[chave] = local;
+      return (hino: local, error: null);
+    }
+    // E as letras trazidas de uma vez para a busca por trecho.
+    String? traz;
+    try {
+      traz = letrasDe(hinario.id)[numero];
+    } catch (_) {
+      // Armazenamento do aparelho indisponível: segue para o banco.
+    }
+    if (traz != null && traz.trim().isNotEmpty) {
+      final h = HinoDaBiblioteca(
+        hinario: hinario.id,
+        numero: numero,
+        titulo: indiceDe(hinario.id).tituloDe(numero) ?? '',
+        letra: traz,
+      );
+      if (h.titulo.isNotEmpty) {
+        _hinos[chave] = h;
+        return (hino: h, error: null);
+      }
+    }
+
+    // Sem cópia e sem internet: dizer logo, em vez de esperar o Firestore
+    // concluir que está sem rede. A frase diz o que fazer.
+    if (!Rede.online) {
+      return (
+        hino: null,
+        error: 'Sem internet, e este hino ainda não foi baixado neste '
+            'aparelho. Quando houver sinal, abra-o uma vez e ele passa a '
+            'abrir sem internet.'
+      );
+    }
     final r = await _lerHinoNoBanco(hinario.id, numero);
-    if (r.hino != null) _hinos[chave] = r.hino!;
+    if (r.hino != null) {
+      _hinos[chave] = r.hino!;
+      unawaited(HinosLocais.guardarHino(r.hino!, marca));
+    }
     return r;
   }
 
@@ -216,6 +319,10 @@ class BibliotecaProvider extends ChangeNotifier {
         // numa importação com erro algo que já foi gravado no banco. A marca
         // do índice já faz o aparelho tratar as letras como velhas.
       }
+      // O que o aparelho guardou DESTE hinário (índice e cada letra) é da
+      // importação velha. A marca já impediria mostrá-lo, mas guardado ele só
+      // ocuparia espaço — e a preparação recomeça deste hinário.
+      await HinosLocais.esquecerHinario(hinario.id);
       await carregarIndice(hinario.id, forcar: true);
     }
     return r;

@@ -13,6 +13,7 @@ import 'core/theme/app_theme.dart';
 import 'data/services/app_firebase.dart';
 import 'data/services/estado_da_rede.dart';
 import 'data/services/fila_service.dart';
+import 'data/services/preparo_offline.dart';
 import 'data/services/local_storage_service.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'presentation/providers/theme_provider.dart';
@@ -371,6 +372,16 @@ class _AppEntryState extends State<_AppEntry> {
     final scale = context.read<ScaleProvider>();
     final chat = context.read<ChatProvider>();
     final auth = context.read<AuthProvider>();
+    try {
+      // Primeiro: o aparelho apagou o que guardamos? (O iPhone faz isso
+      // quando falta espaço.) Se sim, o que era cópia é esquecido AQUI, antes
+      // de ser lido — e o app baixa tudo de novo sozinho, sem erro e sem
+      // pedir nada. Nunca toca na fila de envio.
+      await PreparoOffline.conferirAparelho()
+          .timeout(const Duration(milliseconds: 600));
+    } catch (_) {
+      // sem veredito: segue como se estivesse tudo certo
+    }
     try {
       // Com teto: se o armazém travar, o app abre assim mesmo, esperando o
       // banco. Uma cópia que não lê custa só o ganho de velocidade.

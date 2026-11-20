@@ -258,6 +258,34 @@ class FirestoreService {
     }
   }
 
+  /// Uma PÁGINA de letras, em ordem de número, a partir do número seguinte a
+  /// [depoisDe]. É o que a preparação em segundo plano usa para trazer o
+  /// hinário aos poucos, dentro do orçamento diário de leituras — a versão de
+  /// baixo (`lerTodasAsLetras`) traria os 640 de uma vez.
+  ///
+  /// Custa uma leitura por hino devolvido.
+  static Future<({List<HinoDaBiblioteca>? hinos, String? error})>
+      lerPaginaDeLetras(String hinarioId,
+          {required int depoisDe, required int limite}) async {
+    try {
+      final r = await _hinosDa(hinarioId)
+          .orderBy('numero')
+          .startAfter([depoisDe])
+          .limit(limite)
+          .get();
+      final saida = <HinoDaBiblioteca>[];
+      for (final doc in r.docs) {
+        final h = HinoDaBiblioteca.fromFirestore(hinarioId, doc.data());
+        if (h != null) saida.add(h);
+      }
+      return (hinos: saida, error: null);
+    } on FirebaseException catch (e) {
+      return (hinos: null, error: _describe(e, 'preparar os hinos'));
+    } catch (e) {
+      return (hinos: null, error: 'Não foi possível preparar os hinos: $e');
+    }
+  }
+
   /// As letras de TODOS os hinos do hinário, numa consulta só.
   ///
   /// CUSTA UMA LEITURA POR HINO (640 na Harpa), e por isso só roda quando a

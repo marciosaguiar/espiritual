@@ -303,6 +303,19 @@ class FilaDeEnvio extends ChangeNotifier {
     }
   }
 
+  /// Descarta tudo o que está esperando. Só para quando a pessoa SAI da conta:
+  /// o que ela deixou pendente não pode ser enviado, depois, em nome de outra
+  /// pessoa que entre neste aparelho.
+  Future<void> limpar() async {
+    _itens.clear();
+    for (final c in _esperas.values) {
+      if (!c.isCompleted) c.complete(const ResultadoDoEnvio.depois());
+    }
+    _esperas.clear();
+    await _salvar();
+    notifyListeners();
+  }
+
   /// A rede voltou (ou a pessoa abriu o app): esquece o tempo de espera e tenta.
   Future<void> acordar() {
     for (var i = 0; i < _itens.length; i++) {
@@ -350,17 +363,19 @@ class FilaDeEnvio extends ChangeNotifier {
               _itens[i] = _itens[i].comTentativa(
                   agora.add(_espera(_itens[i].tentativas + 1)));
             }
-            _esperas.remove(item.id)?.complete(r);
             await _salvar();
             notifyListeners();
+            // Quem espera o resultado só é liberado DEPOIS de a fila (e a
+            // tela que a escuta) estar no estado novo.
+            _esperas.remove(item.id)?.complete(r);
             break; // sem rede: os outros esperam junto
           }
 
           _itens.removeWhere((x) => x.id == item.id);
           if (r.avisos.isNotEmpty) aoAvisar?.call(r.avisos);
-          _esperas.remove(item.id)?.complete(r);
           await _salvar();
           notifyListeners();
+          _esperas.remove(item.id)?.complete(r);
         }
       } while (_repetir);
     } finally {

@@ -60,6 +60,13 @@ class FilaService {
     if (fila.pendentes > 0) unawaited(fila.acordar());
   }
 
+  /// A pessoa saiu (ou perdeu o acesso): o que ela deixou na fila e os
+  /// recados dela vão embora com a sessão.
+  static Future<void> descartarTudo() async {
+    await fila.limpar();
+    await AvisosDeSincronia.instancia.limpar();
+  }
+
   static void parar() {
     _assinatura?.cancel();
     _relogio?.cancel();

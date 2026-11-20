@@ -9,6 +9,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:levitasync/core/platform/armazem.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:levitasync/data/models/hino_da_biblioteca.dart';
@@ -147,6 +148,10 @@ Future<void> _digitar(WidgetTester t, String numero) async {
 }
 
 void main() {
+  // O aparelho agora guarda o índice e as letras (armazém local): sem limpar,
+  // o que um teste leu sobraria para o seguinte.
+  setUp(Armazem.esvaziar);
+
   group('digitar o número abre o hino da biblioteca', () {
     testWidgets('"65" não pode crescer na Harpa: abre na hora', (t) async {
       await _montar(t);

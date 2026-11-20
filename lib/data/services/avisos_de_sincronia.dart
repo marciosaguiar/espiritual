@@ -47,6 +47,12 @@ class AvisosDeSincronia extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> limpar() async {
+    _lista.clear();
+    await _salvar();
+    notifyListeners();
+  }
+
   Future<void> _salvar() =>
       Armazem.gravar(_chave, jsonEncode(_lista.map((a) => a.toJson()).toList()));
 

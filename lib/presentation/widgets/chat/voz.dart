@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/platform/voz.dart';
 import '../../../data/models/message_model.dart';
+import '../../../data/services/audios_locais.dart';
 import '../../../data/services/firestore_service.dart';
 
 /// Quem está tocando, para a barra andar e para a outra bolha se apagar.
@@ -139,7 +140,15 @@ class _BolhaDeVozState extends State<BolhaDeVoz> {
         _baixando = true;
         _erro = null;
       });
-      final r = await FirestoreService.baixarAudio(_id);
+      // Já ouvido neste aparelho: lê do disco, sem rede e sem gastar
+      // leitura do banco. Só vai ao servidor o que nunca foi ouvido.
+      final guardado = await AudiosLocais.ler(_id);
+      final r = guardado != null
+          ? (bytes: guardado.bytes, tipo: guardado.tipo, error: null)
+          : await FirestoreService.baixarAudio(_id);
+      if (r.bytes != null && guardado == null) {
+        AudiosLocais.guardar(_id, r.bytes!, r.tipo ?? 'audio/mp4');
+      }
       if (!mounted) return;
       if (r.bytes == null) {
         setState(() {

@@ -7,6 +7,8 @@ import '../../data/models/arrangement_model.dart';
 import '../../data/models/user_model.dart';
 import '../../data/services/app_firebase.dart';
 import '../../data/services/auth_service.dart';
+import '../../data/services/fila_service.dart';
+import '../../data/services/preparo_offline.dart';
 import '../../data/services/firestore_service.dart';
 import '../../data/services/avisos_service.dart';
 import '../../data/services/local_storage_service.dart';
@@ -58,6 +60,10 @@ class AuthProvider extends ChangeNotifier {
         // sem internet continuaria no celular. Some junto.
         _prefs = {};
         LocalStorageService.limparTudoDoMinisterio();
+        // As cópias do ministério (cifras, hinos, conversa) e o que ela
+        // deixou na fila de envio vão embora junto.
+        PreparoOffline.esquecerOQueEDerivado();
+        FilaService.descartarTudo();
         // E o aparelho continuaria recebendo aviso de cada mensagem do chat
         // de um ministério do qual a pessoa já não faz parte. A regra do
         // banco não pegaria isso: quem manda é o robô, que é líder.
@@ -346,6 +352,10 @@ class AuthProvider extends ChangeNotifier {
     await _meuCadastro?.cancel();
     _meuCadastro = null;
     await AuthService.logout();
+    // O aparelho pode passar para outra pessoa: nada do que foi baixado, e
+    // nada que ficou esperando para ser enviado, pode ir junto.
+    await PreparoOffline.esquecerOQueEDerivado();
+    await FilaService.descartarTudo();
     _user = null;
     _prefs = {};
     _status = AuthStatus.unauthenticated;

@@ -9,6 +9,7 @@
 // TODO o texto é inventado.
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:levitasync/core/platform/armazem.dart';
 import 'package:levitasync/core/constants/hinarios.dart';
 import 'package:levitasync/core/utils/importar_hinario.dart';
 import 'package:levitasync/data/models/hino_da_biblioteca.dart';
@@ -74,6 +75,10 @@ BibliotecaProvider _provider(_Banco b, {DateTime Function()? agora}) =>
     );
 
 void main() {
+  // O aparelho agora guarda o índice e as letras (armazém local): sem limpar,
+  // o que um teste leu sobraria para o seguinte.
+  setUp(Armazem.esvaziar);
+
   group('o custo de abrir um hino', () {
     test('número que NÃO está no índice custa zero leituras de letra', () async {
       final b = _Banco();
