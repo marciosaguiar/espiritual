@@ -3204,8 +3204,9 @@ abertas + preparação), contra os 50 mil:
 servidor do app, o proxy do emulador e os endereços do Google (SDK e login) —
 `context.setOffline` só pega a página, e o service worker continuaria enxergando
 o servidor. Um teste que passa porque algo respondeu por baixo dos panos não
-prova nada. A tela é lida pela árvore de semântica do Flutter e se toca por
-eventos de DOM (o mouse do Playwright derruba a página com a semântica ligada).
+prova nada. A tela é lida pela árvore de semântica do Flutter; os toques são por
+coordenadas, ANTES de ligar a semântica (com ela ligada o motor derruba a página
+em qualquer tipo de toque).
 
 - ✔ entrou com internet e o Início tem dados (2531 ms)
 - ✔ a preparação guardou as cifras do repertório (42 cifras)
@@ -3234,7 +3235,7 @@ eventos de DOM (o mouse do Playwright derruba a página com a semântica ligada)
 - ✔ apagado TUDO (login incluído): o app abre na tela de entrar, sem erro
 - ✔ entrando de novo, os dados voltam sozinhos (2492 ms)
 
-**26 de 26**, depois de achar e consertar quatro defeitos que só o navegador mostrou (ver "Armadilhas"). As fotos ficam em `/tmp/provas-offline` (não vão para o repositório: são telas de um banco de teste).
+**26 de 26**, depois de achar e consertar cinco defeitos que só o navegador mostrou (ver "Armadilhas"). As fotos ficam em `/tmp/provas-offline` (não vão para o repositório: são telas de um banco de teste).
 
 #### Velocidade (o medidor da rodada passada, 3 repetições, mesma máquina e mesmo dia)
 
