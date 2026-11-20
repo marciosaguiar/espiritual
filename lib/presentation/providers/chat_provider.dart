@@ -1,6 +1,10 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import '../../core/utils/crypto_utils.dart';
+import '../../core/utils/snapshot_local.dart';
+import '../../data/models/aviso_de_sincronia.dart';
 import '../../data/models/message_model.dart';
+import '../../data/services/avisos_de_sincronia.dart';
 import '../../data/services/avisos_service.dart';
 import '../../data/services/firestore_service.dart';
 
@@ -58,6 +62,7 @@ class ChatProvider extends ChangeNotifier {
       _messages = messages;
       _isLoading = false;
       _error = null;
+      _guardarNoAparelho(messages);
       notifyListeners();
     }, onError: (e) {
       _isLoading = false;
@@ -100,8 +105,39 @@ class ChatProvider extends ChangeNotifier {
     listenToMessages();
   }
 
+  Timer? _relogioDaCopia;
+
+  void _guardarNoAparelho(List<MessageModel> mensagens) {
+    _relogioDaCopia?.cancel();
+    _relogioDaCopia = Timer(const Duration(seconds: 2), () {
+      // Só o que já chegou ao banco: guardar uma mensagem que ainda espera
+      // (e pode ser recusada) a faria reaparecer, já "enviada", na próxima
+      // abertura.
+      SnapshotLocal.guardar('mensagens', [
+        for (final m in mensagens)
+          if (!m.pendente) m.toFirestore(),
+      ]);
+    });
+  }
+
+  /// Põe na tela a conversa que o aparelho guardou, antes de o banco
+  /// responder. Devolve quantas mensagens eram.
+  Future<int> restaurarDoAparelho() async {
+    final docs = await SnapshotLocal.ler('mensagens');
+    if (docs == null || _messages.isNotEmpty) return 0;
+    try {
+      _messages = [for (final d in docs) MessageModel.fromFirestore(d)];
+    } catch (_) {
+      return 0;
+    }
+    _isLoading = false;
+    notifyListeners();
+    return _messages.length;
+  }
+
   @override
   void dispose() {
+    _relogioDaCopia?.cancel();
     _messagesSub?.cancel();
     _typingSub?.cancel();
     super.dispose();
@@ -132,15 +168,41 @@ class ChatProvider extends ChangeNotifier {
       mencoes: mencoes,
     );
 
-    final result = await FirestoreService.sendMessage(message);
-    if (result.success) {
-      // O aviso vem DEPOIS de a mensagem estar gravada, e de propósito sem
-      // `await`: quem enviou já vê a mensagem na tela, e esperar o
-      // mini-servidor da Cloudflare para isso seria atraso sem motivo. Uma
-      // falha aqui não volta como erro — ver o comentário em AvisosService.
+    // O aviso vem DEPOIS de a mensagem estar gravada, e de propósito sem
+    // `await`: quem enviou já vê a mensagem na tela, e esperar o
+    // mini-servidor da Cloudflare para isso seria atraso sem motivo. Uma
+    // falha aqui não volta como erro — ver o comentário em AvisosService.
+    //
+    // Sem internet a mensagem fica na fila do próprio Firestore (que
+    // sobrevive a fechar o app), aparece com o relógio de "pendente" e o
+    // aviso sai quando ela chegar. Se chegar mais de 2 minutos depois o
+    // servidor dos avisos recusa — é a trava dele contra reavisar mensagem
+    // velha, e está certa: ninguém quer o "oi" de uma hora atrás.
+    final result = await FirestoreService.sendMessage(
+      message,
+      aoConfirmar: () => AvisosService.avisarDoChat(message.id),
+      aoFalhar: (erro) => _mensagemNaoEnviada(message, erro),
+    );
+    if (result.success && !result.pendente) {
       AvisosService.avisarDoChat(message.id);
     }
     return result.error;
+  }
+
+  /// O banco recusou uma mensagem que estava esperando a internet. Ela some
+  /// da tela, e a pessoa não pode ficar sem saber: o aviso guarda o texto para
+  /// ela poder copiar e mandar de novo.
+  void _mensagemNaoEnviada(MessageModel m, String erro) {
+    final texto = m.text.length > 160 ? '${m.text.substring(0, 160)}…' : m.text;
+    AvisosDeSincronia.instancia.adicionar([
+      AvisoDeSincronia(
+        id: CryptoUtils.generateId(),
+        tipo: TipoDeRecado.acaoNaoEnviada,
+        criadoEm: DateTime.now(),
+        titulo: 'Uma mensagem do chat não foi enviada',
+        texto: '$erro\n\nO que você escreveu: "$texto"',
+      ),
+    ]);
   }
 
   void clearError() {

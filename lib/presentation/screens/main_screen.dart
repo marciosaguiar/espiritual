@@ -16,6 +16,7 @@ import '../../../core/platform/marcas.dart';
 import '../../../core/utils/fonte_mono.dart';
 import '../../../core/platform/tela_atual.dart';
 import '../../../core/utils/compartilhado.dart';
+import '../../data/services/app_firebase.dart';
 import '../../data/services/avisos_service.dart';
 import '../../data/services/local_storage_service.dart';
 import '../widgets/common/glass.dart';
@@ -109,6 +110,10 @@ class _MainScreenState extends State<MainScreen> {
   /// normal o compilador joga fora esta função e as chamadas a ela.
   static const bool _medindo = bool.fromEnvironment('MEDIR');
   bool _marcouInicio = false;
+
+  /// O banco já ligou? O selo de pedidos pendentes (do líder) é uma escuta, e
+  /// só pode nascer depois disso.
+  bool _bancoPronto = AppFirebase.ligado;
   Timer? _timerDaAgenda;
   VoidCallback? _tiraMarcaDeInicio;
 
@@ -279,10 +284,15 @@ class _MainScreenState extends State<MainScreen> {
     informarTelaInicial(index == 0);
   }
 
-  void _initData() {
+  Future<void> _initData() async {
     marcar('escutas-iniciando');
     _auth = context.read<AuthProvider>();
     if (!widget.escutas) return;
+    // As escutas precisam do banco, que liga em paralelo com o desenho do app
+    // (ver `AppFirebase`). Até lá a tela já mostra a cópia guardada.
+    final erroAoLigar = await AppFirebase.pronto;
+    if (!mounted || erroAoLigar != null) return;
+    setState(() => _bancoPronto = true);
     final songs = context.read<SongsProvider>();
     final scale = context.read<ScaleProvider>();
     final chat = context.read<ChatProvider>();
@@ -447,7 +457,7 @@ class _MainScreenState extends State<MainScreen> {
         // Início, em vez de não fazer nada.
         if (_currentIndex != 0) _goToTab(0);
       },
-      child: admin
+      child: admin && _bancoPronto
           ? StreamBuilder<List<UserModel>>(
               stream: _pendentes ??= AuthService.watchPendentes(),
               builder: (_, snap) => montar(snap.data?.length ?? 0),

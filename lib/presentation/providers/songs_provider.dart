@@ -2,8 +2,14 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import '../../core/platform/marcas.dart';
+import '../../core/utils/crypto_utils.dart';
+import '../../core/utils/fila_de_envio.dart';
+import '../../core/utils/fusao_de_edicao.dart';
+import '../../core/utils/snapshot_local.dart';
+import '../../data/models/arrangement_model.dart';
 import '../../data/models/scale_model.dart';
 import '../../data/models/song_model.dart';
+import '../../data/services/fila_service.dart';
 import '../../data/services/firestore_service.dart';
 import '../../data/services/local_storage_service.dart';
 import '../../core/constants/hinarios.dart';
@@ -12,6 +18,16 @@ import '../../core/utils/texto.dart';
 enum SongsFilter { all, favorites, offline, arquivadas }
 
 class SongsProvider extends ChangeNotifier {
+  SongsProvider({FilaDeEnvio? fila}) : _fila = fila ?? FilaService.fila {
+    _fila.addListener(_aoMudarAFila);
+  }
+
+  final FilaDeEnvio _fila;
+
+  /// As músicas como o BANCO as mandou. [_songs] é isto com as edições que
+  /// ainda esperam a internet por cima: a tela mostra o que a pessoa fez, e
+  /// uma resposta nova do banco não desfaz isso.
+  List<SongModel> _servidor = [];
   List<SongModel> _songs = [];
   List<SongModel> _filteredSongs = [];
   SongsFilter _filter = SongsFilter.all;
@@ -54,7 +70,8 @@ class SongsProvider extends ChangeNotifier {
   /// do tamanho do ministério sem emulador nenhum.
   @visibleForTesting
   void carregarParaTeste(List<SongModel> musicas) {
-    _songs = musicas;
+    _servidor = musicas;
+    _songs = _comPendencias(musicas);
     _isLoading = false;
     _error = null;
     _applyFilter();
@@ -67,9 +84,11 @@ class SongsProvider extends ChangeNotifier {
     _isLoading = true;
     _songsSub = FirestoreService.watchSongs().listen((songs) {
       if (_songs.isEmpty) marcar('musicas-recebidas');
-      _songs = songs;
+      _servidor = songs;
+      _songs = _comPendencias(songs);
       _isLoading = false;
       _error = null;
+      _guardarNoAparelho();
       _applyFilter();
       notifyListeners();
     }, onError: (e) {
@@ -89,12 +108,6 @@ class SongsProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
     listenToSongs();
-  }
-
-  @override
-  void dispose() {
-    _songsSub?.cancel();
-    super.dispose();
   }
 
   void search(String query) {
@@ -152,18 +165,189 @@ class SongsProvider extends ChangeNotifier {
     return result.error;
   }
 
-  /// Changes a song. Returns null on success, or the message to show.
-  Future<String?> updateSong(SongModel song) async {
-    final result = await FirestoreService.updateSong(song);
-    if (!result.success) return result.error;
+  /// Os campos da música que "Editar música" e "Editar cifra" mexem. A fila
+  /// grava SÓ estes, um a um (ver `fusao_de_edicao.dart`): gravar a música
+  /// inteira desfaria, de carona, o que outra pessoa mudou nos campos que a
+  /// primeira nem tocou.
+  static const List<String> camposEditaveis = [
+    'name',
+    'artist',
+    'lyrics',
+    'originalKey',
+    'links',
+    'observacoes',
+  ];
 
-    final idx = _songs.indexWhere((s) => s.id == song.id);
-    if (idx >= 0) {
-      _songs[idx] = song;
-      _applyFilter();
-      notifyListeners();
-    }
+  /// Quais campos [novo] muda em relação a [base]. Função pura.
+  static Map<String, CampoEditado> camposQueMudaram(
+      SongModel base, SongModel novo) {
+    final antes = base.toFirestore();
+    final depois = novo.toFirestore();
+    return {
+      for (final c in camposEditaveis)
+        if (!valoresIguais(antes[c], depois[c]))
+          c: CampoEditado(base: antes[c], novo: depois[c]),
+    };
+  }
+
+  /// A música com as edições [campos] por cima. Função pura.
+  static SongModel comEdicoes(SongModel base, Map<String, CampoEditado> campos) {
+    if (campos.isEmpty) return base;
+    return SongModel.fromFirestore({
+      ...base.toFirestore(),
+      for (final e in campos.entries) e.key: e.value.novo,
+    });
+  }
+
+  /// Altera uma música. Devolve null quando deu certo OU quando ficou
+  /// esperando a internet (a música já aparece alterada, com o relógio);
+  /// devolve a frase quando o banco recusou.
+  Future<String?> updateSong(SongModel song) async {
+    final atual = _songs.where((s) => s.id == song.id).firstOrNull;
+    if (atual == null) return 'Esta música não está mais na lista.';
+    final campos = camposQueMudaram(atual, song);
+    if (campos.isEmpty) return null;
+
+    final r = await _fila.enfileirar(ItemDaFila.edicao(
+      id: CryptoUtils.generateId(),
+      tipo: TipoDeAcao.musica,
+      songId: song.id,
+      campos: campos,
+      agora: DateTime.now(),
+      extra: {'rotulo': atual.name},
+    ));
+    if (r != null && r.desfecho == Desfecho.descartado) return r.erro;
     return null;
+  }
+
+  /// Esta música tem alteração esperando para ser enviada?
+  bool musicaPendente(String songId) => _fila.temPendencia('musica:$songId');
+
+  /// Esta cifra (arranjo) tem alteração esperando?
+  bool arranjoPendente(String songId) => _fila.temPendencia('arranjo:$songId');
+
+  /// Grava campos do arranjo (cifra, tom da igreja, BPM, aprovação).
+  ///
+  /// Devolve o arranjo COMO FICOU na tela — com a alteração por cima, mesmo
+  /// que ainda esteja esperando a internet — e o erro, se o banco recusou.
+  /// Quando o arranjo ainda não existe, [seNaoExistir] é o que será criado.
+  Future<({ArrangementModel? arranjo, String? erro, bool pendente})>
+      salvarArranjo({
+    required String songId,
+    required ArrangementModel? atual,
+    required ArrangementModel seNaoExistir,
+    required Map<String, dynamic> novos,
+    required String rotulo,
+  }) async {
+    final base = atual ?? seNaoExistir;
+    final antes = base.toFirestore();
+    final campos = {
+      for (final e in novos.entries)
+        if (!valoresIguais(antes[e.key], e.value))
+          e.key: CampoEditado(base: antes[e.key], novo: e.value),
+    };
+    final naTela = comEdicoesDoArranjo(base, campos);
+    if (campos.isEmpty && atual != null) {
+      return (arranjo: atual, erro: null, pendente: false);
+    }
+    final r = await _fila.enfileirar(ItemDaFila.edicao(
+      id: CryptoUtils.generateId(),
+      tipo: TipoDeAcao.arranjo,
+      songId: songId,
+      campos: campos,
+      agora: DateTime.now(),
+      extra: {
+        'arranjoId': base.id,
+        'rotulo': rotulo,
+        // Só vai junto quando o arranjo ainda não existe no banco.
+        if (atual == null) 'criar': seNaoExistir.toJson(),
+      },
+    ));
+    if (r != null && r.desfecho == Desfecho.descartado) {
+      return (arranjo: null, erro: r.erro, pendente: false);
+    }
+    return (arranjo: naTela, erro: null, pendente: r == null);
+  }
+
+  /// O arranjo com as edições [campos] por cima. Função pura.
+  static ArrangementModel comEdicoesDoArranjo(
+      ArrangementModel base, Map<String, CampoEditado> campos) {
+    if (campos.isEmpty) return base;
+    return ArrangementModel.fromFirestore({
+      ...base.toFirestore(),
+      for (final e in campos.entries) e.key: e.value.novo,
+    });
+  }
+
+  /// O arranjo [a] com o que ainda espera na fila por cima.
+  ArrangementModel? arranjoComPendencias(String songId, ArrangementModel? a) {
+    final item = _fila.daChave('arranjo:$songId');
+    if (item == null) return a;
+    if (a == null) {
+      final criar = item.dados['criar'];
+      if (criar == null) return null;
+      a = ArrangementModel.fromJson(Map<String, dynamic>.from(criar as Map));
+    }
+    return comEdicoesDoArranjo(a, item.campos);
+  }
+
+  // ─── o que está na fila, por cima do que veio do banco ───────────────────
+
+  void _aoMudarAFila() {
+    _songs = _comPendencias(_servidor);
+    _applyFilter();
+    notifyListeners();
+  }
+
+  List<SongModel> _comPendencias(List<SongModel> base) {
+    final pendentes = _fila.itens
+        .where((i) => i.tipo == TipoDeAcao.musica)
+        .toList();
+    if (pendentes.isEmpty) return base;
+    final porId = {for (final i in pendentes) i.dados['songId'] as String: i};
+    return [
+      for (final s in base)
+        porId.containsKey(s.id) ? comEdicoes(s, porId[s.id]!.campos) : s,
+    ];
+  }
+
+  // ─── cópia no aparelho: abrir já com o repertório na tela ────────────────
+
+  Timer? _relogioDaCopia;
+
+  void _guardarNoAparelho() {
+    _relogioDaCopia?.cancel();
+    _relogioDaCopia = Timer(const Duration(seconds: 2), () {
+      SnapshotLocal.guardar(
+          'songs', _servidor.map((s) => s.toFirestore()).toList());
+    });
+  }
+
+  /// Põe na tela o repertório que o aparelho guardou da última vez, ANTES de o
+  /// banco responder (e antes de o Firebase terminar de ligar). Devolve
+  /// quantas músicas eram.
+  Future<int> restaurarDoAparelho() async {
+    final docs = await SnapshotLocal.ler('songs');
+    if (docs == null || _servidor.isNotEmpty) return 0;
+    try {
+      _servidor = [for (final d in docs) SongModel.fromFirestore(d)];
+    } catch (_) {
+      return 0; // cópia ilegível: o banco responde logo em seguida
+    }
+    _songs = _comPendencias(_servidor);
+    _isLoading = false;
+    _error = null;
+    _applyFilter();
+    notifyListeners();
+    return _servidor.length;
+  }
+
+  @override
+  void dispose() {
+    _fila.removeListener(_aoMudarAFila);
+    _relogioDaCopia?.cancel();
+    _songsSub?.cancel();
+    super.dispose();
   }
 
   /// Tira a música do repertório. Devolve null quando dá certo.

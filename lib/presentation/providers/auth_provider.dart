@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import '../../core/platform/marcas.dart';
+import '../../core/utils/snapshot_local.dart';
 import '../../data/models/arrangement_model.dart';
 import '../../data/models/user_model.dart';
+import '../../data/services/app_firebase.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/firestore_service.dart';
 import '../../data/services/avisos_service.dart';
@@ -72,6 +74,7 @@ class AuthProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _relogioDasPessoas?.cancel();
     _escutaPessoas?.cancel();
     _meuCadastro?.cancel();
     super.dispose();
@@ -83,6 +86,32 @@ class AuthProvider extends ChangeNotifier {
   /// copy — decides whether someone is logged in. The local copy is only used
   /// to fill the screens while offline, when the profile cannot be fetched.
   Future<void> checkSession() async {
+    // 1) Abre no cadastro guardado NO APARELHO, sem esperar o Firebase.
+    //
+    // O Firebase leva a abertura inteira para ligar (e, sem internet, bem
+    // mais). A pessoa que já entrou antes tem o cadastro no celular: a tela
+    // dela pode sair agora, com as músicas e a escala guardadas, e o Firebase
+    // confirma logo em seguida. Se ele disser que não há conta (o iPhone
+    // apagou a sessão, ou a pessoa saiu por outro aparelho), a tela de entrar
+    // aparece — é o único caso em que o que se mostrou antes estava errado, e
+    // não expõe nada: o que o banco guarda continua atrás das regras.
+    var abriuPeloAparelho = false;
+    if (!AppFirebase.ligado) {
+      final guardado = LocalStorageService.getSession();
+      if (guardado != null) {
+        _user = guardado;
+        _status = AuthStatus.authenticated;
+        abriuPeloAparelho = true;
+        marcar('sessao-resolvida');
+        notifyListeners();
+      }
+    }
+
+    final erroAoLigar = await AppFirebase.pronto;
+    // Firebase fora do ar: `main` troca o app pela tela que explica. Seguir
+    // aqui só falaria com um SDK que não existe.
+    if (erroAoLigar != null) return;
+
     final account = AuthService.currentAuthUser;
 
     if (account == null) {
@@ -102,14 +131,19 @@ class AuthProvider extends ChangeNotifier {
     // that round trip took — seconds on mobile data, with the profile already
     // on the device. An installed web app is reloaded by the system more often
     // than a native one, and each reload paid that price again.
-    final cached = LocalStorageService.getSession();
+    //
+    // O cadastro guardado só vale se for DESTA conta: outra pessoa pode ter
+    // entrado neste aparelho depois.
+    var cached = LocalStorageService.getSession();
+    if (cached != null && cached.id != account.uid) cached = null;
     if (cached != null) {
       _user = cached;
       _status = AuthStatus.authenticated;
-      marcar('sessao-resolvida');
+      if (!abriuPeloAparelho) marcar('sessao-resolvida');
       notifyListeners();
     } else {
       // Nothing cached: there is no screen to show yet, so the wait is real.
+      _user = null;
       _status = AuthStatus.loading;
       notifyListeners();
     }
@@ -163,11 +197,37 @@ class AuthProvider extends ChangeNotifier {
     _escutaPessoas = AuthService.watchEscalaveis().listen((lista) {
       _pessoas = lista;
       _nomes = {for (final p in lista) p.id: p.name};
+      _guardarPessoas();
       notifyListeners();
     }, onError: (_) {
       // Sem a lista, as telas caem no nome copiado dentro do culto e, na
       // falta dele, em "Alguém". É leitura com valor padrão seguro.
     });
+  }
+
+  Timer? _relogioDasPessoas;
+
+  void _guardarPessoas() {
+    _relogioDasPessoas?.cancel();
+    _relogioDasPessoas = Timer(const Duration(seconds: 2), () {
+      SnapshotLocal.guardar('pessoas', _pessoas.map((p) => p.toJson()).toList());
+    });
+  }
+
+  /// Põe na tela os nomes que o aparelho guardou, antes de o banco responder.
+  /// Sem isto o cartão do culto diria "Alguém" no lugar de cada nome até a
+  /// primeira resposta do servidor.
+  Future<int> restaurarPessoasDoAparelho() async {
+    final docs = await SnapshotLocal.ler('pessoas');
+    if (docs == null || _pessoas.isNotEmpty) return 0;
+    try {
+      _pessoas = [for (final d in docs) UserModel.fromJson(d)];
+    } catch (_) {
+      return 0;
+    }
+    _nomes = {for (final p in _pessoas) p.id: p.name};
+    notifyListeners();
+    return _pessoas.length;
   }
 
   /// O e-mail de recuperação desta conta, ou nulo quando ela ainda usa o
@@ -296,6 +356,10 @@ class AuthProvider extends ChangeNotifier {
   /// Toggle favorite song
   Future<void> toggleFavorite(String songId) async {
     if (_user == null) return;
+    // O toque pode vir antes de o banco terminar de ligar (a abertura sai com
+    // a cópia do aparelho); a escrita espera, o app não.
+    await AppFirebase.pronto;
+    if (_user == null) return;
     final updated = await AuthService.toggleFavorite(_user!, songId);
     _user = updated;
     notifyListeners();
@@ -350,6 +414,7 @@ class AuthProvider extends ChangeNotifier {
     _prefs = {..._prefs, songId: updated};
     notifyListeners();
 
+    await AppFirebase.pronto;
     final result = await FirestoreService.saveSongPref(user.id, updated);
     if (!result.success) {
       final rolledBack = {..._prefs};
@@ -367,9 +432,20 @@ class AuthProvider extends ChangeNotifier {
     return null;
   }
 
+  /// Tons e anotações: primeiro o que o aparelho já tem (na hora, sem rede),
+  /// depois o servidor — e só substitui se ele de fato respondeu. Uma falha de
+  /// rede não pode esvaziar os tons que a pessoa já via.
   Future<void> _loadPrefs(String userId) async {
-    _prefs = await FirestoreService.getAllSongPrefs(userId);
-    notifyListeners();
+    final doAparelho = await FirestoreService.getPrefsDoAparelho(userId);
+    if (doAparelho.isNotEmpty && _prefs.isEmpty) {
+      _prefs = doAparelho;
+      notifyListeners();
+    }
+    final doServidor = await FirestoreService.lerPrefsDoServidor(userId);
+    if (doServidor != null) {
+      _prefs = doServidor;
+      notifyListeners();
+    }
   }
 
   /// Update user profile

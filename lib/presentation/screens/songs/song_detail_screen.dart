@@ -119,14 +119,32 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     });
   }
 
+  /// A cifra aparece do APARELHO, na hora, com ou sem internet; o servidor é
+  /// consultado em seguida e só substitui o que está na tela se de fato
+  /// respondeu (uma falha de rede não pode apagar uma cifra que existe).
+  /// Alteração que ainda espera a internet fica por cima nos dois casos.
   Future<void> _loadArrangement() async {
-    final found = await FirestoreService.getArrangement(widget.song.id);
+    final songs = context.read<SongsProvider>();
+    final doAparelho =
+        await FirestoreService.getArrangementDoAparelho(widget.song.id);
     if (!mounted) return;
+    _mostrarArranjo(songs.arranjoComPendencias(widget.song.id, doAparelho),
+        primeira: true);
+
+    final r = await FirestoreService.lerArranjoDoServidor(widget.song.id);
+    if (!mounted || !r.ok) return;
+    _mostrarArranjo(songs.arranjoComPendencias(widget.song.id, r.arranjo),
+        primeira: doAparelho == null);
+  }
+
+  void _mostrarArranjo(ArrangementModel? found, {required bool primeira}) {
     final canta = _cantaAgora(context);
     setState(() {
       _arrangement = found;
-      // Quem toca abre direto na cifra, no tom dele; quem canta, na letra.
-      _showChords = !canta && (found?.hasChords ?? false);
+      // Quem toca abre direto na cifra, no tom dele; quem canta, na letra. Só
+      // na primeira vez: a resposta do servidor não pode virar a página de
+      // quem já tinha escolhido outra coisa.
+      if (primeira) _showChords = !canta && (found?.hasChords ?? false);
     });
   }
 
@@ -159,25 +177,28 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
 
     final bpmMudou = r.bpm != (_arrangement?.bpm ?? 0);
     if (erro == null && bpmMudou) {
-      final base = _arrangement ??
-          FirestoreService.createArrangementModel(
-            songId: widget.song.id,
-            churchKey: r.musica.originalKey,
-            approvedBy: auth.user?.id,
-          );
-      final salvo = await FirestoreService.saveArrangement(
-          base.copyWith(bpm: r.bpm, updatedAt: DateTime.now()));
-      if (salvo.success) {
-        if (mounted) setState(() => _arrangement = salvo.arrangement);
+      final salvo = await songs.salvarArranjo(
+        songId: widget.song.id,
+        atual: _arrangement,
+        seNaoExistir: FirestoreService.createArrangementModel(
+          songId: widget.song.id,
+          churchKey: r.musica.originalKey,
+          approvedBy: auth.user?.id,
+        ),
+        novos: {'bpm': r.bpm},
+        rotulo: widget.song.name,
+      );
+      if (salvo.erro == null) {
+        if (mounted) setState(() => _arrangement = salvo.arranjo);
       } else {
-        erro = salvo.error;
+        erro = salvo.erro;
       }
     }
 
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(erro ?? 'Música atualizada.'),
+        content: Text(erro ?? _recadoDeSalvo(songs, 'Música atualizada.')),
         backgroundColor: erro == null ? AppColors.success : AppColors.red,
       ),
     );
@@ -252,6 +273,17 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     await _gravarCifra(r);
   }
 
+  /// "Salvo" quando chegou ao banco; quando ficou esperando a internet, diz
+  /// isso — a pessoa não pode achar que está gravado para todos se não está.
+  String _recadoDeSalvo(SongsProvider songs, String salvo) {
+    final id = widget.song.id;
+    if (songs.musicaPendente(id) || songs.arranjoPendente(id)) {
+      return 'Salvo neste celular. Vai para o ministério quando a internet '
+          'voltar.';
+    }
+    return salvo;
+  }
+
   /// Grava a cifra e a letra que saíram do editor.
   ///
   /// UM caminho só, chamado pelo editor e por "Editar música". Antes havia
@@ -265,22 +297,28 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     String? erro;
     ArrangementModel? novo = _arrangement;
     if (r.temAcordes) {
-      final base = _arrangement ??
-          FirestoreService.createArrangementModel(
-            songId: widget.song.id,
-            churchKey: r.tom ?? widget.song.originalKey,
-            approvedBy: auth.user?.id,
-          );
-      final salvo = await FirestoreService.saveArrangement(base.copyWith(
-        chords: r.cifra,
-        churchKey: _arrangement == null ? null : (r.tom ?? base.churchKey),
+      final seNaoExistir = FirestoreService.createArrangementModel(
+        songId: widget.song.id,
+        churchKey: r.tom ?? widget.song.originalKey,
         approvedBy: auth.user?.id,
-        updatedAt: DateTime.now(),
-      ));
-      if (salvo.success) {
-        novo = salvo.arrangement;
+      );
+      final salvo = await songs.salvarArranjo(
+        songId: widget.song.id,
+        atual: _arrangement,
+        seNaoExistir: seNaoExistir,
+        novos: {
+          'chords': r.cifra,
+          'churchKey': _arrangement == null
+              ? seNaoExistir.churchKey
+              : (r.tom ?? _arrangement!.churchKey),
+          'approvedBy': auth.user?.id,
+        },
+        rotulo: widget.song.name,
+      );
+      if (salvo.erro == null) {
+        novo = salvo.arranjo;
       } else {
-        erro = salvo.error;
+        erro = salvo.erro;
       }
     }
     // O TOM ORIGINAL. Era aqui que a música ficava "em G" com a cifra em D:
@@ -321,7 +359,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text(erro ?? 'Cifra salva.'),
+        content: Text(erro ?? _recadoDeSalvo(songs, 'Cifra salva.')),
         backgroundColor: erro == null ? AppColors.success : AppColors.red,
       ),
     );

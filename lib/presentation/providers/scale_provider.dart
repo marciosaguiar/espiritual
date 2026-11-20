@@ -1,12 +1,25 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../core/platform/marcas.dart';
+import '../../core/utils/crypto_utils.dart';
+import '../../core/utils/fila_de_envio.dart';
+import '../../core/utils/snapshot_local.dart';
 import '../../data/models/scale_model.dart';
 import '../../data/models/team_model.dart';
-import '../../data/services/avisos_service.dart';
+import '../../data/services/fila_service.dart';
 import '../../data/services/firestore_service.dart';
 
 class ScaleProvider extends ChangeNotifier {
+  ScaleProvider({FilaDeEnvio? fila}) : _fila = fila ?? FilaService.fila {
+    _fila.addListener(_aoMudarAFila);
+  }
+
+  final FilaDeEnvio _fila;
+
+  /// Os cultos como o BANCO os mandou. [_scales] é isto mais o que a pessoa
+  /// fez e ainda não chegou lá (presença pendente): a tela mostra o segundo, e
+  /// uma resposta nova do banco não pode desfazer o primeiro.
+  List<ScaleModel> _servidor = [];
   List<ScaleModel> _scales = [];
   ScaleModel? _selectedScale;
   bool _isLoading = false;
@@ -23,8 +36,10 @@ class ScaleProvider extends ChangeNotifier {
     if (_scalesSub != null) return;
     _scalesSub = FirestoreService.watchScales().listen((scales) {
       if (_scales.isEmpty) marcar('cultos-recebidos');
-      _scales = scales;
+      _servidor = scales;
+      _scales = _comPendencias(scales);
       _error = null;
+      _guardarNoAparelho();
       notifyListeners();
     }, onError: (e) {
       _error = 'Erro ao carregar escalas';
@@ -46,8 +61,73 @@ class ScaleProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _fila.removeListener(_aoMudarAFila);
     _scalesSub?.cancel();
     super.dispose();
+  }
+
+  // ─── o que está na fila, por cima do que veio do banco ───────────────────
+
+  void _aoMudarAFila() {
+    _scales = _comPendencias(_servidor);
+    notifyListeners();
+  }
+
+  /// Os cultos com as presenças que ainda esperam para ser enviadas.
+  List<ScaleModel> _comPendencias(List<ScaleModel> base) {
+    final pendencias = _fila.itens
+        .where((i) => i.tipo == TipoDeAcao.presenca)
+        .toList();
+    if (pendencias.isEmpty) return base;
+    return [
+      for (final s in base)
+        _comPresencas(s, pendencias.where((i) => i.dados['culto'] == s.id)),
+    ];
+  }
+
+  ScaleModel _comPresencas(ScaleModel s, Iterable<ItemDaFila> itens) {
+    if (itens.isEmpty) return s;
+    var levitas = s.levitas;
+    for (final i in itens) {
+      final uid = i.dados['userId'] as String;
+      final confirmado = i.dados['confirmado'] as bool;
+      levitas = levitas
+          .map((l) => l.userId == uid ? l.copyWith(confirmed: confirmado) : l)
+          .toList();
+    }
+    return s.copyWith(levitas: levitas);
+  }
+
+  /// Esta presença foi pedida e ainda não chegou ao banco?
+  bool presencaPendente(String scaleId, String userId) =>
+      _fila.temPendencia('presenca:$scaleId:$userId');
+
+  // ─── cópia no aparelho: abrir já com os cultos na tela ───────────────────
+
+  Timer? _relogioDaCopia;
+
+  void _guardarNoAparelho() {
+    _relogioDaCopia?.cancel();
+    _relogioDaCopia = Timer(const Duration(seconds: 2), () {
+      SnapshotLocal.guardar('scales', _servidor.map((s) => s.toFirestore()).toList());
+    });
+  }
+
+  /// Põe na tela os cultos que o aparelho guardou da última vez, ANTES de o
+  /// banco responder (e antes de o Firebase terminar de ligar). Devolve
+  /// quantos eram.
+  Future<int> restaurarDoAparelho() async {
+    final docs = await SnapshotLocal.ler('scales');
+    if (docs == null || _servidor.isNotEmpty) return 0;
+    try {
+      _servidor = [for (final d in docs) ScaleModel.fromFirestore(d)];
+    } catch (_) {
+      return 0; // cópia ilegível: o banco responde logo em seguida
+    }
+    _scales = _comPendencias(_servidor);
+    _error = null;
+    notifyListeners();
+    return _servidor.length;
   }
 
   Future<void> loadScales() async {
@@ -55,7 +135,8 @@ class ScaleProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      _scales = await FirestoreService.getScales();
+      _servidor = await FirestoreService.getScales();
+      _scales = _comPendencias(_servidor);
     } catch (e) {
       _error = 'Erro ao carregar escalas: $e';
     } finally {
@@ -68,7 +149,8 @@ class ScaleProvider extends ChangeNotifier {
   /// testes de tela usam: o provider de verdade só se enche pela escuta.
   @visibleForTesting
   void carregarParaTeste(List<ScaleModel> cultos) {
-    _scales = cultos;
+    _servidor = cultos;
+    _scales = _comPendencias(cultos);
     notifyListeners();
   }
 
@@ -275,8 +357,8 @@ class ScaleProvider extends ChangeNotifier {
     final result = await FirestoreService.createScale(scale);
     if (!result.success) return result.error;
 
-    _scales.add(scale);
-    _scales.sort((a, b) => a.date.compareTo(b.date));
+    _scales = [..._scales, scale]..sort((a, b) => a.date.compareTo(b.date));
+    _servidor = [..._servidor, scale]..sort((a, b) => a.date.compareTo(b.date));
     notifyListeners();
     return null;
   }
@@ -287,23 +369,30 @@ class ScaleProvider extends ChangeNotifier {
   // delete: if false` em `scales`), então nem um caminho novo no app
   // conseguiria apagar por engano.
 
-  /// Confirms presence. Returns null on success, or the message to show.
+  /// Confirma ou desmarca a presença. Devolve null quando deu certo OU quando
+  /// ficou esperando a internet; devolve a frase quando o banco recusou.
+  ///
+  /// A mudança aparece na tela NA HORA (com o relógio de "pendente") e vai
+  /// para a fila: o app não espera a rede para dizer à pessoa que o toque
+  /// valeu. Com internet, o envio leva menos de um segundo e o relógio nem
+  /// chega a ser visto; sem, a confirmação espera, sobrevive a fechar o app e
+  /// segue sozinha quando o sinal voltar.
   Future<String?> confirmPresence(
       String scaleId, String userId, bool confirmed) async {
-    final result =
-        await FirestoreService.confirmPresence(scaleId, userId, confirmed);
-    if (!result.success) return result.error;
-    _applyLocally(scaleId, (scale) {
-      final levitas = scale.levitas
-          .map((l) => l.userId == userId ? l.copyWith(confirmed: confirmed) : l)
-          .toList();
-      return scale.copyWith(levitas: levitas);
-    });
-
-    // Avisa os líderes. Depois de gravar, e sem esperar: quem desmarca tira
-    // um instrumento do domingo, e é o líder que remonta a escala. O aviso
-    // não devolve erro — a confirmação já está salva e na tela.
-    AvisosService.avisarConfirmacao(scaleId);
+    final culto = _servidor.where((c) => c.id == scaleId).firstOrNull ??
+        _scales.where((c) => c.id == scaleId).firstOrNull;
+    final item = ItemDaFila.presenca(
+      id: CryptoUtils.generateId(),
+      culto: scaleId,
+      userId: userId,
+      confirmado: confirmed,
+      agora: DateTime.now(),
+      rotulo: culto == null
+          ? null
+          : '${culto.serviceType} de ${culto.date.day.toString().padLeft(2, '0')}/${culto.date.month.toString().padLeft(2, '0')}',
+    );
+    final r = await _fila.enfileirar(item);
+    if (r != null && r.desfecho == Desfecho.descartado) return r.erro;
     return null;
   }
 
@@ -428,6 +517,10 @@ class ScaleProvider extends ChangeNotifier {
     final idx = _scales.indexWhere((s) => s.id == scaleId);
     if (idx < 0) return;
     _scales[idx] = change(_scales[idx]);
+    final i2 = _servidor.indexWhere((s) => s.id == scaleId);
+    if (i2 >= 0 && !identical(_servidor, _scales)) {
+      _servidor = [..._servidor]..[i2] = change(_servidor[i2]);
+    }
     if (_selectedScale?.id == scaleId) _selectedScale = _scales[idx];
     notifyListeners();
   }

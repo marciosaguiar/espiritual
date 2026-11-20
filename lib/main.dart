@@ -10,6 +10,9 @@ import 'package:flutter_web_plugins/url_strategy.dart';
 import 'firebase_options.dart';
 import 'core/constants/app_strings.dart';
 import 'core/theme/app_theme.dart';
+import 'data/services/app_firebase.dart';
+import 'data/services/estado_da_rede.dart';
+import 'data/services/fila_service.dart';
 import 'data/services/local_storage_service.dart';
 import 'presentation/providers/auth_provider.dart';
 import 'presentation/providers/theme_provider.dart';
@@ -84,53 +87,6 @@ void main() async {
   await LocalStorageService.init();
 
   final firebase = _conferirFirebase();
-  String? startupError;
-  if (firebase.configurado) {
-    try {
-      await Firebase.initializeApp(
-        options: DefaultFirebaseOptions.currentPlatform,
-      );
-
-      // CACHE NO APARELHO. Sem isto, cada abertura do app relia do servidor
-      // tudo o que as quatro escutas de `main_screen` alcançam — e leitura é
-      // a cota que aperta no plano grátis (50 mil por dia). Sem cache, TODA
-      // reconexão de escuta é cobrada como consulta nova; com cache, só a
-      // que ficou desligada mais de 30 minutos.
-      //
-      // Medido no emulador, com o banco do tamanho do ministério (40
-      // músicas, 109 cultos na janela, 50 mensagens, 3 equipes): a segunda
-      // abertura baixava 202 documentos do servidor e passou a baixar ZERO —
-      // os 202 vêm do disco, e as quatro consultas recebem do servidor uma
-      // resposta vazia, só confirmando que nada mudou.
-      //
-      // Duas coisas que esta linha também resolve: o app abre com o
-      // repertório e a escala na tela mesmo sem internet, e a abertura não
-      // espera a rede para desenhar.
-      //
-      // O limite conhecido é a SEGUNDA ABA. O cache é de aba única, e a
-      // segunda aba não consegue a trava do IndexedDB. Medido: ela avisa no
-      // console (`failed-precondition`) e cai sozinha para o cache em
-      // memória, que é exatamente o que o app fazia antes — ninguém fica com
-      // tela vazia. Como no iPhone o app instalado é uma janela só, esse
-      // caso é o do computador com duas abas abertas.
-      //
-      // Sem `cacheSizeBytes`: o padrão do Firestore (40 MB) é cem vezes o
-      // que este ministério ocupa, e um teto apertado só traria o risco de o
-      // SDK ficar jogando fora o que acabou de guardar.
-      FirebaseFirestore.instance.settings =
-          const Settings(persistenceEnabled: true);
-
-      // Depois do `settings`: `useFirestoreEmulator` só troca o endereço, e
-      // atribuir `settings` depois jogaria o endereço fora.
-      if (_emulador) {
-        FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8080);
-        await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
-      }
-      marcar('firebase-pronto');
-    } catch (e) {
-      startupError = '$e';
-    }
-  }
 
   // Set preferred orientations
   await SystemChrome.setPreferredOrientations([
@@ -138,14 +94,74 @@ void main() async {
     DeviceOrientation.portraitDown,
   ]);
 
-  if (!firebase.configurado || startupError != null) {
-    runApp(
-        _SetupNeededApp(error: startupError, semProjeto: firebase.semProjeto));
+  if (!firebase.configurado) {
+    runApp(_SetupNeededApp(error: null, semProjeto: firebase.semProjeto));
     return;
   }
 
+  // O Firebase liga EM PARALELO com o desenho do app, não antes dele. Ver
+  // `AppFirebase`: a primeira tela sai com o que o aparelho já guardou, e só
+  // quem precisa do banco espera. Se ligar falhar, a tela de "falta
+  // configurar" substitui o app.
+  AppFirebase.iniciar(_ligarFirebase).then((erro) {
+    if (erro != null) {
+      runApp(_SetupNeededApp(error: erro, semProjeto: null));
+      return;
+    }
+    // Com o banco pronto, a fila começa a enviar o que ficou pendente.
+    FilaService.iniciar();
+  });
+
+  // Estas duas NÃO dependem do Firebase: o que está pendente e a situação da
+  // internet já valem na primeira tela.
+  EstadoDaRede.instancia.iniciar();
+  FilaService.carregar();
+
   marcar('dart-runapp');
   runApp(const LevitaSyncApp());
+}
+
+Future<void> _ligarFirebase() async {
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
+
+  // CACHE NO APARELHO. Sem isto, cada abertura do app relia do servidor
+  // tudo o que as quatro escutas de `main_screen` alcançam — e leitura é
+  // a cota que aperta no plano grátis (50 mil por dia). Sem cache, TODA
+  // reconexão de escuta é cobrada como consulta nova; com cache, só a
+  // que ficou desligada mais de 30 minutos.
+  //
+  // Medido no emulador, com o banco do tamanho do ministério (40
+  // músicas, 109 cultos na janela, 50 mensagens, 3 equipes): a segunda
+  // abertura baixava 202 documentos do servidor e passou a baixar ZERO —
+  // os 202 vêm do disco, e as quatro consultas recebem do servidor uma
+  // resposta vazia, só confirmando que nada mudou.
+  //
+  // Duas coisas que esta linha também resolve: o app abre com o
+  // repertório e a escala na tela mesmo sem internet, e a abertura não
+  // espera a rede para desenhar.
+  //
+  // O limite conhecido é a SEGUNDA ABA. O cache é de aba única, e a
+  // segunda aba não consegue a trava do IndexedDB. Medido: ela avisa no
+  // console (`failed-precondition`) e cai sozinha para o cache em
+  // memória, que é exatamente o que o app fazia antes — ninguém fica com
+  // tela vazia. Como no iPhone o app instalado é uma janela só, esse
+  // caso é o do computador com duas abas abertas.
+  //
+  // Sem `cacheSizeBytes`: o padrão do Firestore (40 MB) é cem vezes o
+  // que este ministério ocupa, e um teto apertado só traria o risco de o
+  // SDK ficar jogando fora o que acabou de guardar.
+  FirebaseFirestore.instance.settings =
+      const Settings(persistenceEnabled: true);
+
+  // Depois do `settings`: `useFirestoreEmulator` só troca o endereço, e
+  // atribuir `settings` depois jogaria o endereço fora.
+  if (_emulador) {
+    FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8080);
+    await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
+  }
+  marcar('firebase-pronto');
 }
 
 /// Shown instead of the app when there is no Firebase project to talk to.
@@ -332,14 +348,43 @@ class _AppEntry extends StatefulWidget {
 }
 
 class _AppEntryState extends State<_AppEntry> {
+  /// A cópia que o aparelho guardou (músicas, cultos, pessoas, conversa) já
+  /// foi posta nos providers? Até lá a abertura fica na tela de abertura: a
+  /// leitura é de milissegundos, e sem esperá-la o Início apareceria vazio
+  /// por um quadro e depois se encheria — o contrário de abrir rápido.
+  bool _copiaLida = false;
+
   @override
   void initState() {
     super.initState();
     // Run after the first frame so the initial notifyListeners() inside
     // checkSession() doesn't fire during build.
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _checkAuth();
+      if (!mounted) return;
+      _lerCopiaDoAparelho();
+      _checkAuth();
     });
+  }
+
+  Future<void> _lerCopiaDoAparelho() async {
+    final songs = context.read<SongsProvider>();
+    final scale = context.read<ScaleProvider>();
+    final chat = context.read<ChatProvider>();
+    final auth = context.read<AuthProvider>();
+    try {
+      // Com teto: se o armazém travar, o app abre assim mesmo, esperando o
+      // banco. Uma cópia que não lê custa só o ganho de velocidade.
+      await Future.wait([
+        songs.restaurarDoAparelho(),
+        scale.restaurarDoAparelho(),
+        chat.restaurarDoAparelho(),
+        auth.restaurarPessoasDoAparelho(),
+        FilaService.carregar(),
+      ]).timeout(const Duration(milliseconds: 800));
+    } catch (_) {
+      // sem cópia: o banco responde logo em seguida
+    }
+    if (mounted) setState(() => _copiaLida = true);
   }
 
   Future<void> _checkAuth() async {
@@ -360,6 +405,7 @@ class _AppEntryState extends State<_AppEntry> {
         // devolvem nada para quem está pendente, então mandar essa pessoa
         // para o app seria mostrar cinco abas vazias sem explicação.
         if (!auth.aprovado) return const PendingScreen();
+        if (!_copiaLida) return const _SplashScreen();
         return const MainScreen();
       case AuthStatus.unauthenticated:
       case AuthStatus.error:
