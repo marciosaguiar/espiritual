@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart' show FirebaseAuth;
@@ -58,6 +60,11 @@ import 'presentation/widgets/common/responsivo.dart';
 /// verdade. Constante — na compilação normal o trecho inteiro some.
 const bool _emulador = bool.fromEnvironment('EMULADOR');
 
+/// A porta do emulador do Firestore. Só a medição muda (`--dart-define=
+/// PORTA_FIRESTORE=8081`): é o que deixa um proxy no meio, contando quantos
+/// documentos o banco entrega — que é o que o Firebase cobra como leitura.
+const int _portaFirestore = int.fromEnvironment('PORTA_FIRESTORE', defaultValue: 8080);
+
 void main() async {
   marcar('dart-main');
   // Desliga a integração do Flutter com o histórico do navegador.
@@ -102,13 +109,9 @@ void main() async {
 
   // O Firebase liga EM PARALELO com o desenho do app, não antes dele. Ver
   // `AppFirebase`: a primeira tela sai com o que o aparelho já guardou, e só
-  // quem precisa do banco espera. Se ligar falhar, a tela de "falta
-  // configurar" substitui o app.
-  AppFirebase.iniciar(_ligarFirebase).then((erro) {
-    if (erro != null) {
-      runApp(_SetupNeededApp(error: erro, semProjeto: null));
-      return;
-    }
+  // quem precisa do banco espera. Falhar ao ligar (sem internet o SDK pode nem
+  // carregar) NÃO troca o app por uma tela de erro: tenta de novo sozinho.
+  AppFirebase.iniciar(_ligarFirebase).then((_) {
     // Com o banco pronto, a fila começa a enviar o que ficou pendente.
     FilaService.iniciar();
   });
@@ -122,10 +125,29 @@ void main() async {
   runApp(const LevitaSyncApp());
 }
 
+/// Já terminou a parte que só pode ser feita UMA vez (configurar o cache e o
+/// emulador)? A ligação pode ser tentada várias vezes — sem internet o SDK
+/// pode não ter carregado —, e refazer isto lançaria.
+bool _firebaseConfigurado = false;
+bool _appDoFirebaseCriado = false;
+
 Future<void> _ligarFirebase() async {
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  // Tentar de novo depois de uma falha no meio. NÃO se pergunta a
+  // `Firebase.apps` se o app já existe: na web ele LANÇA ("Null check operator
+  // used on a null value") enquanto o plugin ainda não ligou — foi o que
+  // deixou o app sem banco na primeira medição. Guarda-se o próprio resultado.
+  if (!_appDoFirebaseCriado) {
+    try {
+      await Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      );
+    } on FirebaseException catch (e) {
+      // Uma tentativa anterior chegou a criar o app antes de falhar.
+      if (e.code != 'duplicate-app') rethrow;
+    }
+    _appDoFirebaseCriado = true;
+  }
+  if (_firebaseConfigurado) return;
 
   // CACHE NO APARELHO. Sem isto, cada abertura do app relia do servidor
   // tudo o que as quatro escutas de `main_screen` alcançam — e leitura é
@@ -159,9 +181,10 @@ Future<void> _ligarFirebase() async {
   // Depois do `settings`: `useFirestoreEmulator` só troca o endereço, e
   // atribuir `settings` depois jogaria o endereço fora.
   if (_emulador) {
-    FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', 8080);
+    FirebaseFirestore.instance.useFirestoreEmulator('127.0.0.1', _portaFirestore);
     await FirebaseAuth.instance.useAuthEmulator('127.0.0.1', 9099);
   }
+  _firebaseConfigurado = true;
   marcar('firebase-pronto');
 }
 
@@ -425,8 +448,33 @@ class _AppEntryState extends State<_AppEntry> {
   }
 }
 
-class _SplashScreen extends StatelessWidget {
+class _SplashScreen extends StatefulWidget {
   const _SplashScreen();
+
+  @override
+  State<_SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<_SplashScreen> {
+  /// Depois de alguns segundos esperando, diz o que está acontecendo. Antes
+  /// disso a tela é só a de abertura: quase sempre o app abre em menos tempo,
+  /// e um aviso que pisca por um instante é ruído.
+  bool _demorou = false;
+  Timer? _relogio;
+
+  @override
+  void initState() {
+    super.initState();
+    _relogio = Timer(const Duration(seconds: 6), () {
+      if (mounted) setState(() => _demorou = true);
+    });
+  }
+
+  @override
+  void dispose() {
+    _relogio?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -443,17 +491,17 @@ class _SplashScreen extends StatelessWidget {
             ],
           ),
         ),
-        child: const Center(
+        child: Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(
+              const Icon(
                 Icons.music_note_rounded,
                 size: 72,
                 color: Colors.white,
               ),
-              SizedBox(height: 20),
-              Text(
+              const SizedBox(height: 20),
+              const Text(
                 AppStrings.appName,
                 style: TextStyle(
                   fontFamily: 'Poppins',
@@ -463,8 +511,8 @@ class _SplashScreen extends StatelessWidget {
                   letterSpacing: -0.5,
                 ),
               ),
-              SizedBox(height: 8),
-              Text(
+              const SizedBox(height: 8),
+              const Text(
                 'Ministério de Louvor Unificado',
                 style: TextStyle(
                   fontFamily: 'Poppins',
@@ -472,8 +520,8 @@ class _SplashScreen extends StatelessWidget {
                   color: Colors.white70,
                 ),
               ),
-              SizedBox(height: 48),
-              SizedBox(
+              const SizedBox(height: 48),
+              const SizedBox(
                 width: 28,
                 height: 28,
                 child: CircularProgressIndicator(
@@ -481,6 +529,21 @@ class _SplashScreen extends StatelessWidget {
                   valueColor: AlwaysStoppedAnimation<Color>(Colors.white70),
                 ),
               ),
+              if (_demorou)
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(32, 28, 32, 0),
+                  child: Text(
+                    'Sem conexão com o servidor por enquanto. Assim que a '
+                    'internet voltar, o app abre sozinho.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 13,
+                      height: 1.45,
+                      color: Colors.white70,
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
