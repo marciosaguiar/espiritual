@@ -128,11 +128,15 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   Future<void> _loadArrangement() async {
     final songs = context.read<SongsProvider>();
     // 1) A cópia do armazém local: disco, sem rede e sem esperar o Firebase.
-    var doAparelho = await ArranjosLocais.ler(widget.song.id);
+    final guardado = await ArranjosLocais.lerComIdade(widget.song.id);
+    var doAparelho = guardado?.arranjo;
     if (!mounted) return;
-    if (doAparelho != null) {
+    if (guardado != null) {
       _mostrarArranjo(songs.arranjoComPendencias(widget.song.id, doAparelho),
           primeira: true);
+      // Resposta recente (do servidor, há menos de 15 min): a cópia basta, e
+      // não se gasta a leitura do banco que toda abertura de música gastava.
+      if (ArranjosLocais.aindaVale(guardado.em, DateTime.now())) return;
     }
 
     // 2) Daí em diante precisa do banco. Antes de o banco ligar, ou sem

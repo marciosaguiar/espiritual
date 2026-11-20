@@ -11,6 +11,7 @@ import '../models/message_model.dart';
 import '../models/user_model.dart';
 import 'auth_service.dart';
 import 'estado_da_rede.dart';
+import '../../core/platform/rede.dart';
 import '../../core/utils/fusao_de_edicao.dart';
 import '../../core/constants/hinarios.dart';
 import '../../core/utils/crypto_utils.dart';
@@ -1542,6 +1543,20 @@ class FirestoreService {
         success: false,
         error: 'Áudio grande demais (${(bytes.length / 1024).round()} KB). '
             'Grave um mais curto.',
+        mensagemId: null,
+      );
+    }
+
+    // Mensagem de VOZ é a única coisa do chat que não espera na fila: o som
+    // pesa até 800 KB, e deixá-lo guardado no aparelho à espera de sinal faria
+    // a pessoa achar que foi enviado — e chegar horas depois, fora de hora. Sem
+    // internet, diz isso na hora; a de texto, essa vai para a fila.
+    if (!Rede.online) {
+      return (
+        success: false,
+        error: 'Sem internet. A mensagem de voz só pode ser enviada com '
+            'internet — grave de novo quando o sinal voltar. Mensagens de '
+            'texto esperam o sinal e vão sozinhas.',
         mensagemId: null,
       );
     }

@@ -21,9 +21,21 @@ external JSPromise<JSString> _estimativa();
 @JS('levitaArmazemPersistir')
 external JSPromise<JSBoolean> _persistir();
 
+@JS('levitaServicoAtivo')
+external JSBoolean _servicoAtivo();
+
 /// IndexedDB, por `web/offline.js`.
 class Armazem {
   const Armazem._();
+
+  /// O service worker (o cache do app) já controla esta página?
+  static bool servicoDeCacheAtivo() {
+    try {
+      return _servicoAtivo().toDart;
+    } catch (_) {
+      return false;
+    }
+  }
 
   static Future<String?> ler(String chave) async {
     try {

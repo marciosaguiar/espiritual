@@ -6,6 +6,9 @@ class Armazem {
 
   static final Map<String, String> _tabela = {};
 
+  /// Fora da web não há service worker: nada a esperar.
+  static bool servicoDeCacheAtivo() => true;
+
   static Future<String?> ler(String chave) async => _tabela[chave];
 
   static Future<bool> gravar(String chave, String texto) async {

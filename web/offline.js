@@ -98,6 +98,16 @@
     return Promise.resolve(false);
   };
 
+  // O service worker já assumiu esta página? Só um arquivo que passa por ELE
+  // fica guardado no aparelho — e o service worker se registra depois do
+  // primeiro quadro, então os primeiros segundos de uma instalação nova ainda
+  // são sem ele. A preparação da Bíblia espera isto: baixar 4 MB antes e
+  // achar que ficou guardado seria dizer "pronto para o culto" sem estar.
+  window.levitaServicoAtivo = function () {
+    try { return !!(navigator.serviceWorker && navigator.serviceWorker.controller); }
+    catch (e) { return false; }
+  };
+
   // ── Rede ──────────────────────────────────────────────────────────────
   window.levitaOnline = function () { return navigator.onLine !== false; };
   window.levitaOuvirRede = function (aviso) {

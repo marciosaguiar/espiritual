@@ -101,6 +101,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
             'Se você canta ou toca, suas favoritas, seus tons e os '
                 'avisos.'
           ),
+          (
+            Icons.cloud_off_rounded,
+            'Sem internet',
+            'O app abre e funciona sem sinal: as músicas com cifra, os '
+                'hinos, a Bíblia e a escala ficam no celular. O que você '
+                'fizer sem internet (confirmar presença, corrigir uma música, '
+                'escrever no chat) aparece com um relógio e vai sozinho '
+                'quando o sinal voltar. Se outra pessoa mudou a mesma coisa '
+                'antes, o app avisa no Início o que ficou. Só mensagens '
+                'novas do chat e os avisos precisam de internet.'
+          ),
         ];
         return SafeArea(
           child: Padding(

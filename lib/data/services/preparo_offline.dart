@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../../core/constants/hinarios.dart';
 import '../../core/platform/armazem.dart';
 import '../../core/platform/rede.dart';
 import '../../core/utils/memoria_do_aparelho.dart';
@@ -101,6 +102,13 @@ class PreparoOffline {
   /// service worker. `load` evita ler e decodificar 4 MB de JSON só para
   /// deixá-lo no aparelho.
   static Future<void> _baixarBibliaPeloBundle(String id) async {
+    // Só vale se o service worker já assumiu a página: é ELE quem guarda o
+    // arquivo. Antes disso o arquivo viria da rede sem ficar no aparelho, e a
+    // preparação marcaria "Bíblia pronta" sem estar. Lançar aqui faz a
+    // tentativa ficar para a próxima rodada (aos 60 s, ou amanhã).
+    if (!Armazem.servicoDeCacheAtivo()) {
+      throw StateError('o service worker ainda não assumiu a página');
+    }
     await rootBundle.load('assets/biblia/$id.json');
   }
 
@@ -130,6 +138,16 @@ class PreparoOffline {
       return {};
     }
   }
+
+  /// Os ids dos hinários na ordem em que a preparação os traz: primeiro o que
+  /// a pessoa usa (a ordem que ela escolheu), depois os demais.
+  ///
+  /// **A ordem salva é VAZIA por padrão** — quem nunca arrastou um hinário não
+  /// tem nada guardado —, e usá-la direto fazia a preparação não trazer hino
+  /// nenhum, em silêncio. Foi o navegador que mostrou: o orçamento parava nas
+  /// cifras. `hinariosNaOrdem` completa com os que faltam.
+  static List<String> idsDosHinarios(List<String> ordemSalva) =>
+      [for (final h in hinariosNaOrdem(ordemSalva)) h.id];
 
   /// Roda um passo da preparação. [idsDeMusicas] são as do repertório (as
   /// arquivadas não entram) e [hinarios] os ids dos hinários na ordem em que a

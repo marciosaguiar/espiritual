@@ -333,8 +333,10 @@ class _MainScreenState extends State<MainScreen> {
     // Bíblia, AOS POUCOS e dentro do orçamento diário de leituras. Roda duas
     // vezes — logo depois da abertura, e de novo quando o repertório já
     // chegou — e é seguro repetir: o que já foi feito não é pedido de novo.
-    Timer(const Duration(seconds: 8), _prepararOffline);
-    Timer(const Duration(seconds: 60), _prepararOffline);
+    // (Na compilação de medição, mais cedo: a prova não pode esperar um
+    // minuto para ver o que foi guardado.)
+    Timer(const Duration(seconds: _medindo ? 3 : 8), _prepararOffline);
+    Timer(const Duration(seconds: _medindo ? 20 : 60), _prepararOffline);
 
     // A fonte da cifra (fora do pacote de abertura) é buscada logo depois que
     // o Início já tem o que mostrar, para estar pronta quando a pessoa abrir
@@ -357,13 +359,17 @@ class _MainScreenState extends State<MainScreen> {
 
   Future<void> _prepararOffline() async {
     if (!mounted || _preparando) return;
+    // Só a compilação de medição entende isto: `?sem-preparo` separa, na
+    // conta de leituras, o que a abertura custa do que a preparação custa.
+    if (_medindo && Uri.base.queryParameters.containsKey('sem-preparo')) return;
     _preparando = true;
     try {
       final songs = context.read<SongsProvider>();
       final eu = _auth?.user;
       await PreparoOffline().executar(
         idsDeMusicas: [for (final m in songs.repertorio) m.id],
-        hinarios: LocalStorageService.ordemDosHinariosDe(eu?.id),
+        hinarios: PreparoOffline.idsDosHinarios(
+            LocalStorageService.ordemDosHinariosDe(eu?.id)),
         traducaoDaBiblia: LocalStorageService.getUltimaLeitura()?.traducao ??
             traducoesDisponiveis.first.id,
       );
