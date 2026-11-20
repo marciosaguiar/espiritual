@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/platform/marcas.dart';
 import '../../core/utils/crypto_utils.dart';
 import '../../core/utils/fila_de_envio.dart';
+import '../../core/utils/origem_do_dado.dart';
 import '../../core/utils/snapshot_local.dart';
 import '../../data/models/scale_model.dart';
 import '../../data/models/team_model.dart';
@@ -25,21 +26,29 @@ class ScaleProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
-  StreamSubscription<List<ScaleModel>>? _scalesSub;
+  StreamSubscription<({List<ScaleModel> itens, bool doCache})>? _scalesSub;
 
   List<ScaleModel> get scales => _scales;
   ScaleModel? get selectedScale => _selectedScale;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  void listenToScales() {
+  /// [fonte] só os testes trocam: é o que permite provar o que o provider faz
+  /// com um vazio do cache sem ter um Firestore.
+  void listenToScales({Stream<({List<ScaleModel> itens, bool doCache})>? fonte}) {
     if (_scalesSub != null) return;
-    _scalesSub = FirestoreService.watchScales().listen((scales) {
+    _scalesSub = (fonte ?? FirestoreService.watchScalesComOrigem()).listen((r) {
+      // Vazio vindo do cache não é resposta: não apaga o que está na tela.
+      if (ignorarVazioDoCache(
+          doCache: r.doCache, vazio: r.itens.isEmpty, jaTemDados: _servidor.isNotEmpty)) {
+        return;
+      }
       if (_scales.isEmpty) marcar('cultos-recebidos');
-      _servidor = scales;
-      _scales = _comPendencias(scales);
+      _servidor = r.itens;
+      _scales = _comPendencias(r.itens);
       _error = null;
-      _guardarNoAparelho();
+      // A cópia só se regrava com o que o SERVIDOR confirmou.
+      if (!r.doCache) _guardarNoAparelho();
       notifyListeners();
     }, onError: (e) {
       _error = 'Erro ao carregar escalas';

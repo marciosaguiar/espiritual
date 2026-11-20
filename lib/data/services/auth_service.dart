@@ -434,8 +434,23 @@ class AuthService {
   ///
   /// `getAllUsers` continua existindo e continua trazendo todo mundo: a tela
   /// Membros precisa dos robôs, para o líder poder desmarcá-los.
-  static Stream<List<UserModel>> watchEscalaveis() => getAllUsers().map(
-      (todos) => todos.where((u) => u.aprovado && !u.bot).toList());
+  static Stream<List<UserModel>> watchEscalaveis() =>
+      watchEscalaveisComOrigem().map((r) => r.itens);
+
+  /// As pessoas escaláveis, dizendo se a notificação veio do cache do aparelho
+  /// (um vazio do cache não é resposta: ver `ignorarVazioDoCache`).
+  static Stream<({List<UserModel> itens, bool doCache})>
+      watchEscalaveisComOrigem() => _db
+          .collection(_collection)
+          .orderBy('name')
+          .snapshots()
+          .map((snap) => (
+                itens: snap.docs
+                    .map((d) => UserModel.fromFirestore(d.data()))
+                    .where((u) => u.aprovado && !u.bot)
+                    .toList(),
+                doCache: snap.metadata.isFromCache,
+              ));
 
   static Future<UserModel?> getUserById(String id) async {
     try {

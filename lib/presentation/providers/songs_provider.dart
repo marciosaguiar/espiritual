@@ -5,6 +5,7 @@ import '../../core/platform/marcas.dart';
 import '../../core/utils/crypto_utils.dart';
 import '../../core/utils/fila_de_envio.dart';
 import '../../core/utils/fusao_de_edicao.dart';
+import '../../core/utils/origem_do_dado.dart';
 import '../../core/utils/snapshot_local.dart';
 import '../../data/models/arrangement_model.dart';
 import '../../data/models/scale_model.dart';
@@ -36,7 +37,7 @@ class SongsProvider extends ChangeNotifier {
   String? _error;
   List<String> _favoriteSongIds = [];
 
-  StreamSubscription<List<SongModel>>? _songsSub;
+  StreamSubscription<({List<SongModel> itens, bool doCache})>? _songsSub;
 
   List<SongModel> get songs => _filteredSongs;
 
@@ -78,17 +79,23 @@ class SongsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void listenToSongs() {
+  void listenToSongs({Stream<({List<SongModel> itens, bool doCache})>? fonte}) {
     // Guard against stacking multiple subscriptions (e.g. re-login).
     if (_songsSub != null) return;
     _isLoading = true;
-    _songsSub = FirestoreService.watchSongs().listen((songs) {
+    _songsSub = (fonte ?? FirestoreService.watchSongsComOrigem()).listen((r) {
+      // Vazio vindo do cache não é resposta: não apaga o que está na tela.
+      if (ignorarVazioDoCache(
+          doCache: r.doCache, vazio: r.itens.isEmpty, jaTemDados: _servidor.isNotEmpty)) {
+        return;
+      }
       if (_songs.isEmpty) marcar('musicas-recebidas');
-      _servidor = songs;
-      _songs = _comPendencias(songs);
+      _servidor = r.itens;
+      _songs = _comPendencias(r.itens);
       _isLoading = false;
       _error = null;
-      _guardarNoAparelho();
+      // A cópia só se regrava com o que o SERVIDOR confirmou.
+      if (!r.doCache) _guardarNoAparelho();
       _applyFilter();
       notifyListeners();
     }, onError: (e) {

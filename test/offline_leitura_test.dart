@@ -4,6 +4,7 @@
 //
 // TODO o texto é inventado (a regra do projeto: nada com direito autoral).
 
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -15,6 +16,7 @@ import 'package:levitasync/core/platform/rede.dart';
 import 'package:levitasync/core/utils/fila_de_envio.dart';
 import 'package:levitasync/core/utils/fusao_de_edicao.dart';
 import 'package:levitasync/core/utils/memoria_do_aparelho.dart';
+import 'package:levitasync/core/utils/origem_do_dado.dart';
 import 'package:levitasync/core/utils/plano_do_cache.dart';
 import 'package:levitasync/core/utils/snapshot_local.dart';
 import 'package:levitasync/data/models/arrangement_model.dart';
@@ -771,6 +773,82 @@ void main() {
         () async {
       expect(AppFirebase.ligado, isTrue);
       expect(await AppFirebase.pronto, isNull);
+    });
+  });
+
+  // ── o vazio do cache não é resposta ──────────────────────────────────────
+  group('vazio vindo do cache NÃO apaga a cópia (achado com a rede cortada)',
+      () {
+    test('a regra, pura', () {
+      // cache vazio + dados na tela: ignora
+      expect(ignorarVazioDoCache(doCache: true, vazio: true, jaTemDados: true), isTrue);
+      // cache vazio e NADA na tela: vale (acaba a espera, mostra o estado vazio)
+      expect(ignorarVazioDoCache(doCache: true, vazio: true, jaTemDados: false), isFalse);
+      // o SERVIDOR disse que está vazio: é verdade
+      expect(ignorarVazioDoCache(doCache: false, vazio: true, jaTemDados: true), isFalse);
+      // cache com dados: vale
+      expect(ignorarVazioDoCache(doCache: true, vazio: false, jaTemDados: true), isFalse);
+    });
+
+    test('cultos: o cache vazio chega, a cópia restaurada FICA — e não é '
+        'regravada vazia', () async {
+      final cultos = cultosInventados();
+      await SnapshotLocal.guardar(
+          'scales', cultos.map((c) => c.toFirestore()).toList());
+      final p = ScaleProvider(fila: _fila(online: () => false));
+      await p.restaurarDoAparelho();
+      final ctl = StreamController<({List<ScaleModel> itens, bool doCache})>();
+      p.listenToScales(fonte: ctl.stream);
+
+      ctl.add((itens: const <ScaleModel>[], doCache: true)); // sem rede
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(p.scales.length, cultos.length,
+          reason: 'o vazio do cache não apaga o que está na tela');
+
+      // E o que está guardado continua sendo a cópia boa (a regravação é
+      // adiada 2 s: espera mais que isso).
+      await Future<void>.delayed(const Duration(milliseconds: 2300));
+      expect((await SnapshotLocal.ler('scales'))!.length, cultos.length);
+      await ctl.close();
+      p.dispose();
+    });
+
+    test('o servidor diz que não há cultos: aí SIM a tela esvazia', () async {
+      final p = ScaleProvider(fila: _fila(online: () => true));
+      p.carregarParaTeste(cultosInventados());
+      final ctl = StreamController<({List<ScaleModel> itens, bool doCache})>();
+      p.listenToScales(fonte: ctl.stream);
+      ctl.add((itens: const <ScaleModel>[], doCache: false));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(p.scales, isEmpty);
+      await ctl.close();
+      p.dispose();
+    });
+
+    test('aparelho novo, sem nada na tela: o vazio do cache vale (a espera '
+        'acaba)', () async {
+      final p = SongsProvider(fila: _fila(online: () => false));
+      final ctl = StreamController<({List<SongModel> itens, bool doCache})>();
+      p.listenToSongs(fonte: ctl.stream);
+      expect(p.isLoading, isTrue);
+      ctl.add((itens: const <SongModel>[], doCache: true));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(p.isLoading, isFalse);
+      await ctl.close();
+      p.dispose();
+    });
+
+    test('músicas: o cache vazio não apaga o repertório restaurado', () async {
+      final musicas = repertorioInventado();
+      final p = SongsProvider(fila: _fila(online: () => false))
+        ..carregarParaTeste(musicas);
+      final ctl = StreamController<({List<SongModel> itens, bool doCache})>();
+      p.listenToSongs(fonte: ctl.stream);
+      ctl.add((itens: const <SongModel>[], doCache: true));
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(p.allSongs.length, musicas.length);
+      await ctl.close();
+      p.dispose();
     });
   });
 

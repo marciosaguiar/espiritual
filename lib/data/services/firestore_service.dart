@@ -70,7 +70,13 @@ class FirestoreService {
   /// não tenha o campo `name` — a música simplesmente não existiria para o
   /// app, sem erro nenhum. Ordenar aqui custa nada nesta escala e faz uma
   /// música torta aparecer (ainda que sem nome) em vez de sumir.
-  static Stream<List<SongModel>> watchSongs() {
+  static Stream<List<SongModel>> watchSongs() =>
+      watchSongsComOrigem().map((r) => r.itens);
+
+  /// O mesmo, dizendo se a notificação veio do CACHE do aparelho. Quem restaura
+  /// uma cópia local precisa saber: um vazio do cache não é resposta (ver
+  /// `ignorarVazioDoCache`).
+  static Stream<({List<SongModel> itens, bool doCache})> watchSongsComOrigem() {
     var primeira = true;
     // `includeMetadataChanges` não custa leitura: só avisa quando a origem
     // do dado muda (do aparelho para o servidor). É o que diz ao app que o
@@ -89,7 +95,7 @@ class FirestoreService {
           .toList();
       songs.sort(
           (a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
-      return songs;
+      return (itens: songs, doCache: snap.metadata.isFromCache);
     });
   }
 
@@ -593,7 +599,11 @@ class FirestoreService {
 
   static DateTime get _fimDaJanela => DateTime.now().add(janelaFuturo);
 
-  static Stream<List<ScaleModel>> watchScales() {
+  static Stream<List<ScaleModel>> watchScales() =>
+      watchScalesComOrigem().map((r) => r.itens);
+
+  static Stream<({List<ScaleModel> itens, bool doCache})>
+      watchScalesComOrigem() {
     var primeira = true;
     return _db
         .collection(_scales)
@@ -606,9 +616,12 @@ class FirestoreService {
       final emitir = primeira || snap.docChanges.isNotEmpty;
       primeira = false;
       return emitir;
-    }).map((snap) => snap.docs
-            .map((doc) => ScaleModel.fromFirestore(doc.data()))
-            .toList());
+    }).map((snap) => (
+              itens: snap.docs
+                  .map((doc) => ScaleModel.fromFirestore(doc.data()))
+                  .toList(),
+              doCache: snap.metadata.isFromCache,
+            ));
   }
 
   static Future<List<ScaleModel>> getScales() async {
@@ -1382,7 +1395,11 @@ class FirestoreService {
 
   // ─── CHAT ─────────────────────────────────────────────────────────────────
 
-  static Stream<List<MessageModel>> watchMessages({int limit = 50}) {
+  static Stream<List<MessageModel>> watchMessages({int limit = 50}) =>
+      watchMessagesComOrigem(limit: limit).map((r) => r.itens);
+
+  static Stream<({List<MessageModel> itens, bool doCache})>
+      watchMessagesComOrigem({int limit = 50}) {
     return _db
         .collection(_messages)
         .orderBy('timestamp', descending: true)
@@ -1390,12 +1407,15 @@ class FirestoreService {
         .snapshots(includeMetadataChanges: true)
         .map((snap) {
       if (!snap.metadata.isFromCache) EstadoDaRede.instancia.bancoRespondeu();
-      return snap.docs
-          .map((doc) => MessageModel.fromFirestore(doc.data(),
-              pendente: doc.metadata.hasPendingWrites))
-          .toList()
-          .reversed
-          .toList();
+      return (
+        itens: snap.docs
+            .map((doc) => MessageModel.fromFirestore(doc.data(),
+                pendente: doc.metadata.hasPendingWrites))
+            .toList()
+            .reversed
+            .toList(),
+        doCache: snap.metadata.isFromCache,
+      );
     });
   }
 

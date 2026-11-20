@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../core/utils/crypto_utils.dart';
+import '../../core/utils/origem_do_dado.dart';
 import '../../core/utils/snapshot_local.dart';
 import '../../data/models/aviso_de_sincronia.dart';
 import '../../data/models/message_model.dart';
@@ -16,7 +17,7 @@ class ChatProvider extends ChangeNotifier {
   String? _error;
   List<TypingUser> _typing = [];
 
-  StreamSubscription<List<MessageModel>>? _messagesSub;
+  StreamSubscription<({List<MessageModel> itens, bool doCache})>? _messagesSub;
   StreamSubscription<List<TypingUser>>? _typingSub;
 
   /// A conversa: o que ainda não venceu, fixadas incluídas.
@@ -55,14 +56,20 @@ class ChatProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  void listenToMessages() {
+  void listenToMessages({Stream<({List<MessageModel> itens, bool doCache})>? fonte}) {
     if (_messagesSub != null) return;
     _isLoading = true;
-    _messagesSub = FirestoreService.watchMessages().listen((messages) {
+    _messagesSub = (fonte ?? FirestoreService.watchMessagesComOrigem()).listen((r) {
+      // Vazio vindo do cache não é resposta: não apaga a conversa da tela.
+      if (ignorarVazioDoCache(
+          doCache: r.doCache, vazio: r.itens.isEmpty, jaTemDados: _messages.isNotEmpty)) {
+        return;
+      }
+      final messages = r.itens;
       _messages = messages;
       _isLoading = false;
       _error = null;
-      _guardarNoAparelho(messages);
+      if (!r.doCache) _guardarNoAparelho(messages);
       notifyListeners();
     }, onError: (e) {
       _isLoading = false;

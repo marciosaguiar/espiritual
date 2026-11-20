@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import '../../core/platform/marcas.dart';
+import '../../core/utils/origem_do_dado.dart';
 import '../../core/utils/snapshot_local.dart';
 import '../../data/models/arrangement_model.dart';
 import '../../data/models/user_model.dart';
@@ -196,14 +197,20 @@ class AuthProvider extends ChangeNotifier {
   /// `ScaleLevita.nomeCom`.
   Map<String, String> get nomes => _nomes;
 
-  StreamSubscription<List<UserModel>>? _escutaPessoas;
+  StreamSubscription<({List<UserModel> itens, bool doCache})>? _escutaPessoas;
 
-  void ouvirPessoas() {
+  void ouvirPessoas({Stream<({List<UserModel> itens, bool doCache})>? fonte}) {
     _escutaPessoas?.cancel();
-    _escutaPessoas = AuthService.watchEscalaveis().listen((lista) {
+    _escutaPessoas = (fonte ?? AuthService.watchEscalaveisComOrigem()).listen((r) {
+      // Vazio vindo do cache não é resposta: não apaga os nomes da tela.
+      if (ignorarVazioDoCache(
+          doCache: r.doCache, vazio: r.itens.isEmpty, jaTemDados: _pessoas.isNotEmpty)) {
+        return;
+      }
+      final lista = r.itens;
       _pessoas = lista;
       _nomes = {for (final p in lista) p.id: p.name};
-      _guardarPessoas();
+      if (!r.doCache) _guardarPessoas();
       notifyListeners();
     }, onError: (_) {
       // Sem a lista, as telas caem no nome copiado dentro do culto e, na

@@ -1,3 +1,4 @@
+import 'dart:async';
 // O líder das fotos e do demo: o AuthProvider de verdade, sem banco.
 //
 // Mora num arquivo à parte, sem `flutter_test`, porque o demo que roda num
@@ -31,7 +32,7 @@ class AuthInventado extends AuthProvider {
   String? get emailDeRecuperacao => 'ana@exemplo.com';
 
   @override
-  void ouvirPessoas() {}
+  void ouvirPessoas({Stream<({List<UserModel> itens, bool doCache})>? fonte}) {}
 
   @override
   Future<void> conferirRecuperacao() async {}
