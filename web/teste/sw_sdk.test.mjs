@@ -151,3 +151,23 @@ test('a versão do SDK é a mesma no index.html, no sw.js e no pubspec.lock', ()
   // firebase_core_web 2.17.5 traz o SDK 10.11.1 (ver o comentário do index.html).
   assert.equal(bloco, '2.17.5', 'o lock mudou: confira a versão do SDK e atualize os três lugares');
 });
+
+test('navegar para uma IMAGEM não troca o index.html guardado (o app abriria '
+    + 'como imagem, para sempre)', async () => {
+  const sw = montar({
+    rede: (u) => ({
+      ok: true, status: 200, type: 'basic', corpo: u,
+      headers: { get: (h) => (u.endsWith('.png') ? 'image/png' : 'text/html; charset=utf-8') },
+      clone() { return this; },
+    }),
+  });
+  const caixa = await sw.caches.open('levitasync-desenvolvimento');
+  await caixa.put('index.html', { corpo: 'APP', ok: true });
+  await sw.pedir('https://exemplo.app/icons/Icon-192.png', { mode: 'navigate' });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal((await caixa.match('index.html')).corpo, 'APP');
+  // E uma página HTML de verdade continua atualizando o guardado.
+  await sw.pedir('https://exemplo.app/', { mode: 'navigate' });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal((await caixa.match('index.html')).corpo, 'https://exemplo.app/');
+});

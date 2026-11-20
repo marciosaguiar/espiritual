@@ -155,7 +155,7 @@ async function esperarMarca(pag, marca, ms = 60000) {
 }
 async function abrirPagina(query = '') {
   const pag = await ctx.newPage();
-  pag.on('pageerror', (e) => console.log('   pageerror:', String(e).slice(0, 160)));
+  pag.on('pageerror', (e) => console.log('   pageerror:', String(e.stack || e).slice(0, 500)));
   await pag.goto(`${origem}/${query}`, { waitUntil: 'commit' });
   return pag;
 }
@@ -213,6 +213,9 @@ const culto = futuros[0];
 const euNoCulto = { userId: ENTRAR.id, userName: ENTRAR.nome, instrument: 'keyboard', confirmed: false };
 const outros = (culto.campos.levitas || []).filter((l) => l.userId !== ENTRAR.id);
 await gravarCampo(`scales/${culto.id}`, 'levitas', [euNoCulto, ...outros]);
+// Quem toca abre a música na CIFRA; quem canta, só na letra. A prova é da cifra.
+await gravarCampo(`users/${ENTRAR.id}`, 'instrument', 'keyboard');
+await gravarCampo(`users/${ENTRAR.id}`, 'instruments', ['keyboard']);
 console.log(`\nCulto da prova: ${culto.id} (${culto.campos.serviceType})\n`);
 
 // ─── 1) online: entra e deixa o app se preparar ─────────────────────────────
@@ -252,92 +255,103 @@ console.log('\n2) SEM internet: tudo cortado (servidor, banco, Google)');
 ligarRede(false);
 await ctx.setOffline(true);
 
-pag = await abrirPagina();
-const tOff = await esperarMarca(pag, 'inicio-com-dados', 30000);
+// ONDE TOCAR. O motor do Flutter derruba a página quando se toca com a
+// semântica ligada (com mouse, com toque e com evento de DOM, os três), então
+// cada cenário TOCA por coordenadas e só no fim liga a semântica para LER. As
+// coordenadas são as do app a 390 px de largura (fotografadas): uma tela que
+// mude de lugar reprova o cenário e deixa a foto para ser olhada.
+const ABA = { inicio: [57, 800], musicas: [126, 800], escala: [195, 800], chat: [264, 800], perfil: [333, 800] };
+const SECAO = { repertorio: [71, 75], hinarios: [191, 75], biblia: [310, 75] };
+const TECLA = { 1: [73, 350], 2: [194, 350], 3: [314, 350], 4: [73, 432], 5: [194, 432], 6: [314, 432], 7: [73, 514], 8: [194, 514], 9: [314, 514], 0: [194, 596] };
+const PRIMEIRA_MUSICA = [190, 336];
+const CONFIRMAR_PRESENCA = [195, 236];
+const GENESIS = [73, 431];
+const CAPITULO_1 = [42, 345];
+async function toque(pag, [x, y], ms = 900) { await pag.touchscreen.tap(x, y); await pag.waitForTimeout(ms); }
+async function abrirOffline() {
+  const p = await abrirPagina();
+  const t = await esperarMarca(p, 'inicio-com-dados', 30000);
+  await p.waitForTimeout(1500);
+  return { p, t };
+}
+
+let { p: pg, t: tOff } = await abrirOffline();
+pag = pg;
 prova('abre o app e mostra o Início com dados', tOff != null, `${tOff} ms`);
+
+// Confirmar presença (toca ANTES de ligar a semântica)
+await toque(pag, CONFIRMAR_PRESENCA, 1500);
 await semantica(pag);
 await foto(pag, '02-offline-inicio');
 prova('o cartão do culto está na tela', await tem(pag, 'Você toca') || await tem(pag, culto.campos.serviceType));
+const esperandoCard = await esperarTexto(pag, 'Esperando a internet', 6000);
+prova('confirmar presença: fica "Esperando a internet" e NÃO dá erro', esperandoCard != null);
+await foto(pag, '04-offline-presenca-pendente');
+const fila1 = JSON.parse((await lerArmazem(pag, 'fila:v1')) || '[]');
+prova('a confirmação está na fila, guardada no aparelho', fila1.some((i) => (i.chave || '').startsWith('presenca:')), `${fila1.length} item(ns)`);
 const faixa = await esperarTexto(pag, 'Sem internet', 20000);
 prova('a faixa "Sem internet" aparece (só depois de 10 s)', faixa != null);
 await foto(pag, '03-offline-faixa');
-
-// Confirmar presença
-const tocouConfirmar = await tocar(pag, 'Confirmar presença');
-await pag.waitForTimeout(1500);
-const esperandoCard = await esperarTexto(pag, 'Esperando a internet', 6000);
-prova('confirmar presença: fica "Esperando a internet" e NÃO dá erro', tocouConfirmar && esperandoCard != null);
-await foto(pag, '04-offline-presenca-pendente');
-const fila1 = JSON.parse((await lerArmazem(pag, 'fila:v1')) || '[]');
-prova('a confirmação está na fila, guardada no aparelho', fila1.some((i) => i.tipo === 'presenca' || (i.chave || '').startsWith('presenca:')), `${fila1.length} item(ns)`);
 await pag.close();
 
 // Fechar e abrir de novo: a fila sobrevive.
-pag = await abrirPagina();
-await esperarMarca(pag, 'inicio-com-dados', 30000);
+({ p: pag } = await abrirOffline());
 await semantica(pag);
 prova('depois de fechar e abrir de novo, a confirmação continua pendente',
   await esperarTexto(pag, 'Esperando a internet', 8000) != null);
 await pag.close();
 
 // Música: cifra
-pag = await abrirPagina();
-await esperarMarca(pag, 'inicio-com-dados', 30000);
+({ p: pag } = await abrirOffline());
+await toque(pag, ABA.musicas, 1200);
+await toque(pag, PRIMEIRA_MUSICA, 3000);
 await semantica(pag);
-await tocar(pag, 'Músicas');
-await pag.waitForTimeout(1200);
-await tocar(pag, 'Grande é a tua fidelidade');
 const cifraNaTela = await esperarTexto(pag, 'Cifra inventada da música', 10000);
-prova('lê uma música com a CIFRA, sem internet', cifraNaTela != null, `${cifraNaTela} ms`);
+prova('lê uma música com a CIFRA, sem internet', cifraNaTela != null, cifraNaTela != null ? `${cifraNaTela} ms` : '');
 await foto(pag, '05-offline-musica-cifra');
 await pag.close();
 
-// Hino pelo número
-pag = await abrirPagina();
-await esperarMarca(pag, 'inicio-com-dados', 30000);
+// Hino pelo número (77: está entre os 207 que a preparação trouxe)
+({ p: pag } = await abrirOffline());
+await toque(pag, ABA.musicas, 1000);
+await toque(pag, SECAO.hinarios, 1500);
+await toque(pag, TECLA[7], 400);
+await toque(pag, TECLA[7], 3500);
 await semantica(pag);
-await tocar(pag, 'Músicas');
-await pag.waitForTimeout(800);
-await tocar(pag, 'Hinários');
-await pag.waitForTimeout(1500);
-await tocar(pag, '7', { exato: true });
-await tocar(pag, '7', { exato: true });
 const hino77 = await esperarTexto(pag, 'Verso inventado 77', 10000);
 prova('abre o hino 77 da Harpa pelo número, sem internet', hino77 != null, hino77 != null ? `${hino77} ms` : '');
 await foto(pag, '06-offline-hino-77');
 await pag.close();
 
-// Hino que nunca foi baixado: diz o que fazer, na hora.
-pag = await abrirPagina();
-await esperarMarca(pag, 'inicio-com-dados', 30000);
+// Hino que nunca foi baixado (500): diz o que fazer, na hora.
+({ p: pag } = await abrirOffline());
+await toque(pag, ABA.musicas, 1000);
+await toque(pag, SECAO.hinarios, 1500);
+await toque(pag, TECLA[5], 400);
+await toque(pag, TECLA[0], 400);
+await toque(pag, TECLA[0], 3500);
 await semantica(pag);
-await tocar(pag, 'Músicas'); await pag.waitForTimeout(800);
-await tocar(pag, 'Hinários'); await pag.waitForTimeout(1500);
-for (const d of ['5', '0', '0']) await tocar(pag, d, { exato: true });
 const semBaixar = await esperarTexto(pag, 'Sem internet', 10000);
 prova('hino que nunca foi baixado: o app diz que falta internet (sem travar)', semBaixar != null);
 await foto(pag, '07-offline-hino-nao-baixado');
 await pag.close();
 
 // Bíblia
-pag = await abrirPagina();
-await esperarMarca(pag, 'inicio-com-dados', 30000);
+({ p: pag } = await abrirOffline());
+await toque(pag, ABA.musicas, 1000);
+await toque(pag, SECAO.biblia, 3000);
+await toque(pag, GENESIS, 1200);
+await toque(pag, CAPITULO_1, 3500);
 await semantica(pag);
-await tocar(pag, 'Músicas'); await pag.waitForTimeout(800);
-await tocar(pag, 'Bíblia'); await pag.waitForTimeout(2500);
-const livros = await esperarTexto(pag, 'Gênesis', 20000);
-prova('a Bíblia abre sem internet e lista os livros', livros != null, livros != null ? `${livros} ms` : '');
-await tocar(pag, 'Gênesis'); await pag.waitForTimeout(1500);
-await tocar(pag, '1', { exato: true }); await pag.waitForTimeout(1500);
-prova('lê Gênesis 1, sem internet', await tem(pag, 'Gênesis 1'));
+const biblia1 = await esperarTexto(pag, 'Gênesis 1', 15000);
+prova('lê Gênesis 1 da Bíblia, sem internet', biblia1 != null, biblia1 != null ? `${biblia1} ms` : '');
 await foto(pag, '08-offline-biblia');
 await pag.close();
 
 // Escala
-pag = await abrirPagina();
-await esperarMarca(pag, 'inicio-com-dados', 30000);
+({ p: pag } = await abrirOffline());
+await toque(pag, ABA.escala, 1800);
 await semantica(pag);
-await tocar(pag, 'Escala'); await pag.waitForTimeout(1500);
 const textos = await ler(pag);
 prova('vê a escala dos cultos, sem internet', textos.some((t) => /Culto/.test(t)), `${textos.filter((t) => /Culto/.test(t)).length} cultos à vista`);
 await foto(pag, '09-offline-escala');
@@ -369,13 +383,14 @@ await pag.close();
 // ─── 4) o aparelho apaga os dados ───────────────────────────────────────────
 console.log('\n4) O aparelho apaga o que o app guardou');
 // 4a) só o armazém do app (o caso que se PERCEBE: uma das duas marcas some).
-pag = await abrirPagina('icons/Icon-192.png');
+pag = await abrirPagina('offline.js');
 await pag.waitForTimeout(500);
 await pag.evaluate(() => new Promise((ok) => { const r = indexedDB.deleteDatabase('levita-armazem'); r.onsuccess = r.onerror = r.onblocked = () => ok(); }));
 await pag.close();
 pag = await abrirPagina();
 const tApagado = await esperarMarca(pag, 'inicio-com-dados', 40000);
 prova('apagado o armazém do app: abre sozinho, sem erro e sem pedir nada', tApagado != null, `${tApagado} ms`);
+if (tApagado == null) { await foto(pag, '11-recuperado-FALHOU'); console.log('   url:', pag.url(), '| título:', await pag.title().catch(() => '?')); }
 await semantica(pag);
 prova('e não caiu na tela de entrar', !(await tem(pag, 'Entrar')) || (await tem(pag, 'Início')));
 let recuperou = 0;
@@ -390,7 +405,7 @@ await foto(pag, '11-recuperado');
 await pag.close();
 
 // 4b) tudo (inclusive o login): o limite que o app NÃO consegue esconder.
-pag = await abrirPagina('icons/Icon-192.png');
+pag = await abrirPagina('offline.js');
 await pag.waitForTimeout(500);
 await pag.evaluate(async () => {
   localStorage.clear(); sessionStorage.clear();

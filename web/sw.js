@@ -323,8 +323,17 @@ self.addEventListener('fetch', (evento) => {
         const guardada = await cache.match('index.html');
         if (guardada) {
           // Confere se há versão nova, sem segurar a tela.
+          //
+          // SÓ uma resposta HTML atualiza o `index.html` guardado. Qualquer
+          // navegação dentro do escopo passa por aqui (abrir uma imagem ou um
+          // .js no navegador, por exemplo), e guardar a resposta dela no lugar
+          // do app deixaria o app abrindo como uma imagem — para sempre, porque
+          // o cache vem antes da rede. Achado na prova de apagar os dados.
           fetch(pedido)
-            .then((r) => r.ok && cache.put('index.html', r.clone()))
+            .then((r) => {
+              const tipo = r.headers && r.headers.get ? (r.headers.get('content-type') || '') : 'text/html';
+              if (r.ok && tipo.includes('text/html')) cache.put('index.html', r.clone());
+            })
             .catch(() => {});
           return guardada;
         }
