@@ -28,4 +28,12 @@ Future<void> carregarFontesDoApp() async {
     'assets/fonts/Poppins-Bold.ttf',
   ]);
   await carregar('JetBrainsMono', ['assets/fonts/JetBrainsMono.ttf']);
+
+  // Os ícones do Material vêm no SDK do Flutter, não no app. Sem eles, toda
+  // foto sai com quadrados no lugar de ícones — e o teste de widget também não
+  // saberia a largura certa de um botão com ícone.
+  final raiz = Platform.environment['FLUTTER_ROOT'] ??
+      File(Platform.resolvedExecutable).parent.parent.parent.parent.path;
+  final icones = '$raiz/bin/cache/artifacts/material_fonts/MaterialIcons-Regular.otf';
+  if (File(icones).existsSync()) await carregar('MaterialIcons', [icones]);
 }

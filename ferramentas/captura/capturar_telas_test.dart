@@ -33,9 +33,13 @@
 import 'dart:io';
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'package:levitasync/presentation/screens/songs/hino_por_numero_screen.dart';
+import 'package:levitasync/presentation/widgets/common/responsivo.dart';
 
 import '../../test/utilitarios/app_inventado.dart';
 
@@ -67,19 +71,36 @@ class _Tela {
 
 final _telas = <_Tela>[
   const _Tela('inicio', 0),
+  // O culto aberto: ao lado do calendário em tela larga, por cima no celular.
   _Tela('escala', 2, (t) => _tocar(t, find.textContaining('Culto de quarta'))),
   _Tela('musica', 1,
       (t) => _tocar(t, find.textContaining('Grande é a tua fidelidade'))),
+  // Hinários como a pessoa o encontra: com dedo (celular) o teclado; com
+  // mouse (computador), direto na lista.
   _Tela('hinarios', 1, (t) => _tocar(t, find.text('Hinários'))),
   _Tela('hinarios-lista', 1, (t) async {
     await _tocar(t, find.text('Hinários'));
-    await _tocar(t, find.text('Ver todos os hinos'));
+    if (find.text('Ver todos os hinos').evaluate().isNotEmpty) {
+      await _tocar(t, find.text('Ver todos os hinos'));
+    }
   }),
   _Tela('hinarios-busca', 1, (t) async {
     await _tocar(t, find.text('Hinários'));
-    await _tocar(t, find.text('Ver todos os hinos'));
-    await t.enterText(find.byType(TextField), 'promessa firmes');
+    if (find.text('Ver todos os hinos').evaluate().isNotEmpty) {
+      await _tocar(t, find.text('Ver todos os hinos'));
+    }
+    await t.enterText(
+        find.descendant(
+            of: find.byType(HinoPorNumeroScreen),
+            matching: find.byType(TextField)),
+        'promessa firmes');
     await assentar(t);
+    await _tocar(t, find.text('Trazer'));
+  }),
+  // O iPad: tela larga, mas com o dedo — o teclado numérico volta.
+  _Tela('hinarios-toque', 1, (t) async {
+    EntradaDoUsuario.registrar(PointerDeviceKind.touch);
+    await _tocar(t, find.text('Hinários'));
   }),
   const _Tela('chat', 3),
   const _Tela('perfil', 4),
@@ -91,6 +112,12 @@ final _telas = <_Tela>[
   }),
   _Tela('perfil-recolhido', 4, (t) async {
     await t.drag(find.byType(CustomScrollView).first, const Offset(0, -400));
+    await assentar(t);
+  }),
+  _Tela('projetar', 1, (t) async {
+    await _tocar(t, find.textContaining('Grande é a tua fidelidade'));
+    await _tocar(t, find.byTooltip('Mais opções'));
+    await _tocar(t, find.text('Projetar a letra (tela cheia)'));
     await assentar(t);
   }),
 ];
@@ -123,6 +150,8 @@ void main() {
       for (final tela in _telas.where((e) => nomes.contains(e.nome))) {
         testWidgets('$largura ${tema.padRight(6)} ${tela.nome}', (t) async {
           addTearDown(t.view.reset);
+          addTearDown(() => EntradaDoUsuario.registrar(PointerDeviceKind.mouse));
+          EntradaDoUsuario.registrar(PointerDeviceKind.mouse);
           await montarApp(t,
               tam: tam, escuro: tema == 'escuro', aba: tela.aba, chave: _chave);
           if (tela.depois != null) await tela.depois!(t);

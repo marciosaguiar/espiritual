@@ -14,13 +14,20 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 740 testes
+flutter test                   # 870 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
 cd test_regras && npm install && npm test    # 312 testes
+```
+
+Para ver o app em vários tamanhos de tela (sem Firebase, sem navegador):
+
+```bash
+CAPTURAR_EM=/pasta/das/fotos flutter test ferramentas/captura/capturar_telas_test.dart
+# opcionais: LARGURAS=375,768,1280,1920  TELAS=inicio,hinarios  TEMAS=claro,escuro
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -2183,8 +2190,8 @@ passar:
   (UTC) e reprovava no Mac do dono. O defeito era do TESTE (agora `toUtc()`).
   A suíte inteira foi rodada em `TZ=America/Sao_Paulo` e em UTC: 656 nos dois
   (675 depois de ler o texto real da Harpa; 710 depois do Cantor Cristão;
-  724 depois dos cultos do mesmo dia; 740 depois da trava de hinário errado — ver
-  as seções abaixo).
+  724 depois dos cultos do mesmo dia; 740 depois da trava de hinário errado; 870 depois dos
+  hinários compactos e do app no computador — ver as seções abaixo).
   **Ao mexer em data, rode também `TZ=America/Sao_Paulo flutter test`.**
 
 Os dois dizem a mesma coisa: o computador do dono é o ambiente que mais difere
@@ -2447,6 +2454,168 @@ reprovam; qualquer diferença acusando — o do "uma correção não é engano";
 piso de 5 removido — o dos poucos hinos; título comparado cru, sem tirar acento
 — o do acento; tela sem a pergunta — 4; "Importar mesmo assim" sem seguir — o da
 confirmação normal; título da confirmação sem o nome do hinário — 4.
+
+### Hinários compactos (20/11/2026)
+
+A aba Hinários tinha duas faixas enormes (a Harpa e o Cantor ocupavam um terço
+de um iPhone), o teclado empurrado para baixo e a ordenação num ícone escondido
+embaixo dele. O pedido: lado a lado, "Ver todos os hinos", ordem à vista, e
+(a) abrir o hino 15 em até 2 toques, (b) achar um hino por um trecho em até 3.
+
+- **Pastilhas, e a ordem muda por um botão com TEXTO.** A rodada anterior fez os
+  hinários virarem lista de pé para dar para arrastar. Lado a lado não existe
+  "arrastar para cima", e arrastar uma pastilha pequena exige firmeza na mão —
+  metade do ministério passa dos 60. Então o arrastar **saiu** (e com ele o
+  `ReorderableListView`, que o app não usava em mais lugar nenhum) e entrou
+  "Mudar a ordem": um botão com texto que acende setas ◀ ▶ em cada pastilha, mais
+  um cartão que diz "o primeiro da fila é o que abre quando você entra aqui". A
+  seta que não tem para onde ir some. Ícone sozinho foi descartado: setas
+  trocadas não dizem nada a quem nunca as viu.
+- **Duas formas de achar o hino, em abas com texto:** "Digitar o número" (a
+  primeira) e "Ver todos os hinos". O teclado cresce com o espaço que sobra (52 a
+  74 px por tecla): é tela usada de pé, e tecla grande erra menos. Contagem de
+  toques, medida em teste: **hino 15 da Harpa = 2** (1 e 5; a Harpa é a primeira
+  da fila); **achar por trecho = 3** (Ver todos → campo → resultado), fora a
+  digitação.
+- **A ordem está À VISTA como pastilhas** (Número, A–Z, Z–A, Mais tocados,
+  Favoritos), não num menu: o que está atrás de um ícone não existe para quem só
+  usa WhatsApp. As duas últimas rolam para o lado a 375 px, e a pastilha cortada
+  na borda é o convite para rolar. **A escolha é por PESSOA** (`..._<uid>` no
+  aparelho; quem nunca escolheu herda a global de antes, senão todo mundo voltaria
+  para "pelo número" sem mexer em nada).
+- **Uma lista só.** Repertório e biblioteca eram dois pedaços (o segundo com no
+  máximo 30 títulos, só ao digitar). `itensDoHinario` junta os dois — o hino que
+  está nos dois aparece UMA vez, como o do repertório — e a lista de 640 usa
+  altura fixa de linha (`itemExtent`), porque medir cada uma custaria a rolagem.
+- **Busca por nome, número ou trecho, todas as palavras em qualquer ordem**
+  ("firme promessas" acha "Firmes nas promessas"). **Só dígitos procuram pelo
+  NÚMERO**: "1" casaria com a estrofe "1" de quase toda letra, e a lista inteira
+  viraria resultado. A linha mostra o VERSO em que a busca apareceu, em itálico —
+  é o que faz a pessoa reconhecer o hino.
+- **Dentro das letras: o aparelho traz UMA vez, e pergunta antes.** A letra da
+  biblioteca só chegava ao aparelho quando alguém abria o hino (640 documentos).
+  Procurar por trecho exige as letras, e baixar tudo ao abrir o app custaria 640
+  leituras por pessoa por dia, num plano grátis de 50 mil. Então a busca por
+  texto mostra "Estou procurando só pelos nomes… o aparelho precisa trazer as
+  letras uma vez" com o botão **Trazer** (`BibliotecaProvider.baixarLetras`,
+  `FirestoreService.lerTodasAsLetras`: uma consulta, uma leitura por hino). Daí em
+  diante fica no aparelho (um JSON por hinário em `LocalStorageService`) e procura
+  sem custo. Alternativa descartada: um campo de busca dentro do índice — exigiria
+  importar os dois hinários de novo, mudar as regras e a lista fechada de campos.
+- **O que guardou ficou velho?** O índice passou a trazer `atualizadoEm` (já era
+  gravado pelo importador). As letras guardadas levam essa **marca**; se o líder
+  importar de novo, a marca muda e o aparelho oferece trazer de novo — letra
+  corrigida pela metade seria pior. Importar neste aparelho também esquece o
+  guardado, mas em "melhor esforço": falhar em limpar um cache não pode
+  transformar numa importação com erro algo já gravado no banco.
+- **Dedo ou mouse decide se há teclado na tela** (`EntradaDoUsuario`). O navegador
+  não diz se há tela de toque — um iPad grande e um monitor têm a mesma largura —,
+  então vale o que a pessoa USOU por último: tela estreita é sempre toque; larga
+  começa como mouse e vira toque no primeiro toque de dedo (e volta no primeiro
+  movimento do mouse). Com mouse a tela abre direto na lista, com o cursor na
+  busca: digitar o número e Enter abre, "/" volta à busca, Esc limpa, e digitar um
+  número com o cursor fora da busca já o escreve nela. Quem usa dedo e teclado (um
+  iPad com teclado) continua o número no teclado de verdade depois do primeiro
+  toque nas teclas.
+- **Defeito achado no caminho: "Últimos abertos" nunca mostrou um hino.** A chave
+  estava escrita `'\$hinario|\$numero'` — o texto LITERAL, igual para todo hino.
+  Nada que se gravava voltava, e nenhum teste olhava. Agora há teste, e a mutação
+  (a barra de volta) o reprova em 3 pontos.
+- A busca saiu de baixo do teclado, e os 6 testes dela foram para "Ver todos os
+  hinos" com as mesmas garantias. **Os testes de layout agora carregam a Poppins
+  de verdade** (`test/utilitarios/fontes.dart`): a fonte de teste é mais larga e
+  ora reprovava o que cabe, ora aprovava o que não cabe.
+
+### O app no computador (20/11/2026)
+
+O app só esticava o layout do celular: barra de baixo de 1.200 px, chat de 2.400
+px, Início com meio ecrã vazio, avatar do Perfil cortado. A regra: **um app só, e
+o celular a 375 px não muda** (barra de baixo, uma tela de cada vez).
+
+- **Os tamanhos moram num lugar só** (`Porte`, em `widgets/common/responsivo.dart`):
+  navegação lateral a partir de **720 px** da janela (só ícone com o nome embaixo
+  até 1100, nome ao lado depois), **dois painéis a partir de 880 px de CONTEÚDO**
+  (já sem a navegação — a 768 a janela tem 680 úteis, e dois painéis ficariam
+  apertados), coluna de leitura de 760 px, coluna larga de 1180 px.
+- **Navegação lateral** no `MainScreen`, com a mãozinha e o realce do mouse. A
+  fila de pedidos pendentes (o selo do Perfil) passou a ser criada UMA vez: criada
+  a cada `build`, o `StreamBuilder` reassinava a consulta a cada troca de aba, e
+  reassinatura é leitura cobrada.
+- **Largura de leitura:** Chat e Perfil em 760 px; Início em 1180 (e em duas
+  colunas: o que eu toco, à esquerda; o que espera por mim, à direita); telas
+  abertas por cima em 980 (`GlassPageRoute.larguraMaxima`, o fundo continua
+  cobrindo a janela). No celular a coluna é mais larga que a tela e nada muda.
+- **Lista e detalhe lado a lado** (`MestreDetalhe`) em **Escala, Músicas
+  (repertório, hinários e Bíblia) e Painel do líder**. Quem abre uma tela usa
+  `abrirTela(context, builder)`: por cima no celular, no painel da direita em tela
+  larga — **nenhuma tela precisa saber em que tamanho está**. A lista guarda o
+  estado (a busca digitada, a rolagem) quando a janela cruza os 880 px, com uma
+  `GlobalKey`: redimensionar não pode apagar o que se digitou.
+- **O que fica por cima de tudo, de propósito:** telas abertas pela raiz (adicionar
+  música, editar, tela de projetar) cobrem também a navegação lateral. A de
+  projetar PRECISA: o telão não pode mostrar o menu do app.
+- **Mouse:** `ComMao` e `GlassCard` mostram a mãozinha; a navegação lateral acende
+  ao passar. **Teclado:** ver "Projetar a letra" e "Modo ao vivo" abaixo, e o das
+  Hinários acima.
+- **Defeito achado: o avatar do Perfil ficava cortado ao rolar.** O cabeçalho
+  encolhe, o conteúdo (avatar, nome, etiquetas) tem altura fixa e a barra o cortava
+  ao meio; no fim sobrava uma barra de vidro VAZIA. Agora o conteúdo encolhe junto
+  (`FittedBox`), some antes de ficar pequeno demais, e a barra recolhida mostra um
+  avatar pequeno e o nome. **O teste mede o avatar DENTRO do cabeçalho em cada
+  ponto da rolagem** — olhar só exceções não pegava, porque o defeito era visual
+  (provado: sem o `FittedBox` o teste reprova).
+
+- **O que isto custou no pacote: +19.298 bytes** (3.816.285 → 3.835.583, medidos
+  antes e depois no MESMO Flutter, mesmas flags da CI). Quase tudo o que entrou
+  (lista, pastilhas, projetar, navegação lateral, painel lado a lado) foi
+  compensado pelo que saiu junto com o arrastar. A CI mediu 4.016.285 no último
+  envio (folga 87.719); somando, deve sair perto de 4.035.000, com ~68 KB de
+  folga — **a trava não precisou mexer**. O valor oficial é o que a CI imprimir.
+
+### Projetar a letra (20/11/2026)
+
+Tela cheia para o telão: fundo preto, UMA estrofe por vez, o maior tamanho em que
+a linha mais comprida cabe, **sem cifra**. Aberta de dois lugares: ⋯ → "Projetar a
+letra" na música, e o ícone de projetar no hino da biblioteca. Quem usa é a pessoa
+do computador ligado ao projetor, no meio do culto — o oposto do resto do app.
+
+- **Avança como se passa slide:** espaço, →, ↓, Page Down e **Enter** (o botão
+  "próximo" de um controle de apresentador manda Enter ou Page Down); ←, ↑, Page Up
+  e Backspace voltam; Shift+espaço volta; Home/End; Esc sai; F alterna a tela cheia
+  do navegador. Clique: o terço da esquerda volta, o resto avança.
+- **Botão e cursor somem depois de 3 s parados.** Botão e mãozinha sobre a letra,
+  na frente da igreja, é exatamente o que não pode aparecer.
+- **A divisão em slides é pura e testada** (`dividirEmSlides`): o número da estrofe
+  vira rótulo ("1 Eu vi…" → rótulo "1"), `REFRÃO` e `[côro]` também (não se canta
+  "refrão"), uma estrofe comprida é partida sem cortar verso nem perder linha, e
+  letra com acordes sai sem eles. O número só vale como rótulo no COMEÇO de um
+  bloco: "5 pães e 2 peixes" no meio da estrofe é verso.
+- **O computador do telão não apaga a tela** (Wake Lock, o mesmo do Modo ao vivo).
+  Se o navegador recusa a tela cheia, a tela diz "aperte F11" em vez de ficar com
+  um botão que não faz nada, e sair da tela de projetar sai da tela cheia que ela
+  pediu (senão a pessoa voltaria ao app sem barra de endereço sem saber por quê).
+- **Achado pelo teste a 375 px:** a dica "espaço ou setas para avançar" estourava a
+  largura do celular em 37 px. Agora só aparece onde há teclado.
+- **Modo ao vivo no teclado:** espaço, → ou ↓ vão à próxima parte; ← ou ↑, à
+  anterior; Shift+→ e Shift+← trocam de música; Esc sai. São as MESMAS ações dos
+  botões da barra de baixo e nenhuma a mais, e a conta de qual tecla faz o quê é a
+  mesma da tela de projetar (`acaoDaTecla`), testada uma vez.
+
+### Fotografar o app (20/11/2026)
+
+`ferramentas/captura/capturar_telas_test.dart` roda as telas, os providers e o tema
+DE VERDADE, com as fontes do app e dados inventados (`test/utilitarios/`), e
+escreve uma foto por tamanho, tema e tela — sem Firebase, sem emulador e sem
+navegador. Para isso o app ganhou costuras pequenas, todas com padrão que não muda
+nada: `MainScreen(abaInicial, escutas)`, `ChatScreen(escutas)`, `carregarParaTeste`
+nos providers de músicas e de chat, e a lista de pendentes trocável em teste.
+
+**O que a foto NÃO é:** é o renderizador de testes do Flutter. A distribuição, as
+cores e o texto são os reais; **o desfoque do vidro, a suavização das letras, as
+sombras (que saem como um contorno escuro nos botões brancos) e os emojis (que saem
+como quadrado: o ambiente não tem fonte de emoji) não são os de um navegador**, e o
+comportamento de toque e de rolagem também não. Foto daqui prova que NADA ESTOURA
+nem fica cortado — e não substitui abrir o app num iPhone e num monitor.
 
 ### O manual e o guia dentro do app
 
