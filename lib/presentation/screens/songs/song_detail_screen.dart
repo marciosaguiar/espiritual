@@ -7,11 +7,13 @@ import '../../../core/constants/hinarios.dart';
 import '../../providers/songs_provider.dart';
 import 'projetar_letra_screen.dart';
 import '../../../core/constants/app_colors.dart';
+import '../../../core/utils/ajuste_de_fonte.dart';
 import '../../../core/utils/chord_transposer.dart';
 import '../../../core/utils/cifra_colada.dart';
 import '../../../core/utils/mapa_da_musica.dart';
 import '../../widgets/common/abrir_link.dart';
 import '../../widgets/common/glass.dart';
+import '../../widgets/common/responsivo.dart';
 import '../../widgets/songs/colar_cifra.dart';
 import 'editar_musica_screen.dart';
 import 'editor_de_cifra_screen.dart';
@@ -798,18 +800,44 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
           Expanded(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 40),
-              child: _TextoMusica(
-                texto: texto,
-                mono: mono,
-                style: TextStyle(
-                  fontFamily: mono ? 'JetBrainsMono' : 'Poppins',
-                  fontSize: mono ? 14 : (canta ? 22 : 16),
-                  height: mono ? 1.5 : 1.8,
-                  fontWeight: canta && !mono ? FontWeight.w500 : null,
-                  color: isDark
-                      ? AppColors.textPrimaryDark
-                      : AppColors.textPrimaryLight,
-                ),
+              // `width: infinity` não é enfeite. Um `SingleChildScrollView`
+              // dentro de um `Column` ENCOLHE até a largura do que tem dentro,
+              // e o `Column` o centraliza: em tela larga a letra virava um
+              // bloco de ~360 px (a linha mais comprida) boiando no meio da
+              // tela, com o resto vazio. No celular ninguém via, porque a
+              // linha já enche a tela.
+              child: SizedBox(
+                width: double.infinity,
+                child: LayoutBuilder(builder: (ctx, c) {
+                  final base = TextStyle(
+                    fontFamily: mono ? 'JetBrainsMono' : 'Poppins',
+                    height: mono ? 1.5 : 1.8,
+                    fontWeight: canta && !mono ? FontWeight.w500 : null,
+                    color: isDark
+                        ? AppColors.textPrimaryDark
+                        : AppColors.textPrimaryLight,
+                  );
+                  final grande = canta ? 22.0 : 16.0;
+                  // Quem CANTA, em tela larga: a letra encolhe até a linha
+                  // mais comprida caber, em vez de quebrar no meio da frase.
+                  // A cifra (mono) nunca quebra — rola para o lado —, e no
+                  // celular o tamanho é o de sempre.
+                  final fonte = mono
+                      ? 14.0
+                      : (canta && Porte.lateral(ctx)
+                          ? tamanhoQueCabe(
+                              texto: texto,
+                              estilo: base,
+                              largura: c.maxWidth,
+                              maximo: grande,
+                            )
+                          : grande);
+                  return _TextoMusica(
+                    texto: texto,
+                    mono: mono,
+                    style: base.copyWith(fontSize: fonte),
+                  );
+                }),
               ),
             ),
           ),
@@ -929,15 +957,19 @@ class _WorshipModeView extends StatelessWidget {
               Expanded(
                 child: SingleChildScrollView(
                   padding: const EdgeInsets.fromLTRB(24, 24, 24, 40),
-                  child: _TextoMusica(
-                    texto: displayText,
-                    mono: showChords,
-                    style: TextStyle(
-                      fontFamily: showChords ? 'JetBrainsMono' : 'Poppins',
-                      fontSize: fontSize,
-                      height: showChords ? 1.5 : 2.0,
-                      color: Colors.white,
-                      fontWeight: FontWeight.w500,
+                  // Largura inteira: ver o comentário na tela da música.
+                  child: SizedBox(
+                    width: double.infinity,
+                    child: _TextoMusica(
+                      texto: displayText,
+                      mono: showChords,
+                      style: TextStyle(
+                        fontFamily: showChords ? 'JetBrainsMono' : 'Poppins',
+                        fontSize: fontSize,
+                        height: showChords ? 1.5 : 2.0,
+                        color: Colors.white,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
                 ),

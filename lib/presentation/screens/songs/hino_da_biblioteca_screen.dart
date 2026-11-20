@@ -3,12 +3,14 @@ import 'package:provider/provider.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/hinarios.dart';
+import '../../../core/utils/ajuste_de_fonte.dart';
 import '../../../data/models/hino_da_biblioteca.dart';
 import '../../../data/models/song_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/biblioteca_provider.dart';
 import '../../providers/songs_provider.dart';
 import '../../widgets/common/glass.dart';
+import '../../widgets/common/responsivo.dart';
 import 'projetar_letra_screen.dart';
 import 'song_detail_screen.dart';
 
@@ -49,11 +51,20 @@ class _HinoDaBibliotecaScreenState extends State<HinoDaBibliotecaScreen> {
   double _fonte = 22;
   bool _gravando = false;
 
+  /// Depois que a pessoa aperta A+ ou A−, o tamanho é o DELA, exato. Antes
+  /// disso, em tela larga, a letra encolhe o que for preciso para nenhuma
+  /// linha quebrar (ver `tamanhoQueCabe`). Sem esta chave, o A+ pareceria
+  /// quebrado: a letra já encolhida não mudaria até a pessoa passar do
+  /// tamanho que cabe.
+  bool _ajustouAMao = false;
+
   void _aumentar() => setState(() {
+        _ajustouAMao = true;
         if (_fonte < _maximo) _fonte += _passo;
       });
 
   void _diminuir() => setState(() {
+        _ajustouAMao = true;
         if (_fonte > _minimo) _fonte -= _passo;
       });
 
@@ -159,39 +170,57 @@ class _HinoDaBibliotecaScreenState extends State<HinoDaBibliotecaScreen> {
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      widget.hino.titulo,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: _fonte + 2,
-                        fontWeight: FontWeight.w700,
-                        height: 1.25,
-                        color: corTexto,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      '${widget.hinario.nome}, hino ${widget.hino.numero}',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 13,
-                        color: corMuda,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Text(
-                      widget.hino.letra,
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: _fonte,
-                        height: 1.55,
-                        color: corTexto,
-                      ),
-                    ),
-                  ],
+                // Largura inteira, e não a da linha mais comprida: um
+                // `SingleChildScrollView` dentro de um `Column` encolhe até o
+                // conteúdo e é centralizado, e em tela larga o hino virava um
+                // bloco estreito no meio da janela.
+                child: SizedBox(
+                  width: double.infinity,
+                  child: LayoutBuilder(builder: (ctx, c) {
+                    // Em tela larga, a linha do hino NÃO quebra no meio da
+                    // frase: a letra encolhe até caber. No celular, nada muda.
+                    final estiloBase = TextStyle(
+                        fontFamily: 'Poppins', height: 1.55, color: corTexto);
+                    final fonte = _ajustouAMao || !Porte.lateral(ctx)
+                        ? _fonte
+                        : tamanhoQueCabe(
+                            texto: widget.hino.letra,
+                            estilo: estiloBase,
+                            // O recuo de 20 de cada lado já saiu de `c`.
+                            largura: c.maxWidth,
+                            maximo: _fonte,
+                            minimo: _minimo,
+                          );
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.hino.titulo,
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: fonte + 2,
+                            fontWeight: FontWeight.w700,
+                            height: 1.25,
+                            color: corTexto,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${widget.hinario.nome}, hino ${widget.hino.numero}',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 13,
+                            color: corMuda,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        Text(
+                          widget.hino.letra,
+                          style: estiloBase.copyWith(fontSize: fonte),
+                        ),
+                      ],
+                    );
+                  }),
                 ),
               ),
             ),
@@ -207,8 +236,8 @@ class _HinoDaBibliotecaScreenState extends State<HinoDaBibliotecaScreen> {
                               ? const SizedBox(
                                   width: 18,
                                   height: 18,
-                                  child: CircularProgressIndicator(
-                                      strokeWidth: 2),
+                                  child:
+                                      CircularProgressIndicator(strokeWidth: 2),
                                 )
                               : const Icon(Icons.library_add_rounded),
                           label: const Text('Pôr no repertório'),
