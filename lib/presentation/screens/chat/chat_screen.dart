@@ -1959,17 +1959,31 @@ class _WaMessageBubble extends StatelessWidget {
                                 // os aprovados abriram o chat depois dela.
                                 // Antes havia um ✓✓ fixo, que prometia
                                 // confirmação de leitura sem nada registrar.
+                                //
+                                // Um RELÓGIO no lugar dos tiques enquanto a
+                                // mensagem espera a internet: escrita feita
+                                // sem sinal aparece na hora, mas ainda não
+                                // chegou a ninguém — e a pessoa precisa
+                                // saber a diferença.
                                 if (isMe)
                                   Padding(
                                     padding: const EdgeInsets.only(left: 3),
-                                    child: Icon(
-                                      vistaPorTodos == true
-                                          ? Icons.done_all_rounded
-                                          : Icons.done_rounded,
-                                      size: 14,
-                                      color: vistaPorTodos == true
-                                          ? const Color(0xFF53BDEB)
-                                          : metaColor,
+                                    child: Semantics(
+                                      label: message.pendente
+                                          ? 'Esperando a internet para enviar'
+                                          : null,
+                                      child: Icon(
+                                        message.pendente
+                                            ? Icons.schedule_rounded
+                                            : (vistaPorTodos == true
+                                                ? Icons.done_all_rounded
+                                                : Icons.done_rounded),
+                                        size: 14,
+                                        color: vistaPorTodos == true &&
+                                                !message.pendente
+                                            ? const Color(0xFF53BDEB)
+                                            : metaColor,
+                                      ),
                                     ),
                                   ),
                               ],

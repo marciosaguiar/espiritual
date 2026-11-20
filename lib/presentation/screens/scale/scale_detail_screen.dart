@@ -59,10 +59,15 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
       setState(() => _scale = updated);
     }
 
+    final pendente = provider.presencaPendente(_scale.id, user.id);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(error ??
-            (!isConfirmed ? 'Presença confirmada!' : 'Presença cancelada')),
+            (pendente
+                ? 'Salvo. O líder será avisado quando a internet voltar.'
+                : (!isConfirmed
+                    ? 'Presença confirmada!'
+                    : 'Presença cancelada'))),
         backgroundColor: error == null ? AppColors.success : AppColors.red,
       ),
     );
@@ -601,7 +606,7 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                 decoration: BoxDecoration(
                   color: isConfirmed
                       ? AppColors.success.withOpacity(0.1)
-                      : AppColors.blue.withOpacity(0.1),
+                      : AppColors.blue.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
                     color: isConfirmed
@@ -721,7 +726,7 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
-                        color: AppColors.blue.withOpacity(0.1),
+                        color: AppColors.blue.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: const Row(
@@ -869,6 +874,7 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
                 return _LevitaRow(
                   levita: l,
                   nomes: context.watch<AuthProvider>().nomes,
+                  scaleId: _scale.id,
                 );
               }),
 
@@ -1122,7 +1128,7 @@ class _SongRow extends StatelessWidget {
               width: 28,
               height: 28,
               decoration: BoxDecoration(
-                color: AppColors.blue.withOpacity(0.1),
+                color: AppColors.blue.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Center(
@@ -1181,7 +1187,7 @@ class _SongRow extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: AppColors.blue.withOpacity(0.1),
+                color: AppColors.blue.withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
@@ -1207,11 +1213,18 @@ class _LevitaRow extends StatelessWidget {
   final Map<String, String> nomes;
 
   final ScaleLevita levita;
-  const _LevitaRow({required this.levita, required this.nomes});
+
+  /// O culto onde esta linha está: é com ele que se sabe se a presença desta
+  /// pessoa ainda espera a internet.
+  final String scaleId;
+  const _LevitaRow(
+      {required this.levita, required this.nomes, required this.scaleId});
 
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final esperando = context.select<ScaleProvider, bool>(
+        (p) => p.presencaPendente(scaleId, levita.userId));
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -1279,29 +1292,47 @@ class _LevitaRow extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: levita.confirmed
-                  ? AppColors.success.withOpacity(0.1)
-                  : Colors.orange.withOpacity(0.1),
+              color: esperando
+                  ? AppColors.blue.withValues(alpha: 0.1)
+                  : levita.confirmed
+                      ? AppColors.success.withOpacity(0.1)
+                      : Colors.orange.withOpacity(0.1),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 Icon(
-                  levita.confirmed
-                      ? Icons.check_circle_rounded
-                      : Icons.schedule_rounded,
+                  esperando
+                      ? Icons.cloud_upload_outlined
+                      : levita.confirmed
+                          ? Icons.check_circle_rounded
+                          : Icons.schedule_rounded,
                   size: 12,
-                  color: levita.confirmed ? AppColors.success : Colors.orange,
+                  color: esperando
+                      ? AppColors.blue
+                      : levita.confirmed
+                          ? AppColors.success
+                          : Colors.orange,
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  levita.confirmed ? 'Confirmado' : 'Pendente',
+                  // "Esperando a internet" é outra coisa que "Pendente": a
+                  // pessoa JÁ escolheu, só falta chegar ao banco.
+                  esperando
+                      ? 'Esperando a internet'
+                      : levita.confirmed
+                          ? 'Confirmado'
+                          : 'Pendente',
                   style: TextStyle(
                     fontFamily: 'Poppins',
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
-                    color: levita.confirmed ? AppColors.success : Colors.orange,
+                    color: esperando
+                        ? AppColors.blue
+                        : levita.confirmed
+                            ? AppColors.success
+                            : Colors.orange,
                   ),
                 ),
               ],

@@ -11,6 +11,8 @@ import '../../../core/constants/app_strings.dart';
 import '../../../data/models/scale_model.dart';
 import '../scale/scale_detail_screen.dart';
 import '../scale/modo_ao_vivo_screen.dart';
+import '../../../data/services/avisos_de_sincronia.dart';
+import '../../widgets/home/avisos_de_sincronia.dart';
 import '../../widgets/home/aviso_de_saude.dart';
 import '../../widgets/home/pendencias.dart';
 import '../../../data/services/local_storage_service.dart';
@@ -69,7 +71,11 @@ class _HomeScreenState extends State<HomeScreen> {
         (quantosPendentes(auth.pessoas) > 0 ||
             cultosSemEscala(escala.scales, DateTime.now()).isNotEmpty);
 
-    return !temCulto && !temMensagem && !temLider;
+    // Um recado de edição que não valeu é pendência: dizer "nada pendente"
+    // acima dele seria mentir.
+    final temRecado = AvisosDeSincronia.instancia.temAviso;
+
+    return !temCulto && !temMensagem && !temLider && !temRecado;
   }
 
   @override
@@ -220,6 +226,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   // número" e o atalho da Bíblia → aba Músicas; versículo do
                   // dia → topo da Bíblia; sugestões do dia → Repertório.
                   final aviso = <Widget>[
+                    // Recado de uma edição que não valeu: vem antes de tudo
+                    // porque é sobre algo que a pessoa JÁ fez e acha que está
+                    // salvo.
+                    const CartaoDeAvisosDeSincronia(),
                     Pendencias(
                       onAbrirChat: widget.onAbrirChat,
                       onAbrirMembros: widget.onAbrirMembros,
@@ -227,7 +237,14 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                     const InstallBanner(),
                     const _CartaoRecuperarSenha(),
-                    NadaPendente(mostrar: _nadaPendente(context)),
+                    // Os recados não vêm de um Provider: sem escutá-los aqui,
+                    // a linha "nada pendente" ficaria na tela depois de um
+                    // recado chegar.
+                    ListenableBuilder(
+                      listenable: AvisosDeSincronia.instancia,
+                      builder: (ctx, _) =>
+                          NadaPendente(mostrar: _nadaPendente(ctx)),
+                    ),
                   ];
 
                   // Em tela larga as duas metades da pergunta ficam lado a
@@ -763,10 +780,17 @@ class _MyNextCallCardState extends State<_MyNextCallCard> {
 
     if (!mounted) return;
     setState(() => _saving = false);
+    // Sem internet a escolha vale na tela e espera para ir ao líder: a
+    // mensagem diz isso, e não "confirmada" como se já tivesse chegado.
+    final pendente = context
+        .read<ScaleProvider>()
+        .presencaPendente(widget.scale!.id, userId);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(error ??
-            (confirmed ? 'Presença confirmada!' : 'Presença cancelada')),
+            (pendente
+                ? 'Salvo. O líder será avisado quando a internet voltar.'
+                : (confirmed ? 'Presença confirmada!' : 'Presença cancelada'))),
         backgroundColor: error == null ? AppColors.success : AppColors.red,
       ),
     );
@@ -790,6 +814,8 @@ class _MyNextCallCardState extends State<_MyNextCallCard> {
     }) ?? scale;
 
     final confirmed = live.hasUserConfirmed(user.id);
+    final aguardando = context
+        .select<ScaleProvider, bool>((p) => p.presencaPendente(live.id, user.id));
     // "domingo, 19h" — sem os minutos quando são zero, que é o caso de quase
     // todo culto, e sem o "às", que a frase não precisa.
     final hora = live.date.minute == 0
@@ -864,6 +890,27 @@ class _MyNextCallCardState extends State<_MyNextCallCard> {
                 color: Colors.white70,
               ),
             ),
+            if (aguardando)
+              const Padding(
+                padding: EdgeInsets.only(top: 6),
+                child: Row(
+                  children: [
+                    Icon(Icons.schedule_rounded, size: 14, color: Colors.white),
+                    SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Esperando a internet para avisar o líder',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 14),
             if (_saving)
               const SizedBox(

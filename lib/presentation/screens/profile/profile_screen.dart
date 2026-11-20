@@ -10,6 +10,7 @@ import '../../../core/utils/chord_transposer.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/user_model.dart';
 import '../../../core/platform/install.dart';
+import '../../../data/services/fila_service.dart';
 import '../../../data/services/auth_service.dart';
 import '../../../data/services/avisos_service.dart';
 import '../../../data/services/firestore_service.dart';
@@ -436,7 +437,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   context: ctx,
                   builder: (_) => AlertDialog(
                     title: const Text('Sair da conta'),
-                    content: const Text('Deseja realmente sair da sua conta?'),
+                    content: Text(
+                      FilaService.fila.pendentes > 0
+                          ? 'Você tem ${FilaService.fila.pendentes == 1 ? '1 alteração que ainda não foi enviada' : '${FilaService.fila.pendentes} alterações que ainda não foram enviadas'}, '
+                              'porque falta internet. Se sair agora, '
+                              '${FilaService.fila.pendentes == 1 ? 'ela se perde' : 'elas se perdem'}.\n\n'
+                              'Deseja sair mesmo assim?'
+                          : 'Deseja realmente sair da sua conta?',
+                    ),
                     actions: [
                       TextButton(
                         onPressed: () => Navigator.pop(ctx, false),

@@ -17,6 +17,8 @@ import '../../widgets/common/responsivo.dart';
 import '../../widgets/songs/colar_cifra.dart';
 import 'editar_musica_screen.dart';
 import 'editor_de_cifra_screen.dart';
+import '../../../data/services/app_firebase.dart';
+import '../../../data/services/arranjos_locais.dart';
 import '../../../data/services/local_storage_service.dart';
 import '../../../data/models/arrangement_model.dart';
 import '../../../data/services/firestore_service.dart';
@@ -125,14 +127,37 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
   /// Alteração que ainda espera a internet fica por cima nos dois casos.
   Future<void> _loadArrangement() async {
     final songs = context.read<SongsProvider>();
-    final doAparelho =
-        await FirestoreService.getArrangementDoAparelho(widget.song.id);
+    // 1) A cópia do armazém local: disco, sem rede e sem esperar o Firebase.
+    var doAparelho = await ArranjosLocais.ler(widget.song.id);
     if (!mounted) return;
-    _mostrarArranjo(songs.arranjoComPendencias(widget.song.id, doAparelho),
-        primeira: true);
+    if (doAparelho != null) {
+      _mostrarArranjo(songs.arranjoComPendencias(widget.song.id, doAparelho),
+          primeira: true);
+    }
 
+    // 2) Daí em diante precisa do banco. Antes de o banco ligar, ou sem
+    // internet, a cifra que já está na tela é a resposta.
+    final erroAoLigar = await AppFirebase.pronto;
+    if (!mounted || erroAoLigar != null) return;
+
+    // O cache do próprio Firestore pode ter a cifra mesmo sem cópia nossa.
+    if (doAparelho == null) {
+      doAparelho =
+          await FirestoreService.getArrangementDoAparelho(widget.song.id);
+      if (!mounted) return;
+      _mostrarArranjo(songs.arranjoComPendencias(widget.song.id, doAparelho),
+          primeira: true);
+    }
+
+    // 3) O servidor, em segundo plano: só substitui o que está na tela se de
+    // fato respondeu, e guarda a resposta para a próxima vez.
     final r = await FirestoreService.lerArranjoDoServidor(widget.song.id);
     if (!mounted || !r.ok) return;
+    if (r.arranjo != null) {
+      ArranjosLocais.guardar(r.arranjo!);
+    } else {
+      ArranjosLocais.guardarAusencia(widget.song.id);
+    }
     _mostrarArranjo(songs.arranjoComPendencias(widget.song.id, r.arranjo),
         primeira: doAparelho == null);
   }
@@ -147,6 +172,14 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       if (primeira) _showChords = !canta && (found?.hasChords ?? false);
     });
   }
+
+  /// A música COMO ESTÁ AGORA no repertório, e não como era quando a tela
+  /// abriu. Editar a partir da cópia velha desfaria, de carona, o que outra
+  /// pessoa mudou nesse meio tempo — e, com a fila, a conta de "o que mudei"
+  /// seria feita contra o valor errado.
+  SongModel _viva(SongsProvider songs) =>
+      songs.allSongs.where((s) => s.id == widget.song.id).firstOrNull ??
+      widget.song;
 
   /// Quem cadastrou a música pode corrigir o cadastro dela.
   bool _souQuemCadastrou(String? meuId) =>
@@ -166,7 +199,7 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       context,
       GlassPageRoute(
         builder: (_) => EditarMusicaScreen(
-          musica: widget.song,
+          musica: _viva(songs),
           arranjo: _arrangement,
         ),
       ),
@@ -328,20 +361,23 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
     // Trocar sem perguntar também não serve: o tom original é da obra, e o
     // site pode estar mostrando a cifra em outro. Então: vazio, preenche;
     // diferente, pergunta.
-    var novoTom = widget.song.originalKey;
+    final viva = _viva(songs);
+    var novoTom = viva.originalKey;
     final tomDoSite = tomDaLista(r.tom);
-    if (tomDoSite != null && tomDoSite != widget.song.originalKey) {
-      if (widget.song.originalKey.trim().isEmpty) {
+    if (tomDoSite != null && tomDoSite != viva.originalKey) {
+      if (viva.originalKey.trim().isEmpty) {
         novoTom = tomDoSite;
-      } else if (await _confirmarTroca(widget.song.originalKey, tomDoSite)) {
+      } else if (await _confirmarTroca(viva.originalKey, tomDoSite)) {
         novoTom = tomDoSite;
       }
       if (!mounted) return;
     }
 
-    final letraNova = r.letra.isNotEmpty && r.letra != widget.song.lyrics;
-    if (erro == null && (letraNova || novoTom != widget.song.originalKey)) {
-      erro = await songs.updateSong(widget.song.copyWith(
+    final letraNova = r.letra.isNotEmpty && r.letra != viva.lyrics;
+    if (erro == null && (letraNova || novoTom != viva.originalKey)) {
+      // Parte da música NO MOMENTO de gravar, e não de antes da pergunta do
+      // tom: a pergunta leva segundos, e outra pessoa pode ter mexido.
+      erro = await songs.updateSong(_viva(songs).copyWith(
         lyrics: letraNova ? r.letra : null,
         originalKey: novoTom,
       ));
@@ -732,6 +768,29 @@ class _SongDetailScreenState extends State<SongDetailScreen> {
       ),
       body: Column(
         children: [
+          // Alteração feita sem internet: aparece na tela, e esta linha diz
+          // que ainda não chegou ao ministério. Some sozinha quando chega.
+          if (songs.musicaPendente(widget.song.id) ||
+              songs.arranjoPendente(widget.song.id))
+            Container(
+              width: double.infinity,
+              color: AppColors.blue.withValues(alpha: 0.12),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+              child: const Row(
+                children: [
+                  Icon(Icons.cloud_upload_outlined,
+                      size: 15, color: AppColors.blue),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Sua alteração espera a internet para chegar ao '
+                      'ministério.',
+                      style: TextStyle(fontFamily: 'Poppins', fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // O TOM, e nada mais.
           //
           // É a única coisa que se mexe lendo a música, e a primeira que

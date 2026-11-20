@@ -19,6 +19,9 @@ import '../../../core/utils/compartilhado.dart';
 import '../../data/services/app_firebase.dart';
 import '../../data/services/avisos_service.dart';
 import '../../data/services/local_storage_service.dart';
+import '../../data/services/preparo_offline.dart';
+import '../../data/services/biblia_service.dart' show traducoesDisponiveis;
+import '../widgets/common/faixa_de_rede.dart';
 import '../widgets/common/glass.dart';
 import '../widgets/common/responsivo.dart';
 import 'home/home_screen.dart';
@@ -326,6 +329,13 @@ class _MainScreenState extends State<MainScreen> {
     _timerDaAgenda = Timer(const Duration(milliseconds: 1500), () {
       if (mounted) agenda.listen();
     });
+    // Deixa o app pronto para o culto sem sinal: cifras, letras dos hinos e a
+    // Bíblia, AOS POUCOS e dentro do orçamento diário de leituras. Roda duas
+    // vezes — logo depois da abertura, e de novo quando o repertório já
+    // chegou — e é seguro repetir: o que já foi feito não é pedido de novo.
+    Timer(const Duration(seconds: 8), _prepararOffline);
+    Timer(const Duration(seconds: 60), _prepararOffline);
+
     // A fonte da cifra (fora do pacote de abertura) é buscada logo depois que
     // o Início já tem o que mostrar, para estar pronta quando a pessoa abrir
     // uma música. Não compete com a abertura, e dá tempo de sobra antes do
@@ -341,6 +351,27 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     if (_auth!.isAdmin) _agendarGeracao(agenda, scale);
+  }
+
+  bool _preparando = false;
+
+  Future<void> _prepararOffline() async {
+    if (!mounted || _preparando) return;
+    _preparando = true;
+    try {
+      final songs = context.read<SongsProvider>();
+      final eu = _auth?.user;
+      await PreparoOffline().executar(
+        idsDeMusicas: [for (final m in songs.repertorio) m.id],
+        hinarios: LocalStorageService.ordemDosHinariosDe(eu?.id),
+        traducaoDaBiblia: LocalStorageService.getUltimaLeitura()?.traducao ??
+            traducoesDisponiveis.first.id,
+      );
+    } catch (_) {
+      // Preparação é bônus: falhar nela não pode aparecer para ninguém.
+    } finally {
+      _preparando = false;
+    }
   }
 
   /// Cria os cultos das próximas quatro semanas que estão faltando.
@@ -401,17 +432,19 @@ class _MainScreenState extends State<MainScreen> {
     Widget montar(int pendentes) {
       // `AbaVisivel` conta a cada aba se é a da vez: as outras continuam
       // montadas (guardam busca e rolagem), mas não podem reagir ao Esc.
-      final pilha = IndexedStack(
-        index: _currentIndex,
-        children: [
-          for (var i = 0; i < _screens.length; i++)
-            AbaVisivel(
-              visivel: i == _currentIndex,
-              child: _construidas.contains(i)
-                  ? _screens[i]
-                  : const SizedBox.shrink(),
-            ),
-        ],
+      final pilha = FaixaDeRede(
+        child: IndexedStack(
+          index: _currentIndex,
+          children: [
+            for (var i = 0; i < _screens.length; i++)
+              AbaVisivel(
+                visivel: i == _currentIndex,
+                child: _construidas.contains(i)
+                    ? _screens[i]
+                    : const SizedBox.shrink(),
+              ),
+          ],
+        ),
       );
       return Scaffold(
         // Tela larga: a navegação vai para o lado, onde há espaço, e a barra
