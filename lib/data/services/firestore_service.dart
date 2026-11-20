@@ -10,12 +10,51 @@ import '../models/scale_model.dart';
 import '../models/message_model.dart';
 import '../models/user_model.dart';
 import 'auth_service.dart';
+import 'estado_da_rede.dart';
+import '../../core/utils/fusao_de_edicao.dart';
 import '../../core/constants/hinarios.dart';
 import '../../core/utils/crypto_utils.dart';
 import '../../core/utils/importar_hinario.dart';
 
+/// O que aconteceu com uma edição por campos (ver `fusao_de_edicao.dart`).
+class ResultadoDaEdicao {
+  final bool ok;
+
+  /// Falha que não adianta repetir (o banco recusou, o item não existe mais).
+  final bool definitivo;
+  final String? erro;
+  final List<PerdaDeCampo> perdas;
+  final List<String> aplicados;
+
+  const ResultadoDaEdicao({
+    required this.ok,
+    this.definitivo = false,
+    this.erro,
+    this.perdas = const [],
+    this.aplicados = const [],
+  });
+}
+
 class FirestoreService {
   static final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  /// Falha de rede ou de momento — tentar de novo mais tarde pode dar certo.
+  /// Qualquer outra (permissão, não existe, argumento inválido) o banco
+  /// recusou de vez.
+  static bool ehTransitorio(Object e) {
+    if (e is FirebaseException) {
+      return const {
+        'unavailable',
+        'deadline-exceeded',
+        'aborted',
+        'cancelled',
+        'internal',
+        'unknown',
+        'resource-exhausted',
+      }.contains(e.code);
+    }
+    return e is TimeoutException;
+  }
 
   // ─── Collections ──────────────────────────────────────────────────────────
   static const String _songs = 'songs';
@@ -31,7 +70,19 @@ class FirestoreService {
   /// app, sem erro nenhum. Ordenar aqui custa nada nesta escala e faz uma
   /// música torta aparecer (ainda que sem nome) em vez de sumir.
   static Stream<List<SongModel>> watchSongs() {
-    return _db.collection(_songs).snapshots().map((snap) {
+    var primeira = true;
+    // `includeMetadataChanges` não custa leitura: só avisa quando a origem
+    // do dado muda (do aparelho para o servidor). É o que diz ao app que o
+    // banco respondeu de verdade — base do "atualizado há X".
+    return _db
+        .collection(_songs)
+        .snapshots(includeMetadataChanges: true)
+        .where((snap) {
+      if (!snap.metadata.isFromCache) EstadoDaRede.instancia.bancoRespondeu();
+      final emitir = primeira || snap.docChanges.isNotEmpty;
+      primeira = false;
+      return emitir;
+    }).map((snap) {
       final songs = snap.docs
           .map((doc) => SongModel.fromFirestore(doc.data()))
           .toList();
@@ -322,13 +373,50 @@ class FirestoreService {
   static Future<ArrangementModel?> getArrangement(
     String songId, {
     String arrangementId = '',
+  }) async =>
+      (await lerArranjoDoServidor(songId, arrangementId: arrangementId))
+          .arranjo;
+
+  /// O arranjo, perguntando ao SERVIDOR — e dizendo se conseguiu.
+  ///
+  /// `getArrangement` devolve nulo tanto para "esta música não tem cifra"
+  /// quanto para "não consegui perguntar", e quem trata os dois do mesmo jeito
+  /// apaga da tela uma cifra que existe, só porque o sinal caiu. Aqui [ok]
+  /// separa as duas coisas.
+  static Future<({ArrangementModel? arranjo, bool ok})> lerArranjoDoServidor(
+    String songId, {
+    String arrangementId = '',
   }) async {
     try {
       if (arrangementId.isNotEmpty) {
         final doc = await _arrangementsOf(songId).doc(arrangementId).get();
-        if (doc.exists) return ArrangementModel.fromFirestore(doc.data()!);
+        if (doc.exists) {
+          return (arranjo: ArrangementModel.fromFirestore(doc.data()!), ok: true);
+        }
       }
       final snap = await _arrangementsOf(songId).limit(1).get();
+      if (snap.docs.isEmpty) return (arranjo: null, ok: true);
+      return (
+        arranjo: ArrangementModel.fromFirestore(snap.docs.first.data()),
+        ok: true
+      );
+    } catch (_) {
+      return (arranjo: null, ok: false);
+    }
+  }
+
+  /// O arranjo que o APARELHO já tem, sem perguntar à rede: responde na hora,
+  /// com ou sem internet. Nulo quando nunca foi baixado.
+  ///
+  /// Sem isto, abrir uma música offline esperava o Firestore concluir que
+  /// está offline — até 10 s na primeira vez — antes de mostrar a cifra que
+  /// estava no próprio celular.
+  static Future<ArrangementModel?> getArrangementDoAparelho(
+      String songId) async {
+    try {
+      final snap = await _arrangementsOf(songId)
+          .limit(1)
+          .get(const GetOptions(source: Source.cache));
       if (snap.docs.isEmpty) return null;
       return ArrangementModel.fromFirestore(snap.docs.first.data());
     } catch (_) {
@@ -391,12 +479,31 @@ class FirestoreService {
   }
 
   static Future<Map<String, SongPrefModel>> getAllSongPrefs(
+      String userId) async =>
+      await lerPrefsDoServidor(userId) ?? {};
+
+  /// Os tons e anotações, perguntando ao servidor. Nulo quando não deu —
+  /// diferente de `{}`, que é "esta pessoa não guardou nada".
+  static Future<Map<String, SongPrefModel>?> lerPrefsDoServidor(
       String userId) async {
     try {
       final snap = await _prefsOf(userId).get();
       return {
-        for (final d in snap.docs)
-          d.id: SongPrefModel.fromFirestore(d.data()),
+        for (final d in snap.docs) d.id: SongPrefModel.fromFirestore(d.data()),
+      };
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// O que o aparelho já tem dos tons e anotações, sem rede, na hora.
+  static Future<Map<String, SongPrefModel>> getPrefsDoAparelho(
+      String userId) async {
+    try {
+      final snap = await _prefsOf(userId)
+          .get(const GetOptions(source: Source.cache));
+      return {
+        for (final d in snap.docs) d.id: SongPrefModel.fromFirestore(d.data()),
       };
     } catch (_) {
       return {};
@@ -408,10 +515,16 @@ class FirestoreService {
     SongPrefModel pref,
   ) async {
     try {
-      if (pref.isEmpty) {
-        await _prefsOf(userId).doc(pref.songId).delete();
-      } else {
-        await _prefsOf(userId).doc(pref.songId).set(pref.toFirestore());
+      // Sem esperar o servidor: é preferência PESSOAL (tom, anotação), o
+      // Firestore guarda e envia quando houver internet, e o último valor
+      // vale. Esperar a confirmação travaria a tela sem sinal.
+      final escrita = pref.isEmpty
+          ? _prefsOf(userId).doc(pref.songId).delete()
+          : _prefsOf(userId).doc(pref.songId).set(pref.toFirestore());
+      try {
+        await escrita.timeout(const Duration(seconds: 3));
+      } on TimeoutException {
+        unawaited(escrita.catchError((Object _) {}));
       }
       return (success: true, error: null);
     } on FirebaseException catch (e) {
@@ -452,13 +565,19 @@ class FirestoreService {
   static DateTime get _fimDaJanela => DateTime.now().add(janelaFuturo);
 
   static Stream<List<ScaleModel>> watchScales() {
+    var primeira = true;
     return _db
         .collection(_scales)
         .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(_inicioDaJanela))
         .where('date', isLessThanOrEqualTo: Timestamp.fromDate(_fimDaJanela))
         .orderBy('date')
-        .snapshots()
-        .map((snap) => snap.docs
+        .snapshots(includeMetadataChanges: true)
+        .where((snap) {
+      if (!snap.metadata.isFromCache) EstadoDaRede.instancia.bancoRespondeu();
+      final emitir = primeira || snap.docChanges.isNotEmpty;
+      primeira = false;
+      return emitir;
+    }).map((snap) => snap.docs
             .map((doc) => ScaleModel.fromFirestore(doc.data()))
             .toList());
   }
@@ -525,7 +644,8 @@ class FirestoreService {
   /// which is exactly when the screen is used. The transaction re-reads inside
   /// the write and Firestore retries it if the document changed meanwhile, so
   /// only this person's entry moves.
-  static Future<({bool success, String? error})> confirmPresence(
+  static Future<({bool success, String? error, bool definitivo})>
+      confirmPresence(
     String scaleId,
     String userId,
     bool confirmed,
@@ -570,12 +690,117 @@ class FirestoreService {
           'confirmadoEm': FieldValue.serverTimestamp(),
         });
       });
-      return (success: true, error: null);
+      return (success: true, error: null, definitivo: false);
     } on FirebaseException catch (e) {
+      final definitivo = !ehTransitorio(e);
       if (e.code == 'not-scheduled') {
-        return (success: false, error: 'Você não está escalado neste culto.');
+        return (
+          success: false,
+          error: 'Você não está escalado neste culto.',
+          definitivo: true
+        );
       }
-      return (success: false, error: _describe(e, 'confirmar sua presença'));
+      if (e.code == 'not-found') {
+        return (
+          success: false,
+          error: 'Este culto não existe mais.',
+          definitivo: true
+        );
+      }
+      return (
+        success: false,
+        error: _describe(e, 'confirmar sua presença'),
+        definitivo: definitivo
+      );
+    } catch (e) {
+      return (
+        success: false,
+        error: 'Sem conexão. Não foi possível confirmar sua presença.',
+        definitivo: false
+      );
+    }
+  }
+
+  // ─── EDIÇÃO POR CAMPOS (com fusão) ────────────────────────────────────────
+
+  /// Aplica a edição de uma música campo a campo, comparando com o que está
+  /// no banco AGORA. Ver `fusao_de_edicao.dart` para a política.
+  static Future<ResultadoDaEdicao> editarCamposDaMusica(
+    String songId,
+    Map<String, CampoEditado> campos,
+  ) =>
+      _editarCampos(_db.collection(_songs).doc(songId), campos,
+          inexistente: 'Esta música não existe mais.');
+
+  /// O mesmo, para o arranjo (cifra e BPM). Se o arranjo ainda não existe e
+  /// [criar] veio, ele é criado.
+  static Future<ResultadoDaEdicao> editarCamposDoArranjo(
+    String songId,
+    String arranjoId,
+    Map<String, CampoEditado> campos, {
+    Map<String, dynamic>? criar,
+  }) =>
+      _editarCampos(_arrangementsOf(songId).doc(arranjoId), campos,
+          inexistente: 'Esta cifra não existe mais.',
+          criar: criar,
+          comCarimbo: true);
+
+  static Future<ResultadoDaEdicao> _editarCampos(
+    DocumentReference<Map<String, dynamic>> ref,
+    Map<String, CampoEditado> campos, {
+    required String inexistente,
+    Map<String, dynamic>? criar,
+    bool comCarimbo = false,
+  }) async {
+    ResultadoDaFusao? fusao;
+    try {
+      await _db.runTransaction((tx) async {
+        final snap = await tx.get(ref);
+        if (!snap.exists) {
+          if (criar == null) {
+            throw FirebaseException(
+                plugin: 'levitasync', code: 'not-found', message: inexistente);
+          }
+          fusao = ResultadoDaFusao(
+            aplicar: {for (final e in campos.entries) e.key: e.value.novo},
+            perdas: const [],
+            jaIguais: const [],
+          );
+          tx.set(ref, {
+            ...criar,
+            ...fusao!.aplicar,
+            if (comCarimbo) 'updatedAt': Timestamp.now(),
+          });
+          return;
+        }
+        fusao = fundirEdicao(meus: campos, servidor: snap.data()!);
+        if (fusao!.aplicar.isNotEmpty) {
+          tx.update(ref, {
+            ...fusao!.aplicar,
+            if (comCarimbo) 'updatedAt': Timestamp.now(),
+          });
+        }
+      });
+      return ResultadoDaEdicao(
+        ok: true,
+        perdas: fusao?.perdas ?? const [],
+        aplicados: fusao?.aplicar.keys.toList() ?? const [],
+      );
+    } on FirebaseException catch (e) {
+      if (e.code == 'not-found') {
+        return ResultadoDaEdicao(
+            ok: false, definitivo: true, erro: inexistente);
+      }
+      return ResultadoDaEdicao(
+        ok: false,
+        definitivo: !ehTransitorio(e),
+        erro: _describe(e, 'salvar a alteração'),
+      );
+    } catch (e) {
+      return ResultadoDaEdicao(
+          ok: false,
+          definitivo: !ehTransitorio(e),
+          erro: 'Sem conexão. A alteração fica esperando.');
     }
   }
 
@@ -1133,26 +1358,54 @@ class FirestoreService {
         .collection(_messages)
         .orderBy('timestamp', descending: true)
         .limit(limit)
-        .snapshots()
-        .map((snap) => snap.docs
-            .map((doc) => MessageModel.fromFirestore(doc.data()))
-            .toList()
-            .reversed
-            .toList());
+        .snapshots(includeMetadataChanges: true)
+        .map((snap) {
+      if (!snap.metadata.isFromCache) EstadoDaRede.instancia.bancoRespondeu();
+      return snap.docs
+          .map((doc) => MessageModel.fromFirestore(doc.data(),
+              pendente: doc.metadata.hasPendingWrites))
+          .toList()
+          .reversed
+          .toList();
+    });
   }
 
-  static Future<({bool success, String? error})> sendMessage(
-      MessageModel message) async {
+  /// Envia a mensagem — e NÃO fica esperando a internet para dizer "enviei".
+  ///
+  /// O Firestore guarda a escrita feita sem internet e a manda sozinho quando
+  /// ela volta (sobrevive até a fechar o app), e a mensagem já aparece na tela
+  /// com o relógio de "pendente". Só que o `Future` do `set` só termina quando
+  /// o SERVIDOR confirma: esperar por ele travaria o botão de enviar, e a
+  /// pessoa, sem sinal, acharia que o app quebrou.
+  ///
+  /// Então espera uns segundos; se o servidor não confirmou, devolve
+  /// `pendente: true` e entrega o resto em [aoConfirmar]/[aoFalhar].
+  static Future<({bool success, String? error, bool pendente})> sendMessage(
+    MessageModel message, {
+    void Function()? aoConfirmar,
+    void Function(String erro)? aoFalhar,
+    Duration espera = const Duration(seconds: 4),
+  }) async {
+    final escrita =
+        _db.collection(_messages).doc(message.id).set(message.toFirestore());
     try {
-      await _db
-          .collection(_messages)
-          .doc(message.id)
-          .set(message.toFirestore());
-      return (success: true, error: null);
+      await escrita.timeout(espera);
+      return (success: true, error: null, pendente: false);
+    } on TimeoutException {
+      unawaited(escrita.then((_) => aoConfirmar?.call()).catchError((Object e) {
+        aoFalhar?.call(e is FirebaseException
+            ? _describe(e, 'enviar a mensagem')
+            : 'Não foi possível enviar: $e');
+      }));
+      return (success: true, error: null, pendente: true);
     } on FirebaseException catch (e) {
-      return (success: false, error: _describe(e, 'enviar a mensagem'));
+      return (
+        success: false,
+        error: _describe(e, 'enviar a mensagem'),
+        pendente: false
+      );
     } catch (e) {
-      return (success: false, error: 'Não foi possível enviar: $e');
+      return (success: false, error: 'Não foi possível enviar: $e', pendente: false);
     }
   }
 

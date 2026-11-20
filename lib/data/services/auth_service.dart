@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -369,10 +370,18 @@ class AuthService {
       favorites.add(songId);
     }
     final updated = user.copyWith(favoriteSongs: favorites);
-    await _db.collection(_collection).doc(user.id).update({
+    // Favorito é preferência PESSOAL: vale na hora e o Firestore envia quando
+    // houver internet (a fila dele sobrevive a fechar o app). Esperar a
+    // confirmação do servidor travava o coração sem sinal.
+    final escrita = _db.collection(_collection).doc(user.id).update({
       'favoriteSongs': favorites,
     });
     await LocalStorageService.saveSession(updated);
+    try {
+      await escrita.timeout(const Duration(seconds: 2));
+    } on TimeoutException {
+      unawaited(escrita.catchError((Object _) {}));
+    }
     return updated;
   }
 

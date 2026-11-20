@@ -72,6 +72,11 @@ class MessageModel {
   /// e muda. O Worker usa isto para avisar quem silenciou o chat.
   final List<String> mencoes;
 
+  /// Escrita ainda não confirmada pelo servidor (enviada sem internet). NÃO
+  /// vai para o banco: vem dos metadados do Firestore, e é o que põe o
+  /// relógio na bolha.
+  final bool pendente;
+
   /// Os cinco emojis que o app oferece.
   ///
   /// Lista fechada, e a mesma na regra do banco: sem isso, qualquer texto
@@ -79,6 +84,7 @@ class MessageModel {
   static const List<String> emojisDeReacao = ['👍', '🙏', '❤️', '🔥', '😂'];
 
   const MessageModel({
+    this.pendente = false,
     required this.id,
     required this.userId,
     required this.userName,
@@ -155,6 +161,7 @@ class MessageModel {
     bool limparFixacao = false,
   }) {
     return MessageModel(
+      pendente: pendente,
       id: id,
       userId: userId,
       userName: userName,
@@ -229,8 +236,10 @@ class MessageModel {
     return bruto.whereType<String>().toList();
   }
 
-  factory MessageModel.fromFirestore(Map<String, dynamic> data) {
+  factory MessageModel.fromFirestore(Map<String, dynamic> data,
+      {bool pendente = false}) {
     return MessageModel(
+      pendente: pendente,
       id: data['id'] as String,
       userId: data['userId'] as String,
       userName: data['userName'] as String,
