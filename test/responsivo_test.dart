@@ -6,9 +6,12 @@
 //
 // TODO o texto é inventado.
 
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:levitasync/core/constants/app_colors.dart';
 import 'package:levitasync/presentation/screens/chat/chat_screen.dart';
@@ -213,6 +216,120 @@ void main() {
       await t.pumpAndSettle();
       expect(find.text('Detalhe do um'), findsNothing);
       expect(find.text('Escolha um item'), findsOneWidget);
+    });
+  });
+
+  group('o ouvinte de entrada (dedo ou mouse)', () {
+    testWidgets('um toque de dedo vira "toque"; o mouse voltando vira "mouse"',
+        (t) async {
+      EntradaDoUsuario.definir(false);
+      await t.pumpWidget(const MaterialApp(
+        home: OuvinteDeEntrada(child: SizedBox.expand()),
+      ));
+
+      final dedo = await t.startGesture(const Offset(50, 50),
+          kind: PointerDeviceKind.touch);
+      await dedo.up();
+      expect(EntradaDoUsuario.toque.value, isTrue);
+
+      final mouse = TestPointer(7, PointerDeviceKind.mouse);
+      await t.sendEventToBinding(mouse.hover(const Offset(60, 60)));
+      expect(EntradaDoUsuario.toque.value, isFalse);
+    });
+
+    test('o app de verdade LIGA o ouvinte (ele ficou uma rodada inteira sem '
+        'estar em lugar nenhum)', () {
+      // Os testes de tela chamam `EntradaDoUsuario.registrar` à mão, e por
+      // isso nunca viram que o `main.dart` não o usava: no app, a resposta
+      // era sempre "mouse", o toque nunca era reconhecido.
+      final main = File('lib/main.dart').readAsStringSync();
+      expect(main, contains('OuvinteDeEntrada('));
+    });
+  });
+
+  group('Esc e o que a pessoa está escrevendo', () {
+    // O Esc fecha o detalhe — mas, dentro de um campo COM texto, ele é
+    // "limpar", e fechar levaria junto o que a pessoa escreveu.
+    testWidgets('campo do detalhe com texto: o Esc NÃO fecha', (t) async {
+      t.view.physicalSize = const Size(1280, 800);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      await t.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: MestreDetalhe(
+            vazioTitulo: 'Escolha um item',
+            vazioTexto: 'abre aqui',
+            mestre: Builder(
+              builder: (ctx) => ListView(children: [
+                ListTile(
+                  title: const Text('Item três'),
+                  onTap: () => abrirTela(
+                      ctx,
+                      (_) => const Scaffold(
+                          body: Column(children: [
+                        Text('Detalhe do três'),
+                        TextField(key: Key('anotacao')),
+                      ]))),
+                ),
+              ]),
+            ),
+          ),
+        ),
+      ));
+      await t.tap(find.text('Item três'));
+      await t.pumpAndSettle();
+
+      await t.enterText(find.byKey(const Key('anotacao')), 'combinado');
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await t.pumpAndSettle();
+      expect(find.text('Detalhe do três'), findsOneWidget,
+          reason: 'o Esc fechou e a anotação foi junto');
+
+      // Campo vazio: aí o Esc é de quem fecha.
+      await t.enterText(find.byKey(const Key('anotacao')), '');
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await t.pumpAndSettle();
+      expect(find.text('Detalhe do três'), findsNothing);
+      expect(find.text('Escolha um item'), findsOneWidget);
+    });
+
+    testWidgets('com uma janela de pergunta por cima, o Esc é dela',
+        (t) async {
+      t.view.physicalSize = const Size(1280, 800);
+      t.view.devicePixelRatio = 1;
+      addTearDown(t.view.reset);
+      late BuildContext raiz;
+      await t.pumpWidget(MaterialApp(
+        home: Scaffold(
+          body: Builder(builder: (c) {
+            raiz = c;
+            return MestreDetalhe(
+              vazioTitulo: 'Escolha um item',
+              vazioTexto: 'abre aqui',
+              mestre: Builder(
+                builder: (ctx) => ListView(children: [
+                  ListTile(
+                    title: const Text('Item um'),
+                    onTap: () => abrirTela(ctx,
+                        (_) => const Scaffold(body: Text('Detalhe do um'))),
+                  ),
+                ]),
+              ),
+            );
+          }),
+        ),
+      ));
+      await t.tap(find.text('Item um'));
+      await t.pumpAndSettle();
+
+      showDialog<void>(
+          context: raiz, builder: (_) => const AlertDialog(title: Text('Certeza?')));
+      await t.pumpAndSettle();
+      await t.sendKeyEvent(LogicalKeyboardKey.escape);
+      await t.pumpAndSettle();
+      expect(find.text('Certeza?'), findsNothing, reason: 'o Esc fecha a janela');
+      expect(find.text('Detalhe do um'), findsOneWidget,
+          reason: 'e NÃO o detalhe que estava por baixo');
     });
   });
 

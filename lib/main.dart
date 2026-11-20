@@ -22,6 +22,7 @@ import 'presentation/screens/auth/login_screen.dart';
 import 'presentation/screens/auth/pending_screen.dart';
 import 'presentation/screens/main_screen.dart';
 import 'presentation/widgets/common/glass.dart';
+import 'presentation/widgets/common/responsivo.dart';
 
 /// Se as chaves do Firebase valem — e, quando a plataforma nem tem projeto
 /// (iOS, macOS, Windows, Linux), o recado que explica isso.
@@ -290,8 +291,14 @@ class LevitaSyncApp extends StatelessWidget {
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProvider.themeMode,
             // Frosted "Liquid Glass" backdrop behind every route.
-            builder: (context, child) =>
-                GlassBackdrop(child: child ?? const SizedBox.shrink()),
+            // O `OuvinteDeEntrada` é o que conta ao app se a pessoa usa o
+            // dedo ou o mouse (teclado numérico dos hinos, por exemplo).
+            // Existiu por uma rodada INTEIRA sem estar em lugar nenhum: os
+            // testes o chamavam à mão, e no app de verdade a resposta era
+            // sempre "mouse".
+            builder: (context, child) => OuvinteDeEntrada(
+              child: GlassBackdrop(child: child ?? const SizedBox.shrink()),
+            ),
             home: const _AppEntry(),
           );
         },

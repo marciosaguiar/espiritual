@@ -25,8 +25,11 @@ import 'package:levitasync/presentation/providers/theme_provider.dart';
 import 'package:levitasync/presentation/screens/main_screen.dart';
 import 'package:levitasync/presentation/widgets/common/glass.dart';
 
+import 'auth_inventado.dart';
 import 'dados_inventados.dart';
 import 'fontes.dart';
+
+export 'auth_inventado.dart';
 
 /// Atalho para o roteiro de fotos e os testes de layout.
 Future<void> carregarFontes() => carregarFontesDoApp();
@@ -45,44 +48,23 @@ const tamanhos = {
   768: Tamanho(768, 1024, 1),
   1280: Tamanho(1280, 800, 1),
   1920: Tamanho(1920, 1080, 1),
+  2400: Tamanho(2400, 1200, 1),
 };
-
-/// O líder da foto. Estende o AuthProvider de verdade, trocando só o que
-/// falaria com o banco.
-class AuthInventado extends AuthProvider {
-  @override
-  UserModel? get user => lider;
-
-  @override
-  bool get isAdmin => true;
-
-  @override
-  AuthStatus get status => AuthStatus.authenticated;
-
-  @override
-  List<UserModel> get pessoas => ministerio;
-
-  @override
-  Map<String, String> get nomes => {for (final p in ministerio) p.id: p.name};
-
-  @override
-  String? get emailDeRecuperacao => 'ana@exemplo.com';
-
-  @override
-  void ouvirPessoas() {}
-
-  @override
-  Future<void> conferirRecuperacao() async {}
-}
 
 /// Monta o app na aba [aba], no tamanho [tam]. [chave] vai num
 /// RepaintBoundary em volta de tudo, para o roteiro de fotos tirar a foto.
+///
+/// [escala] troca o provider de cultos (para um teste simular "criar culto"
+/// sem banco) e [casa] troca a tela inicial (para testar uma aba sozinha,
+/// com os providers do app em volta).
 Future<void> montarApp(
   WidgetTester t, {
   required Tamanho tam,
   bool escuro = false,
   int aba = 0,
   Key? chave,
+  ScaleProvider? escala,
+  Widget? casa,
 }) async {
   t.view.physicalSize = Size(tam.largura * tam.escala, tam.altura * tam.escala);
   t.view.devicePixelRatio = tam.escala;
@@ -95,7 +77,8 @@ Future<void> montarApp(
       Stream<List<UserModel>>.value(const []).asBroadcastStream();
 
   final songs = SongsProvider()..carregarParaTeste(repertorioInventado());
-  final scale = ScaleProvider()..carregarParaTeste(cultosInventados());
+  final scale = (escala ?? ScaleProvider())
+    ..carregarParaTeste(cultosInventados());
   final chat = ChatProvider()..carregarParaTeste(conversaInventada());
   final biblioteca = BibliotecaProvider(
     lerIndice: (id) async => (
@@ -141,7 +124,7 @@ Future<void> montarApp(
           themeMode: escuro ? ThemeMode.dark : ThemeMode.light,
           builder: (context, child) =>
               GlassBackdrop(child: child ?? const SizedBox.shrink()),
-          home: MainScreen(abaInicial: aba, escutas: false),
+          home: casa ?? MainScreen(abaInicial: aba, escutas: false),
         ),
       ),
     ),

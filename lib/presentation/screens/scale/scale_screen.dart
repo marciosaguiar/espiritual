@@ -1,4 +1,5 @@
 import 'dart:ui' show ImageFilter;
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:table_calendar/table_calendar.dart';
@@ -12,8 +13,24 @@ import '../../../data/services/firestore_service.dart';
 import 'scale_detail_screen.dart';
 import '../../widgets/common/responsivo.dart';
 
+/// Um pedido de "abra este culto" que vem de FORA da aba — o toque num aviso.
+///
+/// É um objeto novo a cada pedido, e não o próprio culto, porque pedir o mesmo
+/// culto duas vezes (a pessoa fechou o detalhe e tocou no aviso de novo) tem
+/// de funcionar: um `ValueNotifier` não avisa quando o valor é igual.
+class PedidoDeCulto {
+  final ScaleModel culto;
+  PedidoDeCulto(this.culto);
+}
+
 class ScaleScreen extends StatefulWidget {
-  const ScaleScreen({super.key});
+  /// Quem quiser abrir um culto aqui por fora (o `MainScreen`, quando a
+  /// pessoa toca no aviso) escreve neste notificador. O culto abre AO LADO
+  /// do calendário em tela larga, e por cima no celular — o mesmo caminho do
+  /// toque na lista.
+  final ValueListenable<PedidoDeCulto?>? pedido;
+
+  const ScaleScreen({super.key, this.pedido});
 
   @override
   State<ScaleScreen> createState() => _ScaleScreenState();
@@ -69,9 +86,14 @@ class _ScaleScreenState extends State<ScaleScreen> {
               onPressed: () => setState(() => _selectedDay = null),
             ),
           if (auth.isAdmin)
-            IconButton(
-              icon: const Icon(Icons.add_rounded),
-              onPressed: () => _showCreateScaleDialog(context, scale, auth),
+            // O `Builder` não é enfeite: o `context` desta função fica ACIMA
+            // do painel de detalhe, e `abrirTela` com ele não acha o painel —
+            // o culto recém-criado abria em tela cheia, por cima da lista.
+            Builder(
+              builder: (ctx) => IconButton(
+                icon: const Icon(Icons.add_rounded),
+                onPressed: () => _showCreateScaleDialog(ctx, scale, auth),
+              ),
             ),
         ],
       ),
@@ -212,7 +234,7 @@ class _ScaleScreenState extends State<ScaleScreen> {
     // O calendário e a lista à esquerda; o culto aberto à direita. O líder que
     // monta a escala vê a lista E o culto, sem ir e voltar a cada um.
     return MestreDetalhe(
-      mestre: calendario,
+      mestre: _OuveOPedidoDeCulto(pedido: widget.pedido, child: calendario),
       vazioIcone: Icons.event_available_rounded,
       vazioTitulo: 'Escolha um culto',
       vazioTexto: 'Quem toca, as músicas e as confirmações de presença abrem '
@@ -382,6 +404,59 @@ class _ScaleScreenState extends State<ScaleScreen> {
       },
     );
   }
+}
+
+/// Fica DENTRO do painel da lista para ter o contexto certo: é dele que
+/// `abrirTela` acha o painel de detalhe. Não desenha nada.
+class _OuveOPedidoDeCulto extends StatefulWidget {
+  final ValueListenable<PedidoDeCulto?>? pedido;
+  final Widget child;
+
+  const _OuveOPedidoDeCulto({required this.pedido, required this.child});
+
+  @override
+  State<_OuveOPedidoDeCulto> createState() => _OuveOPedidoDeCultoState();
+}
+
+class _OuveOPedidoDeCultoState extends State<_OuveOPedidoDeCulto> {
+  @override
+  void initState() {
+    super.initState();
+    widget.pedido?.addListener(_aoPedir);
+  }
+
+  @override
+  void didUpdateWidget(_OuveOPedidoDeCulto antigo) {
+    super.didUpdateWidget(antigo);
+    if (antigo.pedido != widget.pedido) {
+      antigo.pedido?.removeListener(_aoPedir);
+      widget.pedido?.addListener(_aoPedir);
+    }
+  }
+
+  @override
+  void dispose() {
+    widget.pedido?.removeListener(_aoPedir);
+    super.dispose();
+  }
+
+  void _aoPedir() {
+    final culto = widget.pedido?.value?.culto;
+    if (culto == null) return;
+    // Espera o quadro: a aba pode estar sendo trocada neste instante, e o
+    // painel só aceita uma tela depois de construído.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      abrirTela(context, (_) => ScaleDetailScreen(scale: culto));
+    });
+    // `addPostFrameCallback` não agenda quadro nenhum: com a tela parada, o
+    // pedido ficaria esperando até alguma coisa mexer — o aviso tocado e nada
+    // acontecendo.
+    WidgetsBinding.instance.scheduleFrame();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 class _UpcomingServicesView extends StatelessWidget {

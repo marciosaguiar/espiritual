@@ -216,6 +216,19 @@ class LocalStorageService {
     await prefs.setBool(_tablaturaKey, ocultar);
   }
 
+  // ─── Faixa "Sugestão de repertório" ───────────────────────────────────────
+
+  static const String _sugestoesKey = 'sugestoes_abertas';
+
+  /// A faixa de sugestão do Repertório abre ou fecha, e a escolha fica no
+  /// aparelho. Ausente é FECHADA: a tela serve primeiro a quem procura uma
+  /// música, e as quatro sugestões repetem músicas que já estão na lista.
+  static bool get sugestoesAbertas => prefs.getBool(_sugestoesKey) ?? false;
+
+  static Future<void> salvarSugestoesAbertas(bool abertas) async {
+    await prefs.setBool(_sugestoesKey, abertas);
+  }
+
   // ─── Rascunho do editor de letra e cifra ──────────────────────────────────
 
   static const String _rascunhoKey = 'rascunho_cifra';

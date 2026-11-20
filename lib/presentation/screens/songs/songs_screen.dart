@@ -290,7 +290,9 @@ class _SongsScreenState extends State<SongsScreen>
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 100),
                   children: [
                     SugestoesDoDia(songs: songs),
-                    const SizedBox(height: 18),
+                    // O título é o que separa a sugestão (que repete quatro
+                    // músicas) da lista: sem ele, as duas se liam como uma só.
+                    _TituloDaLista(total: songs.songs.length, isDark: isDark),
                     ...songs.songs.map((s) => _SongListTile(song: s)),
                   ],
                 )
@@ -539,6 +541,31 @@ class _FilterChip extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Todas as músicas (42)": diz onde a lista começa e quantas há.
+class _TituloDaLista extends StatelessWidget {
+  final int total;
+  final bool isDark;
+  const _TituloDaLista({required this.total, required this.isDark});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 18, 2, 10),
+      child: Text(
+        'Todas as músicas ($total)',
+        style: TextStyle(
+          fontFamily: 'Poppins',
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+          color: isDark
+              ? AppColors.textSecondaryDark
+              : AppColors.textSecondaryLight,
         ),
       ),
     );

@@ -16,6 +16,7 @@ library;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'glass.dart';
 
@@ -191,12 +192,50 @@ class ComMao extends StatelessWidget {
   Widget build(BuildContext context) {
     return MouseRegion(
       cursor: onTap == null ? MouseCursor.defer : SystemMouseCursors.click,
-      child: GestureDetector(onTap: onTap, child: child),
+      // `opaque`: o bloco inteiro responde ao toque, e não só onde há texto ou
+      // ícone. Com o padrão (`deferToChild`), clicar no espaço vazio de uma
+      // linha — à direita de um nome curto, no recuo — não fazia nada: o
+      // mouse mostrava a mãozinha e o clique caía no vazio. Foi achado num
+      // Chromium de verdade, clicando no meio da lista; um teste que toca no
+      // ícone ou no texto nunca vê.
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: child,
+      ),
     );
   }
 }
 
 // ─── Lista e detalhe lado a lado ──────────────────────────────────────────
+
+/// Diz a quem está dentro de uma aba se ela é a que está à vista.
+///
+/// POR QUE ISTO EXISTE
+///
+/// O `IndexedStack` do app mantém TODAS as abas montadas (para não perder a
+/// busca digitada nem a rolagem ao trocar de aba) e só deixa de pintar as
+/// outras — não desliga o relógio nem o teclado delas. Então um atalho de
+/// teclado global, como o Esc que fecha o detalhe, chegaria às quatro listas
+/// ao mesmo tempo, e fecharia a música aberta numa aba que a pessoa nem está
+/// vendo. Sem este aviso, o defeito não aparece em teste nenhum que monte uma
+/// aba só.
+///
+/// Fora do app principal (testes de uma tela só), a ausência vale como
+/// "à vista".
+class AbaVisivel extends InheritedWidget {
+  final bool visivel;
+
+  const AbaVisivel({super.key, required this.visivel, required super.child});
+
+  /// Sem registrar dependência: quem pergunta é um atalho de teclado, que lê o
+  /// valor na hora e não precisa reconstruir nada quando ele muda.
+  static bool de(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<AbaVisivel>()?.visivel ?? true;
+
+  @override
+  bool updateShouldNotify(AbaVisivel old) => old.visivel != visivel;
+}
 
 /// O painel da direita de um [MestreDetalhe]: onde as telas "abertas por
 /// cima" aparecem quando há espaço para isso.
@@ -282,6 +321,54 @@ class MestreDetalhe extends StatefulWidget {
 class _MestreDetalheState extends State<MestreDetalhe> {
   final _navegador = GlobalKey<NavigatorState>();
 
+  @override
+  void initState() {
+    super.initState();
+    HardwareKeyboard.instance.addHandler(_aoTeclar);
+  }
+
+  @override
+  void dispose() {
+    HardwareKeyboard.instance.removeHandler(_aoTeclar);
+    super.dispose();
+  }
+
+  /// Esc fecha o detalhe aberto ao lado — um nível por vez, como o botão de
+  /// voltar: de dentro de uma edição, volta à música; da música, volta ao
+  /// "escolha um item".
+  ///
+  /// O que ele NÃO faz, de propósito:
+  /// - agir numa aba que não está à vista (ver [AbaVisivel]);
+  /// - agir quando há uma janela de pergunta ou outra tela por cima — o Esc
+  ///   é delas;
+  /// - fechar o detalhe quando a pessoa está digitando num campo COM texto
+  ///   dentro dele: ali o Esc é "limpar", e fechar levaria junto o que ela
+  ///   escreveu.
+  bool _aoTeclar(KeyEvent e) {
+    if (e is! KeyDownEvent || e.logicalKey != LogicalKeyboardKey.escape) {
+      return false;
+    }
+    if (!mounted || !AbaVisivel.de(context)) return false;
+    if (ModalRoute.of(context)?.isCurrent == false) return false;
+    final nav = _navegador.currentState;
+    if (nav == null || !nav.canPop()) return false;
+    if (_digitandoAquiDentro()) return false;
+    nav.maybePop();
+    return true;
+  }
+
+  bool _digitandoAquiDentro() {
+    final foco = FocusManager.instance.primaryFocus?.context;
+    if (foco == null) return false;
+    final campo = foco.widget is EditableText
+        ? foco.widget as EditableText
+        : foco.findAncestorWidgetOfExactType<EditableText>();
+    if (campo == null || campo.controller.text.isEmpty) return false;
+    // Campo de OUTRA aba (o chat, por exemplo) não tem nada a ver com este
+    // painel.
+    return foco.findAncestorStateOfType<_MestreDetalheState>() == this;
+  }
+
   /// Segura o estado da lista quando a janela cruza a largura de dois painéis
   /// (redimensionar, girar o tablet): sem isto, a busca digitada e a posição
   /// da rolagem se perderiam.
@@ -311,13 +398,24 @@ class _MestreDetalheState extends State<MestreDetalhe> {
                     : Colors.black.withValues(alpha: 0.08),
               ),
               Expanded(
-                child: Navigator(
-                  key: _navegador,
-                  onGenerateRoute: (_) => PageRouteBuilder<void>(
-                    pageBuilder: (_, __, ___) => _SemNadaAberto(
-                      titulo: widget.vazioTitulo,
-                      texto: widget.vazioTexto,
-                      icone: widget.vazioIcone,
+                // A fronteira de semântica NÃO é enfeite. O `Navigator` do
+                // painel põe uma barreira de rota (`ModalBarrier`), e ela
+                // BLOQUEIA a acessibilidade de tudo o que foi pintado antes
+                // dela na mesma fronteira — que, sem esta, é a tela inteira:
+                // com uma música aberta ao lado, a lista e a navegação
+                // sumiam para leitor de tela. Foi lido da árvore de
+                // semântica de um Chromium de verdade.
+                child: Semantics(
+                  container: true,
+                  explicitChildNodes: true,
+                  child: Navigator(
+                    key: _navegador,
+                    onGenerateRoute: (_) => PageRouteBuilder<void>(
+                      pageBuilder: (_, __, ___) => _SemNadaAberto(
+                        titulo: widget.vazioTitulo,
+                        texto: widget.vazioTexto,
+                        icone: widget.vazioIcone,
+                      ),
                     ),
                   ),
                 ),

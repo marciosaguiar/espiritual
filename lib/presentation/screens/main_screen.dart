@@ -22,7 +22,6 @@ import 'home/home_screen.dart';
 import 'songs/songs_screen.dart';
 import 'songs/add_song_screen.dart';
 import 'scale/scale_screen.dart';
-import 'scale/scale_detail_screen.dart';
 import 'chat/chat_screen.dart';
 import 'profile/profile_screen.dart';
 import 'profile/members_screen.dart';
@@ -68,6 +67,9 @@ class _MainScreenState extends State<MainScreen> {
   /// Índice da aba Perfil, usado por quem precisa levar a pessoa até lá.
   static const int _abaPerfil = 4;
 
+  /// Onde o toque num aviso pede para abrir um culto na aba da Escala.
+  final _pedidoDeCulto = ValueNotifier<PedidoDeCulto?>(null);
+
   late final List<Widget> _screens = [
     // Cada aba tem a largura em que se lê bem. Sem isto, num monitor de 1920
     // px o chat vira uma linha de 2.400 px e o Início, um vazio com um cartão
@@ -84,7 +86,7 @@ class _MainScreenState extends State<MainScreen> {
     ),
     // Músicas e Escala têm lista E detalhe lado a lado, e usam a largura toda.
     const SongsScreen(),
-    const ScaleScreen(),
+    ScaleScreen(pedido: _pedidoDeCulto),
     ColunaCentral(child: ChatScreen(escutas: widget.escutas)),
     ColunaCentral(child: ProfileScreen(onAbrirMusicas: _abrirMusicasCom)),
   ];
@@ -205,10 +207,10 @@ class _MainScreenState extends State<MainScreen> {
     // Culto fora da janela de leitura (60 dias atrás / 90 à frente) não está
     // na memória: a aba da Escala já é o lugar certo para procurar.
     if (culto == null) return;
-    Navigator.push(
-      context,
-      GlassPageRoute(builder: (_) => ScaleDetailScreen(scale: culto)),
-    );
+    // Quem abre é a aba da Escala, e não esta tela: em tela larga o culto
+    // tem de aparecer AO LADO do calendário, e só quem está dentro do painel
+    // sabe chegar nele.
+    _pedidoDeCulto.value = PedidoDeCulto(culto);
   }
 
   void _goToTab(int index) {
@@ -301,6 +303,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void dispose() {
     _olhoNoAviso?.cancel();
+    _pedidoDeCulto.dispose();
     _auth?.removeListener(_syncFavorites);
     super.dispose();
   }
@@ -316,7 +319,15 @@ class _MainScreenState extends State<MainScreen> {
     // vê NADA do app, e um pedido esquecido por dias é uma pessoa achando que
     // o app não funciona.
     Widget montar(int pendentes) {
-      final pilha = IndexedStack(index: _currentIndex, children: _screens);
+      // `AbaVisivel` conta a cada aba se é a da vez: as outras continuam
+      // montadas (guardam busca e rolagem), mas não podem reagir ao Esc.
+      final pilha = IndexedStack(
+        index: _currentIndex,
+        children: [
+          for (var i = 0; i < _screens.length; i++)
+            AbaVisivel(visivel: i == _currentIndex, child: _screens[i]),
+        ],
+      );
       return Scaffold(
         // Tela larga: a navegação vai para o lado, onde há espaço, e a barra
         // de baixo some. No celular, tudo como sempre foi.
