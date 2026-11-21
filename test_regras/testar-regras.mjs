@@ -10,7 +10,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   doc, getDoc, setDoc, updateDoc, deleteDoc, collection, getDocs, addDoc,
-  serverTimestamp, Bytes, deleteField, writeBatch,
+  serverTimestamp, Bytes, deleteField, writeBatch, increment,
 } from 'firebase/firestore';
 import { readFileSync } from 'node:fs';
 
@@ -1746,6 +1746,78 @@ await teste('o lote com UM hino ruim é recusado inteiro', async () => {
   const bom = await getDoc(doc(lider(), 'hinarios/cantor/hinos', '500'));
   if (bom.exists()) throw new Error('o hino bom entrou mesmo com o lote recusado');
 });
+
+console.log('\n── uso diário de leituras ──');
+
+// Como o app grava (ContadorDeLeituras): um `set` com merge, de incrementos.
+// `increment` entra na regra já como o valor SOMADO, então o teste usa os dois
+// formatos que o app de verdade produz — o documento nascendo e o documento
+// crescendo.
+const DIA = '2026-11-21';
+const usoDoDia = (d = {}) => ({
+  leituras: increment(300), leiturasSemRegra: increment(450), aberturas: increment(2),
+  porFonte: { cultos: increment(120), musicas: increment(180) },
+  atualizadoEm: serverTimestamp(),
+  ...d,
+});
+
+await teste('aprovado cria o uso do dia, agregado', () =>
+  assertSucceeds(setDoc(doc(levita(), 'usoDiario', DIA), usoDoDia(), { merge: true })));
+
+await teste('e o mesmo documento cresce com o aparelho de outra pessoa', () =>
+  assertSucceeds(setDoc(doc(lider(), 'usoDiario', DIA), usoDoDia(), { merge: true })));
+
+await teste('o contador soma: depois de duas gravações são 600', async () => {
+  const d = await getDoc(doc(lider(), 'usoDiario', DIA));
+  if (d.data().leituras !== 600) throw new Error(`leituras = ${d.data().leituras}`);
+});
+
+await teste('aprovado lê o uso do dia — é o que liga o modo de economia', () =>
+  assertSucceeds(getDoc(doc(levita(), 'usoDiario', DIA))));
+
+await teste('pendente não lê nem escreve o uso', async () => {
+  await assertFails(getDoc(doc(novato(), 'usoDiario', DIA)));
+  await assertFails(setDoc(doc(novato(), 'usoDiario', '2026-11-22'), usoDoDia(), { merge: true }));
+});
+
+await teste('quem não entrou não lê nem escreve o uso', async () => {
+  await assertFails(getDoc(doc(deslogado(), 'usoDiario', DIA)));
+  await assertFails(setDoc(doc(deslogado(), 'usoDiario', '2026-11-22'), usoDoDia(), { merge: true }));
+});
+
+await teste('o id tem de ser uma data', () =>
+  assertFails(setDoc(doc(levita(), 'usoDiario', 'hoje'), usoDoDia(), { merge: true })));
+
+await teste('campo desconhecido é recusado', () =>
+  assertFails(setDoc(doc(levita(), 'usoDiario', '2026-11-23'),
+    usoDoDia({ lixo: 1 }), { merge: true })));
+
+await teste('o aumento de uma só gravação é limitado — não liga a economia de todos', () =>
+  assertFails(setDoc(doc(levita(), 'usoDiario', DIA),
+    usoDoDia({ leituras: increment(40000) }), { merge: true })));
+
+await teste('o documento nascendo com um número absurdo é recusado', () =>
+  assertFails(setDoc(doc(levita(), 'usoDiario', '2026-11-24'),
+    usoDoDia({ leituras: increment(99999) }), { merge: true })));
+
+await teste('o contador só cresce: diminuir é recusado', () =>
+  assertFails(setDoc(doc(levita(), 'usoDiario', DIA),
+    usoDoDia({ leituras: increment(-100) }), { merge: true })));
+
+await teste('zerar o contador é recusado', () =>
+  assertFails(updateDoc(doc(lider(), 'usoDiario', DIA), { leituras: 0 })));
+
+await teste('a hora TEM de ser a do servidor', () =>
+  assertFails(setDoc(doc(levita(), 'usoDiario', DIA),
+    usoDoDia({ atualizadoEm: new Date(2030, 0, 1) }), { merge: true })));
+
+await teste('mapa de fontes com lixo demais é recusado', () =>
+  assertFails(setDoc(doc(levita(), 'usoDiario', DIA), usoDoDia({
+    porFonte: Object.fromEntries(Array.from({ length: 17 }, (_, i) => [`f${i}`, increment(1)])),
+  }), { merge: true })));
+
+await teste('ninguém apaga o uso — nem o líder', () =>
+  assertFails(deleteDoc(doc(lider(), 'usoDiario', DIA))));
 
 console.log('\n── coleção desconhecida ──');
 await teste('coleção sem regra fica bloqueada', () =>

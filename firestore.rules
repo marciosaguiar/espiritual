@@ -761,6 +761,59 @@ service cloud.firestore {
     //
     // A leitura é de todo aprovado, porque é disso que saem os dois tiques
     // azuis na bolha de quem enviou.
+    // ─── Uso diário de leituras ─────────────────────────────────────────────
+    //
+    // Cada aparelho grava, agregado e com `FieldValue.increment`, quantas
+    // leituras estima ter provocado hoje (ver `ContadorDeLeituras`). É a
+    // medida do plano grátis em PRODUÇÃO, e o que o modo de economia lê.
+    //
+    // Qualquer aprovado escreve, porque qualquer aparelho conta o que gasta —
+    // e é por isso que cada gravação é LIMITADA: nenhum aumento passa de 20 mil
+    // leituras (um aparelho que erra a conta, ou alguém falando direto com a
+    // API, não consegue ligar o modo de economia de todo mundo com um número
+    // absurdo). Valor que DIMINUI também é recusado: o contador só cresce.
+    //
+    // O id é o dia, `yyyy-mm-dd` (do Pacífico, que é quando a cota vira).
+    match /usoDiario/{dia} {
+      allow read: if aprovado();
+
+      allow create: if aprovado()
+        && dia.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && request.resource.data.keys().hasOnly(
+            ['leituras', 'leiturasSemRegra', 'aberturas', 'porFonte', 'atualizadoEm'])
+        && usoInicialValido(request.resource.data);
+
+      allow update: if aprovado()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(
+            ['leituras', 'leiturasSemRegra', 'aberturas', 'porFonte', 'atualizadoEm'])
+        && usoCrescendo(resource.data, request.resource.data);
+
+      allow delete: if false;
+    }
+
+    function contagemValida(v, maximo) {
+      return v is int && v >= 0 && v <= maximo;
+    }
+
+    function usoInicialValido(d) {
+      return contagemValida(d.get('leituras', 0), 20000)
+        && contagemValida(d.get('leiturasSemRegra', 0), 20000)
+        && contagemValida(d.get('aberturas', 0), 500)
+        && (!('porFonte' in d) || (d.porFonte is map && d.porFonte.size() <= 16))
+        && (!('atualizadoEm' in d) || d.atualizadoEm == request.time);
+    }
+
+    function usoCrescendo(antes, depois) {
+      return depois.get('leituras', 0) >= antes.get('leituras', 0)
+        && depois.get('leituras', 0) - antes.get('leituras', 0) <= 20000
+        && depois.get('leiturasSemRegra', 0) >= antes.get('leiturasSemRegra', 0)
+        && depois.get('leiturasSemRegra', 0) - antes.get('leiturasSemRegra', 0) <= 20000
+        && depois.get('aberturas', 0) >= antes.get('aberturas', 0)
+        && depois.get('aberturas', 0) - antes.get('aberturas', 0) <= 500
+        && (!('porFonte' in depois) || (depois.porFonte is map && depois.porFonte.size() <= 16))
+        && (!('atualizadoEm' in depois) || depois.atualizadoEm == request.time);
+    }
+
     match /chatLeituras/{userId} {
       allow read: if aprovado();
 

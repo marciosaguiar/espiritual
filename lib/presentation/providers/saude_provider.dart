@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 
 import '../../data/models/saude_model.dart';
+import '../../data/services/modo_economia.dart';
 import '../../data/services/saude_service.dart';
 
 /// A saúde do sistema, carregada UMA VEZ por abertura do app.
@@ -43,10 +44,17 @@ class SaudeProvider extends ChangeNotifier {
     final worker = await SaudeService.doWorker();
     final carimbos = await SaudeService.carimbos();
 
+    // UMA leitura (`usoDiario/{hoje}`), e é a mesma que o modo de economia
+    // faz: conferir aqui também o atualiza para todo o app. O que este
+    // aparelho ainda não gravou já vem somado.
+    await ModoEconomia.instancia.atualizar(forcar: true);
+
     _saude = SaudeDoSistema.avaliar(
       worker: worker,
       carimbos: carimbos,
       agora: DateTime.now(),
+      uso: ModoEconomia.instancia.uso,
+      mostrarUso: true,
     );
     _carregando = false;
     notifyListeners();

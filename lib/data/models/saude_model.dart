@@ -15,6 +15,8 @@
 /// dia.
 library;
 
+import '../../core/utils/uso_de_leituras.dart';
+
 /// O que o Worker respondeu em `GET /saude`.
 ///
 /// Nulo em `SaudeDoSistema.worker` significa "não consegui falar com ele", que
@@ -146,10 +148,16 @@ class SaudeDoSistema {
   /// `agora` entra como parâmetro pelo mesmo motivo de `aindaVale` e
   /// `minhasProximasMusicas`: é conta de data, e conta de data quebra na
   /// virada do dia — que é exatamente onde o teste precisa poder ficar.
+  ///
+  /// [mostrarUso] liga a linha "Leituras do banco hoje". Fica desligada por
+  /// padrão para quem só quer o diagnóstico dos robôs; ligada com [uso] nulo,
+  /// a linha aparece como "não sei" — nunca some em silêncio e nunca acende.
   static SaudeDoSistema avaliar({
     required SaudeDoWorker? worker,
     required Map<String, CarimboDeSaude> carimbos,
     required DateTime agora,
+    UsoDoDia? uso,
+    bool mostrarUso = false,
   }) {
     final itens = <ItemDeSaude>[];
 
@@ -233,7 +241,61 @@ class SaudeDoSistema {
           'avise quem cuida do app.',
     ));
 
+    if (mostrarUso) itens.add(daUso(uso));
+
     return SaudeDoSistema(itens);
+  }
+
+  /// "Leituras do banco hoje": quanto das 50 mil do plano grátis já foi.
+  ///
+  /// Os limites são os do modo de economia ([limiteDoAlerta], [limiteDaEconomia]),
+  /// e há um terceiro, em 95%, que é o único vermelho: a esse ponto a cota
+  /// acaba antes do fim do dia e o app INTEIRO para de ler — não só as telas
+  /// de fundo. Entre 60% e 95% é amarelo, porque o app já se segura sozinho e o
+  /// líder não tem o que consertar, só o que saber.
+  ///
+  /// É estimativa, e a frase diz isso: o app conta o que chegou, não vê a
+  /// fatura.
+  static const double limiteVermelhoDoUso = 0.95;
+
+  static ItemDeSaude daUso(UsoDoDia? uso) {
+    const titulo = 'Leituras do banco hoje';
+    if (uso == null) {
+      // Não deu para ler o contador (sem internet, sem permissão). Pode ser o
+      // wi-fi da igreja, então nunca é vermelho.
+      return const ItemDeSaude(
+        titulo: titulo,
+        estado: EstadoDeSaude.desconhecido,
+        detalhe: 'Não consegui conferir agora.',
+        oQueFazer: 'Pode ser a sua internet. Toque em "Conferir de novo" '
+            'mais tarde.',
+      );
+    }
+    final frase = frasesDoUso(uso);
+    if (uso.percentual >= limiteVermelhoDoUso) {
+      return ItemDeSaude(
+        titulo: titulo,
+        estado: EstadoDeSaude.ruim,
+        detalhe: frase,
+        oQueFazer: 'A cota grátis do dia está acabando: se ela acabar, o app '
+            'para de ler até amanhã. Avise quem cuida do app.',
+      );
+    }
+    if (uso.nivel != NivelDeUso.normal) {
+      return ItemDeSaude(
+        titulo: titulo,
+        estado: EstadoDeSaude.alerta,
+        detalhe: frase,
+        oQueFazer: 'Não precisa fazer nada agora: o app se segura sozinho. Se '
+            'isto se repetir em vários dias, avise quem cuida do app — o '
+            'plano grátis pode estar pequeno para o ministério.',
+      );
+    }
+    return ItemDeSaude(
+      titulo: titulo,
+      estado: EstadoDeSaude.ok,
+      detalhe: frase,
+    );
   }
 
   static ItemDeSaude _daRotina({
