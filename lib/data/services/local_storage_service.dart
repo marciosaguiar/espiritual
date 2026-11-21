@@ -189,6 +189,18 @@ class LocalStorageService {
   /// dia não for, o caminho é `chatLeituras`, não este campo.
   static Future<void> marcarChatVisto() async {
     await prefs.setString(_chatVistoKey, DateTime.now().toIso8601String());
+    await prefs.setInt(_chatMinhasKey, 0);
+  }
+
+  static const String _chatMinhasKey = 'chat_minhas_desde_visto';
+
+  /// Quantas mensagens MINHAS mandei depois da última visita ao chat. O Início
+  /// conta as não lidas por uma consulta agregada (que inclui as minhas); é
+  /// esta contagem que se desconta, em vez de ler as mensagens para descobrir.
+  static int get minhasDesdeVisto => prefs.getInt(_chatMinhasKey) ?? 0;
+
+  static Future<void> contarMinhaMensagem() async {
+    await prefs.setInt(_chatMinhasKey, minhasDesdeVisto + 1);
   }
 
   /// Nulo quando nunca abriu o chat neste aparelho — e aí a contagem é zero,

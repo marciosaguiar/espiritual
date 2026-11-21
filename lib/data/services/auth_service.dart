@@ -4,6 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import '../models/user_model.dart';
+import 'contador_de_leituras.dart';
 import 'local_storage_service.dart';
 
 /// Sign-in, sign-up and the user profile.
@@ -434,6 +435,27 @@ class AuthService {
   ///
   /// `getAllUsers` continua existindo e continua trazendo todo mundo: a tela
   /// Membros precisa dos robôs, para o líder poder desmarcá-los.
+  /// As pessoas escaláveis lidas UMA vez. Os nomes mudam raramente, e uma
+  /// escuta sempre ligada relia os ~16 cadastros inteiros cada vez que o app
+  /// voltava depois de mais de 30 minutos (ver `AuthProvider.prazoDasPessoas`).
+  static Future<({List<UserModel> itens, bool doServidor})?>
+      lerEscalaveisUmaVez() async {
+    try {
+      final snap = await _db.collection(_collection).orderBy('name').get();
+      final doServidor = !snap.metadata.isFromCache;
+      if (doServidor) {
+        ContadorDeLeituras.instancia.umaVez('pessoas', snap.docs.length);
+      }
+      final lista = snap.docs
+          .map((d) => UserModel.fromFirestore(d.data()))
+          .where((u) => u.aprovado && !u.bot)
+          .toList();
+      return (itens: lista, doServidor: doServidor);
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Stream<List<UserModel>> watchEscalaveis() =>
       watchEscalaveisComOrigem().map((r) => r.itens);
 

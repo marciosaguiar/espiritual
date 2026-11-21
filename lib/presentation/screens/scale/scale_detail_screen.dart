@@ -179,6 +179,8 @@ class _ScaleDetailScreenState extends State<ScaleDetailScreen> {
 
   Future<void> _showAddSongDialog() async {
     final songs = context.read<SongsProvider>();
+    await songs.atualizarSeVelho();
+    if (!mounted) return;
     if (songs.repertorio.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Nenhuma música no repertório ainda.')),

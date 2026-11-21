@@ -52,6 +52,19 @@ class AgendaProvider extends ChangeNotifier {
     });
   }
 
+  /// Liga as escutas (se ainda não estão) e espera as equipes chegarem, ou
+  /// [espera]. Quem NÃO é líder não as escuta na abertura — são quatro
+  /// documentos a cada abertura para uma lista que ele nunca vê —, mas há um
+  /// caso em que também ele precisa delas: "Sair do ministério" tira a pessoa de
+  /// todas as equipes, e sem ler as equipes ela continuaria listada nelas.
+  Future<void> garantir({Duration espera = const Duration(seconds: 6)}) async {
+    listen();
+    final limite = DateTime.now().add(espera);
+    while (_loading && DateTime.now().isBefore(limite)) {
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    }
+  }
+
   /// Drops both listeners and attaches new ones, for "try again".
   void retry() {
     _teamsSub?.cancel();

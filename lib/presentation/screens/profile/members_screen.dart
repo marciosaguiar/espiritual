@@ -398,14 +398,18 @@ class _MemberRowState extends State<_MemberRow> {
     if (ok != true || !mounted) return;
 
     final eu = context.read<AuthProvider>().user?.id ?? '';
-    final equipes = context.read<AgendaProvider>().teams;
-    // Só os cultos que o app tem na memória, que é a janela de 60/90 dias.
-    // O gerador só cria 4 semanas à frente, então não há culto futuro fora
-    // dela — e, se um dia houver, ele aparece ao líder como "faltando
-    // alguém" em vez de sumir calado.
-    final escalas = context.read<ScaleProvider>().scales;
-
+    // Remover TIRA a pessoa de todas as equipes e de todos os cultos futuros, e
+    // o app só mantém sempre lidos as 4 semanas à frente: lê os 90 dias agora,
+    // antes de calcular o que mexer. Sem isto, um culto marcado para daqui a
+    // dois meses ficaria com a pessoa removida escalada.
     setState(() => _saving = true);
+    final agendaProv = context.read<AgendaProvider>();
+    final escalaProv = context.read<ScaleProvider>();
+    await Future.wait([agendaProv.garantir(), escalaProv.garantirFuturo()]);
+    if (!mounted) return;
+    final equipes = agendaProv.teams;
+    final escalas = escalaProv.scales;
+
     final r = await FirestoreService.removerDoMinisterio(
       alvo: m,
       porQuemId: eu,

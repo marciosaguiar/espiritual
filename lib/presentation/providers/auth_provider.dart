@@ -9,6 +9,7 @@ import '../../data/models/user_model.dart';
 import '../../data/services/app_firebase.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/fila_service.dart';
+import '../../data/services/modo_economia.dart';
 import '../../data/services/preparo_offline.dart';
 import '../../data/services/firestore_service.dart';
 import '../../data/services/avisos_service.dart';
@@ -199,9 +200,24 @@ class AuthProvider extends ChangeNotifier {
 
   StreamSubscription<({List<UserModel> itens, bool doCache})>? _escutaPessoas;
 
+  /// Até quando a lista de nomes que está no aparelho dispensa ir ao servidor.
+  /// Ela serve para escrever "Falta confirmar: Lucas Melo…" e para os avatares,
+  /// e os nomes mudam raramente: uma escuta sempre ligada relia os ~16 cadastros
+  /// inteiros cada vez que o app voltava depois de mais de 30 minutos.
+  static const Duration prazoDasPessoas = Duration(hours: 24);
+
+  DateTime? _pessoasEm;
+  bool _atualizandoPessoas = false;
+
+  /// [fonte] só os testes trocam (e com ela o provider se comporta como a escuta
+  /// de antes, que é como se prova o vazio do cache).
   void ouvirPessoas({Stream<({List<UserModel> itens, bool doCache})>? fonte}) {
+    if (fonte == null) {
+      unawaited(atualizarPessoasSeVelho());
+      return;
+    }
     _escutaPessoas?.cancel();
-    _escutaPessoas = (fonte ?? AuthService.watchEscalaveisComOrigem()).listen((r) {
+    _escutaPessoas = fonte.listen((r) {
       // Vazio vindo do cache não é resposta: não apaga os nomes da tela.
       if (ignorarVazioDoCache(
           doCache: r.doCache, vazio: r.itens.isEmpty, jaTemDados: _pessoas.isNotEmpty)) {
@@ -216,6 +232,40 @@ class AuthProvider extends ChangeNotifier {
       // Sem a lista, as telas caem no nome copiado dentro do culto e, na
       // falta dele, em "Alguém". É leitura com valor padrão seguro.
     });
+  }
+
+  /// Relê os nomes do servidor se a cópia passou de [prazoDasPessoas] (ou não
+  /// existe). Em modo de economia só relê se não há nada na tela.
+  Future<void> atualizarPessoasSeVelho(
+      {bool forcar = false, DateTime? agora}) async {
+    if (_atualizandoPessoas) return;
+    final t = agora ?? DateTime.now();
+    if (!forcar && _pessoas.isNotEmpty) {
+      if (ModoEconomia.instancia.ligado) return;
+      if (_pessoasEm != null && t.difference(_pessoasEm!) < prazoDasPessoas) {
+        return;
+      }
+    }
+    _atualizandoPessoas = true;
+    try {
+      final r = await AuthService.lerEscalaveisUmaVez();
+      if (r == null) return; // sem resposta: fica com a cópia
+      if (ignorarVazioDoCache(
+          doCache: !r.doServidor,
+          vazio: r.itens.isEmpty,
+          jaTemDados: _pessoas.isNotEmpty)) {
+        return;
+      }
+      _pessoas = r.itens;
+      _nomes = {for (final p in r.itens) p.id: p.name};
+      if (r.doServidor) {
+        _pessoasEm = t;
+        _guardarPessoas();
+      }
+      notifyListeners();
+    } finally {
+      _atualizandoPessoas = false;
+    }
   }
 
   Timer? _relogioDasPessoas;
@@ -239,6 +289,7 @@ class AuthProvider extends ChangeNotifier {
       return 0;
     }
     _nomes = {for (final p in _pessoas) p.id: p.name};
+    _pessoasEm = await SnapshotLocal.quando('pessoas');
     notifyListeners();
     return _pessoas.length;
   }

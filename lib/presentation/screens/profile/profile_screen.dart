@@ -1221,10 +1221,17 @@ class _SairDoMinisterioState extends State<_SairDoMinisterio> {
     );
     if (ok != true || !mounted) return;
 
-    final equipes = context.read<AgendaProvider>().teams;
-    final escalas = context.read<ScaleProvider>().scales;
-
+    // O app não mantém sempre lidos nem as equipes (só o líder as escuta) nem
+    // os cultos além de 4 semanas: sair TIRA a pessoa de todos eles, então lê
+    // tudo agora — senão ela continuaria escalada no que o app não viu.
     setState(() => _saindo = true);
+    final agendaProv = context.read<AgendaProvider>();
+    final escalaProv = context.read<ScaleProvider>();
+    await Future.wait([agendaProv.garantir(), escalaProv.garantirFuturo()]);
+    if (!mounted) return;
+    final equipes = agendaProv.teams;
+    final escalas = escalaProv.scales;
+
     final r = await FirestoreService.removerDoMinisterio(
       alvo: eu,
       porQuemId: eu.id,

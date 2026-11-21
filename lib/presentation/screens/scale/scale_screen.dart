@@ -40,6 +40,16 @@ class _ScaleScreenState extends State<ScaleScreen> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
 
+  @override
+  void initState() {
+    super.initState();
+    // O mês que se vê no calendário é lido POR DEMANDA (ver as janelas em
+    // `ScaleProvider`): quem nunca abre a aba da Escala nunca paga por ele.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<ScaleProvider>().garantirMes(_focusedDay);
+    });
+  }
+
   bool _isServiceDay(DateTime day) {
     final weekday = day.weekday;
     return weekday == DateTime.wednesday ||
@@ -125,6 +135,7 @@ class _ScaleScreenState extends State<ScaleScreen> {
               },
               onPageChanged: (focused) {
                 setState(() => _focusedDay = focused);
+                context.read<ScaleProvider>().garantirMes(focused);
               },
               // Um ponto por culto: dois pontos no domingo dizem, sem tocar,
               // que há o da manhã e o da noite.

@@ -5,7 +5,6 @@ import '../../../core/constants/app_colors.dart';
 import '../../../data/models/message_model.dart';
 import '../../../data/models/scale_model.dart';
 import '../../../data/models/user_model.dart';
-import '../../../data/services/local_storage_service.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/scale_provider.dart';
@@ -112,13 +111,9 @@ class Pendencias extends StatelessWidget {
     }
 
     // ── Todos: mensagens novas no chat ──
-    final naoVistas = naoLidas(
-      chat.messages,
-      eu.id,
-      LocalStorageService.chatVistoEm,
-    );
+    final naoVistas = chat.naoLidasNoInicio(eu.id);
     if (naoVistas > 0) {
-      final ultima = chat.messages.isEmpty ? null : chat.messages.last;
+      final ultima = chat.ultimaMensagem;
       linhas.add(_Pendencia(
         icone: Icons.forum_rounded,
         cor: AppColors.blue,

@@ -17,7 +17,10 @@ import '../../../core/utils/fonte_mono.dart';
 import '../../../core/platform/tela_atual.dart';
 import '../../../core/utils/compartilhado.dart';
 import '../../data/services/app_firebase.dart';
+import '../../core/utils/uso_de_leituras.dart' show prazoDaEscuta;
 import '../../data/services/avisos_service.dart';
+import '../../data/services/contador_de_leituras.dart';
+import '../../data/services/modo_economia.dart';
 import '../../data/services/local_storage_service.dart';
 import '../../data/services/preparo_offline.dart';
 import '../../data/services/biblia_service.dart' show traducoesDisponiveis;
@@ -47,7 +50,7 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   late int _currentIndex = widget.abaInicial;
   AuthProvider? _auth;
 
@@ -145,6 +148,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _vigiarInicioParaMedir();
     // Defer to after the first frame so provider notifyListeners() (favorites
     // sync, preview seed data) don't fire during build.
@@ -271,13 +275,64 @@ class _MainScreenState extends State<MainScreen> {
     });
   }
 
+  DateTime? _escondidoDesde;
+
+  /// O app foi para segundo plano e voltou: é aqui que se decide o que religar.
+  ///
+  /// O iPhone mantém o app instalado vivo por dias, e cada volta depois de mais
+  /// de 30 minutos faz o Firestore relê-lo por inteiro as escutas que estavam
+  /// ligadas — por isso tão poucas ficam ligadas, e por isso a conversa só
+  /// recomeça se o chat é a aba à vista.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState estado) {
+    if (!widget.escutas || !mounted) return;
+    if (estado == AppLifecycleState.hidden ||
+        estado == AppLifecycleState.paused) {
+      if (_escondidoDesde != null) return;
+      _escondidoDesde = DateTime.now();
+      ContadorDeLeituras.instancia.aoIrParaSegundoPlano();
+      context.read<ChatProvider>().pararEscuta();
+      return;
+    }
+    if (estado != AppLifecycleState.resumed) return;
+    final fora = _escondidoDesde == null
+        ? Duration.zero
+        : DateTime.now().difference(_escondidoDesde!);
+    _escondidoDesde = null;
+    ContadorDeLeituras.instancia.aoVoltar();
+    if (fora > prazoDaEscuta) ContadorDeLeituras.instancia.abertura();
+    if (fora < const Duration(seconds: 20)) return; // troca de app rápida
+    final chat = context.read<ChatProvider>();
+    context.read<ScaleProvider>().renovarJanelaBase();
+    unawaited(ModoEconomia.instancia.atualizar());
+    unawaited(context.read<SongsProvider>().atualizarSeVelho());
+    unawaited(_auth?.atualizarPessoasSeVelho() ?? Future<void>.value());
+    if (_currentIndex == _abaChat) {
+      chat.listenToMessages();
+    } else {
+      unawaited(chat.carregarResumo());
+    }
+  }
+
   void _goToTab(int index) {
     if (index < 0 || index >= _screens.length) return;
     // Abrir a aba do chat é "eu vi": é o que zera a contagem de não lidas no
     // Início. Fica aqui, e não na tela do chat, porque com `IndexedStack` a
     // tela do chat é construída uma vez e nunca mais — o `initState` dela
     // rodaria no primeiro dia e nunca de novo.
-    if (index == _abaChat) LocalStorageService.marcarChatVisto();
+    if (index == _abaChat) {
+      LocalStorageService.marcarChatVisto();
+      // A conversa só é escutada com o chat à vista.
+      if (widget.escutas) context.read<ChatProvider>().listenToMessages();
+    } else if (_currentIndex == _abaChat && widget.escutas) {
+      context.read<ChatProvider>().pararEscuta();
+      // E o Início volta a contar pelo resumo, que recomeça já.
+      unawaited(context.read<ChatProvider>().carregarResumo(forcar: true));
+    }
+    // A primeira visita à aba de músicas confere se o repertório está velho.
+    if (index == 1 && widget.escutas) {
+      unawaited(context.read<SongsProvider>().atualizarSeVelho());
+    }
     setState(() {
       _currentIndex = index;
       _construidas.add(index);
@@ -311,24 +366,36 @@ class _MainScreenState extends State<MainScreen> {
     // Escutas em tempo real, NA ORDEM do que o Início precisa: o cartão do
     // culto vem dos cultos, "minhas próximas músicas" das músicas. O banco
     // atende as consultas uma a uma, então a ordem é a de chegada.
+    //
+    // O QUE FICA SEMPRE LIGADO É SÓ O QUE MUDA DURANTE O DIA: a janela curta de
+    // cultos (confirmações dos outros). O repertório e os nomes são lidos uma
+    // vez e guardados com prazo; o chat só é escutado com ele à vista, e o
+    // Início conta as mensagens por uma consulta agregada. Ver o orçamento de
+    // leituras no CLAUDE.md: uma abertura fria foi de 238 documentos para ~25.
+    ContadorDeLeituras.instancia.iniciar();
+    ContadorDeLeituras.instancia.abertura();
+    unawaited(ModoEconomia.instancia.atualizar());
     scale.listenToScales();
     songs.listenToSongs();
-    // Uma escuta só da lista de pessoas, para o app todo: o chat tinha a
-    // dele, e a Escala e o Início passaram a precisar da mesma coisa para
-    // dizer quem ainda não confirmou.
+    // Os nomes das pessoas: lidos uma vez (prazo de 24 h), não escutados.
     _auth!.ouvirPessoas();
-    chat.listenToMessages();
+    chat.carregarResumo();
     // "Fulano está digitando" só serve DENTRO do chat: quem a começa é a
     // própria tela do chat, na primeira visita. Era uma escuta a mais em toda
     // abertura, para um recado que quase nunca é visto.
 
-    // A agenda fixa (horários e equipes) só serve a quem gera cultos e a quem
-    // abre o Perfil: espera o Início ter os dados dele. O líder só a usa
-    // 3 s depois (`_agendarGeracao`), então nada atrasa.
+    // A agenda fixa (horários e equipes) só serve a quem gera cultos e monta
+    // equipes: o LÍDER. Quem não é líder não a escuta — eram quatro documentos a
+    // cada abertura, para uma lista que ele nunca vê —, e a única vez que ele
+    // precisa das equipes (sair do ministério) pede `agenda.garantir()`. Espera
+    // o Início ter os dados dele; o líder só a usa 3 s depois
+    // (`_agendarGeracao`), então nada atrasa.
     final agenda = context.read<AgendaProvider>();
-    _timerDaAgenda = Timer(const Duration(milliseconds: 1500), () {
-      if (mounted) agenda.listen();
-    });
+    if (_auth!.isAdmin) {
+      _timerDaAgenda = Timer(const Duration(milliseconds: 1500), () {
+        if (mounted) agenda.listen();
+      });
+    }
     // Deixa o app pronto para o culto sem sinal: cifras, letras dos hinos e a
     // Bíblia, AOS POUCOS e dentro do orçamento diário de leituras. Roda duas
     // vezes — logo depois da abertura, e de novo quando o repertório já
@@ -370,7 +437,14 @@ class _MainScreenState extends State<MainScreen> {
       final songs = context.read<SongsProvider>();
       final eu = _auth?.user;
       await PreparoOffline().executar(
-        idsDeMusicas: [for (final m in songs.repertorio) m.id],
+        carregarIdsDeMusicas: () async {
+          // A lista inteira só é baixada aqui se o aparelho NUNCA a teve. Se
+          // já tem, usa a que tem: renová-la todo dia, sem ninguém abrir a
+          // aba Músicas, custaria o repertório inteiro por aparelho por dia —
+          // justamente o que "por necessidade" veio evitar.
+          if (!songs.repertorioCompleto) await songs.atualizarSeVelho();
+          return [for (final m in songs.repertorio) m.id];
+        },
         hinarios: PreparoOffline.idsDosHinarios(
             LocalStorageService.ordemDosHinariosDe(eu?.id)),
         traducaoDaBiblia: LocalStorageService.getUltimaLeitura()?.traducao ??
@@ -420,6 +494,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _olhoNoAviso?.cancel();
     _timerDaAgenda?.cancel();
     _tiraMarcaDeInicio?.call();

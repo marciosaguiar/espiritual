@@ -79,12 +79,21 @@ Future<List<SongModel>?> escolherMusicas(
   required List<String> jaNoCulto,
 }) async {
   final songs = context.read<SongsProvider>();
+  // O repertório inteiro não é lido a cada abertura do app: se a cópia estiver
+  // velha (ou não existir), vem agora, antes de oferecer a escolha.
+  await songs.atualizarSeVelho();
+  if (!context.mounted) return null;
   final repertorio = songs.repertorio;
   if (repertorio.isEmpty) return null;
 
   // A pergunta das cifras sai daqui, e não da abertura do app: é uma leitura
   // por música, e só o líder que está montando um culto precisa da resposta.
   songs.conferirCifras();
+
+  // "Tocada em 12/10" precisa dos 60 dias de histórico, que o app NÃO mantém
+  // sempre lidos: pede agora, e só aqui.
+  await context.read<ScaleProvider>().garantirHistorico();
+  if (!context.mounted) return null;
 
   final ultimaVez = ScaleProvider.ultimaVezTocada(
     context.read<ScaleProvider>().scales,

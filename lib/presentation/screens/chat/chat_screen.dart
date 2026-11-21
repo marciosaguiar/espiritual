@@ -123,6 +123,8 @@ class _ChatScreenState extends State<ChatScreen> {
   void initState() {
     super.initState();
     _chat = context.read<ChatProvider>();
+    // A conversa só é escutada com o chat à vista (ver `ChatProvider`).
+    if (widget.escutas) _chat!.listenToMessages();
     _auth = context.read<AuthProvider>();
     // "Fulano está digitando": a escuta nasce AQUI, na primeira visita ao
     // chat, e não na abertura do app (ver `MainScreen._initData`). Ela já se
@@ -1309,8 +1311,14 @@ class _ChatScreenState extends State<ChatScreen> {
                     Tooltip(
                       message: 'Buscar e compartilhar música',
                       child: IconButton(
-                        onPressed: () => setState(
-                            () => _showSongSearch = !_showSongSearch),
+                        onPressed: () {
+                          // O painel procura no repertório inteiro, que o app
+                          // já não lê a cada abertura.
+                          if (!_showSongSearch) {
+                            context.read<SongsProvider>().atualizarSeVelho();
+                          }
+                          setState(() => _showSongSearch = !_showSongSearch);
+                        },
                         icon: Icon(
                           _showSongSearch
                               ? Icons.close_rounded

@@ -126,6 +126,11 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
   @override
   void initState() {
     super.initState();
+    // "O hino 15 está no repertório?" precisa do repertório inteiro, que o app
+    // já não lê a cada abertura.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<SongsProvider>().atualizarSeVelho();
+    });
     _usuario = context.read<AuthProvider>().user?.id;
     final salvaDosHinarios = LocalStorageService.ordemDosHinariosDe(_usuario);
     _ordemDosHinarios = hinariosNaOrdem(salvaDosHinarios);
@@ -542,6 +547,13 @@ class _HinoPorNumeroScreenState extends State<HinoPorNumeroScreen> {
     // A contagem sai dos cultos que o app já tem em memória — sem coleção
     // nova e sem leitura nova. A janela são 60 dias, e é por isso que a tela
     // diz "nos últimos 2 meses" em vez de prometer o histórico inteiro.
+    // O histórico de 60 dias não fica sempre lido: abre só quando a pessoa
+    // escolhe "mais tocados" (e a tela se refaz quando ele chega).
+    if (_ordem == OrdemDosHinos.maisTocados) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) context.read<ScaleProvider>().garantirHistorico();
+      });
+    }
     final vezes = _ordem == OrdemDosHinos.maisTocados
         ? ScaleProvider.vezesTocadas(
             context.watch<ScaleProvider>().scales, DateTime.now())

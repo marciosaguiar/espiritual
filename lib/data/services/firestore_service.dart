@@ -10,6 +10,7 @@ import '../models/scale_model.dart';
 import '../models/message_model.dart';
 import '../models/user_model.dart';
 import 'auth_service.dart';
+import 'contador_de_leituras.dart';
 import 'estado_da_rede.dart';
 import '../../core/platform/rede.dart';
 import '../../core/utils/fusao_de_edicao.dart';
@@ -70,6 +71,58 @@ class FirestoreService {
   /// não tenha o campo `name` — a música simplesmente não existiria para o
   /// app, sem erro nenhum. Ordenar aqui custa nada nesta escala e faz uma
   /// música torta aparecer (ainda que sem nome) em vez de sumir.
+  /// As músicas lidas UMA vez, sem escuta. Quem usa é `SongsProvider`, que
+  /// decide quando vale reler (ver `prazoDasMusicas`): uma escuta sempre ligada
+  /// relê o repertório inteiro cada vez que o app volta depois de mais de 30
+  /// minutos, e o repertório quase não muda.
+  static Future<({List<SongModel> itens, bool doServidor})?>
+      lerMusicasUmaVez() async {
+    try {
+      final snap = await _db.collection(_songs).get();
+      final doServidor = !snap.metadata.isFromCache;
+      if (doServidor) {
+        ContadorDeLeituras.instancia.umaVez('musicas', snap.docs.length);
+      }
+      final lista =
+          snap.docs.map((d) => SongModel.fromFirestore(d.data())).toList();
+      lista.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+      return (itens: lista, doServidor: doServidor);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// O que o Início precisa do chat sem abrir a conversa: quantas mensagens
+  /// chegaram depois de [visto] e qual foi a última. Custa DUAS leituras — a
+  /// contagem agregada (1 por até mil mensagens) e a última mensagem —, em vez
+  /// das 50 de uma escuta sempre ligada.
+  ///
+  /// A contagem inclui as minhas; quem chama desconta as que eu mandei desde
+  /// então.
+  static Future<({int novas, MessageModel? ultima})?> resumoDoChat(
+      DateTime? visto) async {
+    try {
+      final col = _db.collection(_messages);
+      final u = await col.orderBy('timestamp', descending: true).limit(1).get();
+      final ultima = u.docs.isEmpty
+          ? null
+          : MessageModel.fromFirestore(u.docs.first.data());
+      var novas = 0;
+      if (visto != null) {
+        final c = await col
+            .where('timestamp', isGreaterThan: Timestamp.fromDate(visto))
+            .count()
+            .get();
+        novas = c.count ?? 0;
+      }
+      ContadorDeLeituras.instancia
+          .umaVez('chatResumo', 1 + (visto != null ? 1 : 0));
+      return (novas: novas, ultima: ultima);
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Stream<List<SongModel>> watchSongs() =>
       watchSongsComOrigem().map((r) => r.itens);
 
@@ -114,9 +167,44 @@ class FirestoreService {
     }
   }
 
+  /// Músicas que ESTE aparelho acabou de gravar. Como o repertório deixou de
+  /// ser uma escuta sempre ligada, é por aqui que a tela fica sabendo da música
+  /// nova de quem a cadastrou (e de qualquer caminho que cadastre: "Pôr no
+  /// repertório", importar, colar cifra) — sem esperar o próximo prazo.
+  static final StreamController<SongModel> _musicasGravadas =
+      StreamController<SongModel>.broadcast();
+  static Stream<SongModel> get musicasGravadas => _musicasGravadas.stream;
+
+  /// UMA música, lida do servidor (1 leitura): o que se faz depois de uma
+  /// edição que saiu da fila, para a tela mostrar o que ficou de verdade.
+  static Future<SongModel?> lerMusica(String id) async =>
+      (await lerMusicaPorId(id)).musica;
+
+  /// Uma música por id, dizendo se o banco RESPONDEU.
+  ///
+  /// "Não existe" e "não consegui perguntar" são respostas diferentes, e
+  /// confundi-las faz uma música que existe parecer removida só porque o sinal
+  /// caiu. `respondeu` falso é o segundo caso: quem chama tenta de novo depois.
+  static Future<({SongModel? musica, bool respondeu})> lerMusicaPorId(
+      String id) async {
+    try {
+      final doc = await _db.collection(_songs).doc(id).get();
+      if (!doc.metadata.isFromCache) {
+        ContadorDeLeituras.instancia.umaVez('musicas', 1);
+      }
+      return (
+        musica: doc.exists ? SongModel.fromFirestore(doc.data()!) : null,
+        respondeu: true,
+      );
+    } catch (_) {
+      return (musica: null, respondeu: false);
+    }
+  }
+
   static Future<({bool success, String? error})> addSong(SongModel song) async {
     try {
       await _db.collection(_songs).doc(song.id).set(song.toFirestore());
+      _musicasGravadas.add(song);
       return (success: true, error: null);
     } on FirebaseException catch (e) {
       return (success: false, error: _describe(e, 'salvar a música'));
@@ -234,6 +322,7 @@ class FirestoreService {
       lerIndiceDoHinario(String hinarioId) async {
     try {
       final doc = await _db.collection(_hinarios).doc(hinarioId).get();
+      ContadorDeLeituras.instancia.umaVez('hinos', 1);
       return (
         indice: IndiceDoHinario.fromFirestore(hinarioId, doc.data()),
         error: null
@@ -254,6 +343,7 @@ class FirestoreService {
   ) async {
     try {
       final doc = await _hinosDa(hinarioId).doc('$numero').get();
+      ContadorDeLeituras.instancia.umaVez('hinos', 1);
       return (
         hino: HinoDaBiblioteca.fromFirestore(hinarioId, doc.data()),
         error: null
@@ -280,6 +370,7 @@ class FirestoreService {
           .startAfter([depoisDe])
           .limit(limite)
           .get();
+      ContadorDeLeituras.instancia.umaVez('preparo', r.docs.length);
       final saida = <HinoDaBiblioteca>[];
       for (final doc in r.docs) {
         final h = HinoDaBiblioteca.fromFirestore(hinarioId, doc.data());
@@ -302,6 +393,7 @@ class FirestoreService {
       lerTodasAsLetras(String hinarioId) async {
     try {
       final r = await _hinosDa(hinarioId).get();
+      ContadorDeLeituras.instancia.umaVez('hinos', r.docs.length);
       final saida = <int, String>{};
       for (final doc in r.docs) {
         final n = int.tryParse(doc.id);
@@ -425,11 +517,13 @@ class FirestoreService {
     try {
       if (arrangementId.isNotEmpty) {
         final doc = await _arrangementsOf(songId).doc(arrangementId).get();
+        ContadorDeLeituras.instancia.umaVez('cifras', 1);
         if (doc.exists) {
           return (arranjo: ArrangementModel.fromFirestore(doc.data()!), ok: true);
         }
       }
       final snap = await _arrangementsOf(songId).limit(1).get();
+      ContadorDeLeituras.instancia.umaVez('cifras', 1);
       if (snap.docs.isEmpty) return (arranjo: null, ok: true);
       return (
         arranjo: ArrangementModel.fromFirestore(snap.docs.first.data()),
@@ -602,17 +696,51 @@ class FirestoreService {
   static Stream<List<ScaleModel>> watchScales() =>
       watchScalesComOrigem().map((r) => r.itens);
 
+  /// A janela que o app mantém SEMPRE ligada: de 2 dias atrás a 28 dias à
+  /// frente. É o que o Início, a lista de próximos cultos e a geração da agenda
+  /// fixa precisam — e são ~20 documentos, não os ~110 da janela larga.
+  ///
+  /// O resto (o mês que a pessoa abre no calendário, os 60 dias de histórico
+  /// para "tocada em…" e "mais tocados") vem POR DEMANDA, em janelas próprias:
+  /// quem nunca abre o calendário nunca paga por ele.
+  static const Duration janelaBasePassado = Duration(days: 2);
+  static const Duration janelaBaseFuturo = Duration(days: 28);
+
+  static DateTime inicioDaJanelaBase([DateTime? agora]) {
+    final n = agora ?? DateTime.now();
+    return DateTime(n.year, n.month, n.day).subtract(janelaBasePassado);
+  }
+
+  static DateTime fimDaJanelaBase([DateTime? agora]) =>
+      (agora ?? DateTime.now()).add(janelaBaseFuturo);
+
   static Stream<({List<ScaleModel> itens, bool doCache})>
-      watchScalesComOrigem() {
+      watchScalesComOrigem({DateTime? inicio, DateTime? fim}) {
     var primeira = true;
+    var contouAPrimeira = false;
+    final de = inicio ?? _inicioDaJanela;
+    final ate = fim ?? _fimDaJanela;
+    final consulta = 'cultos:${de.year}-${de.month}-${de.day}:'
+        '${ate.year}-${ate.month}-${ate.day}';
     return _db
         .collection(_scales)
-        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(_inicioDaJanela))
-        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(_fimDaJanela))
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(de))
+        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(ate))
         .orderBy('date')
         .snapshots(includeMetadataChanges: true)
         .where((snap) {
-      if (!snap.metadata.isFromCache) EstadoDaRede.instancia.bancoRespondeu();
+      if (!snap.metadata.isFromCache) {
+        EstadoDaRede.instancia.bancoRespondeu();
+        // A primeira resposta do SERVIDOR é onde se paga o resultado inteiro.
+        ContadorDeLeituras.instancia.notificacao(
+          fonte: 'cultos',
+          consulta: consulta,
+          primeiraDaInstancia: !contouAPrimeira,
+          total: snap.docs.length,
+          mudancas: snap.docChanges.length,
+        );
+        contouAPrimeira = true;
+      }
       final emitir = primeira || snap.docChanges.isNotEmpty;
       primeira = false;
       return emitir;
@@ -1400,13 +1528,24 @@ class FirestoreService {
 
   static Stream<({List<MessageModel> itens, bool doCache})>
       watchMessagesComOrigem({int limit = 50}) {
+    var contouAPrimeira = false;
     return _db
         .collection(_messages)
         .orderBy('timestamp', descending: true)
         .limit(limit)
         .snapshots(includeMetadataChanges: true)
         .map((snap) {
-      if (!snap.metadata.isFromCache) EstadoDaRede.instancia.bancoRespondeu();
+      if (!snap.metadata.isFromCache) {
+        EstadoDaRede.instancia.bancoRespondeu();
+        ContadorDeLeituras.instancia.notificacao(
+          fonte: 'chat',
+          consulta: 'chat',
+          primeiraDaInstancia: !contouAPrimeira,
+          total: snap.docs.length,
+          mudancas: snap.docChanges.length,
+        );
+        contouAPrimeira = true;
+      }
       return (
         itens: snap.docs
             .map((doc) => MessageModel.fromFirestore(doc.data(),

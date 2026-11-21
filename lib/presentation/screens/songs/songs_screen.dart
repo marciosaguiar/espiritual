@@ -51,6 +51,18 @@ class _SongsScreenState extends State<SongsScreen>
   SecaoDeMusicas _secao = SecaoDeMusicas.repertorio;
 
   @override
+  void initState() {
+    super.initState();
+    // O repertório inteiro é lido aqui, quando alguém abre a aba — e não a cada
+    // abertura do app (ver `SongsProvider.prazoDasMusicas`). A cópia do
+    // aparelho aparece na hora; o servidor só é consultado se ela passou do
+    // prazo.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<SongsProvider>().atualizarSeVelho();
+    });
+  }
+
+  @override
   void dispose() {
     _searchCtrl.dispose();
     super.dispose();
@@ -408,6 +420,18 @@ class _ListaVazia extends StatelessWidget {
                     : AppColors.textSecondaryLight,
               ),
             ),
+            // Música cadastrada por outra pessoa só chega na lista no próximo
+            // prazo; quem acabou de ouvir "o líder cadastrou ontem" e não
+            // acha precisa de um jeito de buscar agora — e a pessoa decide,
+            // porque custa uma leitura por música.
+            if (songs.searchQuery.trim().isNotEmpty) ...[
+              const SizedBox(height: 18),
+              OutlinedButton.icon(
+                onPressed: () => songs.atualizarSeVelho(forcar: true),
+                icon: const Icon(Icons.refresh_rounded, size: 18),
+                label: const Text('Atualizar a lista de músicas'),
+              ),
+            ],
             // A busca que não achou nada é o melhor momento do app para
             // oferecer o Cifra Club: a pessoa acabou de digitar o nome da
             // música, e o que falta é justamente a cifra dela. O texto já

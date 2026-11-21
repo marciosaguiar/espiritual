@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../core/utils/crypto_utils.dart';
+import '../widgets/home/pendencias.dart' show naoLidas;
 import '../../core/utils/origem_do_dado.dart';
 import '../../core/utils/snapshot_local.dart';
 import '../../data/models/aviso_de_sincronia.dart';
@@ -8,6 +9,7 @@ import '../../data/models/message_model.dart';
 import '../../data/services/avisos_de_sincronia.dart';
 import '../../data/services/avisos_service.dart';
 import '../../data/services/firestore_service.dart';
+import '../../data/services/local_storage_service.dart';
 
 typedef TypingUser = ({String userId, String userName, DateTime updatedAt});
 
@@ -54,6 +56,61 @@ class ChatProvider extends ChangeNotifier {
     _isLoading = false;
     _error = null;
     notifyListeners();
+  }
+
+  // ─── o resumo do Início, sem a conversa ───────────────────────────────────
+  //
+  // O Início precisa de DUAS coisas do chat: quantas mensagens chegaram depois
+  // da última visita e qual foi a última. Para isso o app mantinha uma escuta
+  // das 50 últimas mensagens sempre ligada — a segunda maior fatia de uma
+  // abertura fria (50 de 238 leituras), relida a cada volta depois de 30
+  // minutos. Agora são duas leituras (a contagem agregada e a última mensagem),
+  // e a conversa só é escutada ENQUANTO O CHAT ESTÁ À VISTA.
+
+  int _novasRemotas = 0;
+  MessageModel? _ultimaRemota;
+  DateTime? _resumoEm;
+
+  /// Mensagens que não vi, para o Início. Com a conversa carregada, a conta é
+  /// a de sempre (e não conta as minhas); sem ela, é a contagem agregada menos
+  /// as que eu mesmo mandei desde a última visita.
+  int naoLidasNoInicio(String meuId) {
+    final visto = LocalStorageService.chatVistoEm;
+    if (visto == null) return 0;
+    if (_messagesSub != null && _messages.isNotEmpty) {
+      return naoLidas(_messages, meuId, visto);
+    }
+    final n = _novasRemotas - LocalStorageService.minhasDesdeVisto;
+    return n < 0 ? 0 : n;
+  }
+
+  /// A última mensagem, para a prévia do Início.
+  MessageModel? get ultimaMensagem =>
+      _messages.isNotEmpty ? _messages.last : _ultimaRemota;
+
+  /// Confere o resumo no banco (2 leituras), no máximo uma vez por [validade].
+  Future<void> carregarResumo({bool forcar = false}) async {
+    final t = DateTime.now();
+    if (!forcar && _resumoEm != null && t.difference(_resumoEm!) < validade) {
+      return;
+    }
+    // Com a conversa à vista as mensagens já chegam sozinhas.
+    if (_messagesSub != null) return;
+    final r = await FirestoreService.resumoDoChat(LocalStorageService.chatVistoEm);
+    if (r == null) return; // sem resposta: fica com o que sabia
+    _novasRemotas = r.novas;
+    _ultimaRemota = r.ultima;
+    _resumoEm = t;
+    notifyListeners();
+  }
+
+  static const Duration validade = Duration(minutes: 5);
+
+  /// Para a escuta da conversa (o chat saiu de vista) sem apagar o que está na
+  /// tela: quando a pessoa voltar, a escuta recomeça.
+  void pararEscuta() {
+    _messagesSub?.cancel();
+    _messagesSub = null;
   }
 
   void listenToMessages({Stream<({List<MessageModel> itens, bool doCache})>? fonte}) {
@@ -185,6 +242,7 @@ class ChatProvider extends ChangeNotifier {
     // aviso sai quando ela chegar. Se chegar mais de 2 minutos depois o
     // servidor dos avisos recusa — é a trava dele contra reavisar mensagem
     // velha, e está certa: ninguém quer o "oi" de uma hora atrás.
+    LocalStorageService.contarMinhaMensagem();
     final result = await FirestoreService.sendMessage(
       message,
       aoConfirmar: () => AvisosService.avisarDoChat(message.id),

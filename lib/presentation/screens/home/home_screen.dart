@@ -61,12 +61,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final proximo = escala.nextScale;
 
     final temCulto = proximo != null && proximo.isUserInScale(eu.id);
-    final temMensagem = naoLidas(
-          chat.messages,
-          eu.id,
-          LocalStorageService.chatVistoEm,
-        ) >
-        0;
+    final temMensagem = chat.naoLidasNoInicio(eu.id) > 0;
     final temLider = auth.isAdmin &&
         (quantosPendentes(auth.pessoas) > 0 ||
             cultosSemEscala(escala.scales, DateTime.now()).isNotEmpty);

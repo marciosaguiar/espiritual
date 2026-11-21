@@ -67,6 +67,11 @@ class _AddSongScreenState extends State<AddSongScreen> {
   @override
   void initState() {
     super.initState();
+    // O aviso de duplicata compara com o repertório INTEIRO, que o app já não
+    // lê a cada abertura: pede agora, se a cópia estiver velha.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) context.read<SongsProvider>().atualizarSeVelho();
+    });
     // O artista de um hino é o hinário. Preenchido, e não fixo, porque o
     // líder pode querer pôr o autor de verdade do hino no lugar.
     if (_ehHino) _artistCtrl.text = widget.hinario!.nome;

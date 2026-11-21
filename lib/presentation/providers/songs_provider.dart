@@ -11,6 +11,7 @@ import '../../data/models/arrangement_model.dart';
 import '../../data/models/scale_model.dart';
 import '../../data/models/song_model.dart';
 import '../../data/services/fila_service.dart';
+import '../../data/services/modo_economia.dart';
 import '../../data/services/firestore_service.dart';
 import '../../data/services/local_storage_service.dart';
 import '../../core/constants/hinarios.dart';
@@ -19,9 +20,24 @@ import '../../core/utils/texto.dart';
 enum SongsFilter { all, favorites, offline, arquivadas }
 
 class SongsProvider extends ChangeNotifier {
-  SongsProvider({FilaDeEnvio? fila}) : _fila = fila ?? FilaService.fila {
+  SongsProvider({
+    FilaDeEnvio? fila,
+    Future<({List<SongModel> itens, bool doServidor})?> Function()? lerRepertorio,
+    Future<({SongModel? musica, bool respondeu})> Function(String id)? lerPorId,
+  })  : _fila = fila ?? FilaService.fila,
+        _lerRepertorio = lerRepertorio ?? FirestoreService.lerMusicasUmaVez,
+        _lerPorId = lerPorId ?? FirestoreService.lerMusicaPorId {
     _fila.addListener(_aoMudarAFila);
   }
+
+  final Future<({List<SongModel> itens, bool doServidor})?> Function()
+      _lerRepertorio;
+  final Future<({SongModel? musica, bool respondeu})> Function(String id)
+      _lerPorId;
+
+  /// Tem banco de verdade por trás? Falso nas telas de teste e na captura de
+  /// telas, onde ninguém deve tentar ler do Firestore.
+  bool _semBanco = false;
 
   final FilaDeEnvio _fila;
 
@@ -71,6 +87,7 @@ class SongsProvider extends ChangeNotifier {
   /// do tamanho do ministério sem emulador nenhum.
   @visibleForTesting
   void carregarParaTeste(List<SongModel> musicas) {
+    _semBanco = true;
     _servidor = musicas;
     _songs = _comPendencias(musicas);
     _isLoading = false;
@@ -79,11 +96,49 @@ class SongsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Até quando o repertório que está no aparelho dispensa ir ao servidor.
+  ///
+  /// **O repertório é lido POR NECESSIDADE, não a cada abertura.** Ele já foi
+  /// uma escuta sempre ligada, e depois uma leitura a cada abertura do app — e
+  /// as duas custam o repertório INTEIRO (uma leitura por música) toda vez,
+  /// para saber de uma lista que quase nunca muda. O custo cresce com o
+  /// tamanho do repertório: 40 músicas passam despercebidas, 300 gastam sozinhas
+  /// um quinto da cota do dia só em abrir o app seis vezes.
+  ///
+  /// Agora o Início NÃO lê a lista: cada música de um culto é resolvida pelo id
+  /// (`getSongById` pede a que falta) e a lista inteira só vem quando alguém
+  /// precisa dela — a aba Músicas, o cadastro (para avisar de duplicata), a
+  /// escolha das músicas de um culto, o teclado de hinos — e, em segundo plano,
+  /// pela preparação do app. Chegando, vale por [prazoDasMusicas]. A própria
+  /// pessoa que grava vê a música na hora (`musicasGravadas`).
+  ///
+  /// O que se perde: uma música cadastrada por OUTRA pessoa só aparece na LISTA
+  /// no próximo prazo ou quando se toca em "Atualizar a lista". Num culto ela
+  /// aparece de qualquer jeito, porque o culto a resolve pelo id.
+  static const Duration prazoDasMusicas = Duration(hours: 12);
+
+  DateTime? _musicasEm;
+  bool _atualizandoMusicas = false;
+  StreamSubscription<SongModel>? _gravadasSub;
+  Set<String> _musicasPendentes = {};
+
+  /// Ids já respondidos pelo banco como "não existe" (nesta sessão).
+  final Set<String> _naoExistem = {};
+
+  /// Ids que estão sendo buscados agora, e quando a última tentativa falhou
+  /// (para não insistir a cada quadro desenhado).
+  final Set<String> _buscando = {};
+  final Map<String, DateTime> _falhouEm = {};
+  static const Duration esperaDepoisDeFalhar = Duration(minutes: 2);
+
   void listenToSongs({Stream<({List<SongModel> itens, bool doCache})>? fonte}) {
+    _gravadasSub ??= FirestoreService.musicasGravadas.listen(registrarLocal);
+    // Sem fonte (o app de verdade) NÃO se lê nada aqui: ver `prazoDasMusicas`.
+    if (fonte == null) return;
     // Guard against stacking multiple subscriptions (e.g. re-login).
     if (_songsSub != null) return;
     _isLoading = true;
-    _songsSub = (fonte ?? FirestoreService.watchSongsComOrigem()).listen((r) {
+    _songsSub = fonte.listen((r) {
       // Vazio vindo do cache não é resposta: não apaga o que está na tela.
       if (ignorarVazioDoCache(
           doCache: r.doCache, vazio: r.itens.isEmpty, jaTemDados: _servidor.isNotEmpty)) {
@@ -103,6 +158,137 @@ class SongsProvider extends ChangeNotifier {
       _error = 'Erro ao carregar músicas';
       notifyListeners();
     });
+  }
+
+  /// A lista INTEIRA já foi lida (ou restaurada de uma cópia inteira)?
+  ///
+  /// Não é o mesmo que "há músicas na memória": o Início traz músicas soltas,
+  /// pelo id, e uma lista de três não é o repertório. É isto que decide se a
+  /// cópia vale mais [prazoDasMusicas].
+  bool get repertorioCompleto => _musicasEm != null;
+
+  /// Relê o repertório do servidor se a cópia passou de [prazoDasMusicas] (ou
+  /// não existe). Em modo de economia não relê, a não ser que não haja nada na
+  /// tela. [forcar] ignora o prazo — é o botão "Atualizar a lista".
+  Future<void> atualizarSeVelho({bool forcar = false, DateTime? agora}) async {
+    if (_atualizandoMusicas || _semBanco) return;
+    final t = agora ?? DateTime.now();
+    final temAlgo = _servidor.isNotEmpty;
+    if (!forcar) {
+      // Em modo de economia a lista inteira (uma leitura por música) espera
+      // amanhã, a não ser que não haja música nenhuma na tela.
+      if (temAlgo && ModoEconomia.instancia.ligado) return;
+      if (_musicasEm != null && t.difference(_musicasEm!) < prazoDasMusicas) {
+        if (_isLoading) {
+          _isLoading = false;
+          notifyListeners();
+        }
+        return;
+      }
+    }
+    _atualizandoMusicas = true;
+    if (!temAlgo) {
+      _isLoading = true;
+      notifyListeners();
+    }
+    try {
+      final r = await _lerRepertorio();
+      if (r == null) {
+        // Sem resposta: fica com o que há — e só vira erro se não há nada.
+        _isLoading = false;
+        if (!temAlgo) _error = 'Erro ao carregar músicas';
+        notifyListeners();
+        return;
+      }
+      if (ignorarVazioDoCache(
+          doCache: !r.doServidor, vazio: r.itens.isEmpty, jaTemDados: temAlgo)) {
+        _isLoading = false;
+        notifyListeners();
+        return;
+      }
+      if (_songs.isEmpty) marcar('musicas-recebidas');
+      _servidor = r.itens;
+      _songs = _comPendencias(r.itens);
+      _isLoading = false;
+      _error = null;
+      if (r.doServidor) {
+        _musicasEm = t;
+        _guardarNoAparelho();
+      }
+      _applyFilter();
+      notifyListeners();
+    } finally {
+      _atualizandoMusicas = false;
+    }
+  }
+
+  // ─── uma música por id: é assim que o Início resolve os cultos ────────────
+
+  /// Pede ao banco a música [id], se ela não está na memória. Idempotente e
+  /// barata de chamar a cada quadro: já buscando, já confirmada como inexistente
+  /// ou falha recente não fazem nada.
+  void _pedirPorId(String id) {
+    if (_semBanco || id.isEmpty) return;
+    if (_naoExistem.contains(id) || _buscando.contains(id)) return;
+    final f = _falhouEm[id];
+    if (f != null && DateTime.now().difference(f) < esperaDepoisDeFalhar) return;
+    _buscando.add(id);
+    // Fora do `build` que a pediu: notificar de dentro dele é erro do Flutter.
+    scheduleMicrotask(() => unawaited(_buscarPorId(id)));
+  }
+
+  Future<void> _buscarPorId(String id) async {
+    try {
+      final r = await _lerPorId(id);
+      final m = r.musica;
+      if (m != null) {
+        _falhouEm.remove(id);
+        _servidor = [..._servidor.where((x) => x.id != id), m]
+          ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+        _songs = _comPendencias(_servidor);
+        _applyFilter();
+        _guardarNoAparelho();
+      } else if (r.respondeu) {
+        _naoExistem.add(id);
+      } else {
+        _falhouEm[id] = DateTime.now();
+      }
+    } catch (_) {
+      _falhouEm[id] = DateTime.now();
+    } finally {
+      _buscando.remove(id);
+      notifyListeners();
+    }
+  }
+
+  /// Traz de uma vez as músicas [ids] que faltam (a tela do culto sabe quais).
+  Future<void> garantirMusicas(Iterable<String> ids) async {
+    for (final id in ids) {
+      if (_songs.any((s) => s.id == id)) continue;
+      _pedirPorId(id);
+    }
+  }
+
+  /// Uma música gravada por este aparelho entra na lista na hora.
+  void registrarLocal(SongModel s) {
+    _servidor = [..._servidor.where((x) => x.id != s.id), s]
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    _songs = _comPendencias(_servidor);
+    _applyFilter();
+    _guardarNoAparelho();
+    notifyListeners();
+  }
+
+  /// Relê UMA música (1 leitura) e a troca na lista: o que se faz quando uma
+  /// edição saiu da fila, para a tela mostrar o que ficou no banco.
+  Future<void> _recarregarMusica(String id) async {
+    final m = (await _lerPorId(id)).musica;
+    if (m == null) return;
+    _servidor = [for (final x in _servidor) x.id == id ? m : x];
+    _songs = _comPendencias(_servidor);
+    _applyFilter();
+    _guardarNoAparelho();
+    notifyListeners();
   }
 
   /// Drops the listener and attaches a new one.
@@ -167,7 +353,7 @@ class SongsProvider extends ChangeNotifier {
 
   /// Adds a song. Returns null on success, or the message to show.
   Future<String?> addSong(SongModel song) async {
-    // No manual reload needed: the realtime listener picks up the new song.
+    // A música entra na lista pelo `musicasGravadas` (ver `listenToSongs`).
     final result = await FirestoreService.addSong(song);
     return result.error;
   }
@@ -301,6 +487,16 @@ class SongsProvider extends ChangeNotifier {
   // ─── o que está na fila, por cima do que veio do banco ───────────────────
 
   void _aoMudarAFila() {
+    // Uma edição que SAIU da fila foi enviada (ou recusada): relê só aquela
+    // música, para a tela deixar de mostrar o "por cima" e mostrar o banco.
+    final agora = _fila.itens
+        .where((i) => i.tipo == TipoDeAcao.musica)
+        .map((i) => i.dados['songId'] as String)
+        .toSet();
+    for (final id in _musicasPendentes.difference(agora)) {
+      unawaited(_recarregarMusica(id));
+    }
+    _musicasPendentes = agora;
     _songs = _comPendencias(_servidor);
     _applyFilter();
     notifyListeners();
@@ -325,8 +521,18 @@ class SongsProvider extends ChangeNotifier {
   void _guardarNoAparelho() {
     _relogioDaCopia?.cancel();
     _relogioDaCopia = Timer(const Duration(seconds: 2), () {
-      SnapshotLocal.guardar(
-          'songs', _servidor.map((s) => s.toFirestore()).toList());
+      final docs = _servidor.map((s) => s.toFirestore()).toList();
+      if (_musicasEm != null) {
+        // Lista inteira: guarda com a hora da ÚLTIMA leitura completa, e não
+        // com a de agora. Uma música acrescentada à mão não torna a lista
+        // "recém-lida" — e estender o prazo assim esconderia as músicas que
+        // OUTRAS pessoas cadastraram.
+        SnapshotLocal.guardar('songs', docs, agora: _musicasEm);
+      } else {
+        // Só as músicas soltas que o Início buscou: outra cópia, para a lista
+        // incompleta nunca passar por inteira na próxima abertura.
+        SnapshotLocal.guardar('songs-avulsas', docs);
+      }
     });
   }
 
@@ -334,13 +540,25 @@ class SongsProvider extends ChangeNotifier {
   /// banco responder (e antes de o Firebase terminar de ligar). Devolve
   /// quantas músicas eram.
   Future<int> restaurarDoAparelho() async {
-    final docs = await SnapshotLocal.ler('songs');
-    if (docs == null || _servidor.isNotEmpty) return 0;
+    if (_servidor.isNotEmpty) return 0;
+    final inteira = await SnapshotLocal.ler('songs');
+    final avulsas = await SnapshotLocal.ler('songs-avulsas');
+    if (inteira == null && avulsas == null) return 0;
     try {
-      _servidor = [for (final d in docs) SongModel.fromFirestore(d)];
+      final lista = <SongModel>[
+        for (final d in inteira ?? const <Map<String, dynamic>>[])
+          SongModel.fromFirestore(d),
+      ];
+      // As soltas entram só se a lista inteira não as tem.
+      for (final d in avulsas ?? const <Map<String, dynamic>>[]) {
+        final m = SongModel.fromFirestore(d);
+        if (!lista.any((x) => x.id == m.id)) lista.add(m);
+      }
+      _servidor = lista;
     } catch (_) {
-      return 0; // cópia ilegível: o banco responde logo em seguida
+      return 0; // cópia ilegível: o banco responde quando alguém pedir
     }
+    _musicasEm = inteira == null ? null : await SnapshotLocal.quando('songs');
     _songs = _comPendencias(_servidor);
     _isLoading = false;
     _error = null;
@@ -352,6 +570,7 @@ class SongsProvider extends ChangeNotifier {
   @override
   void dispose() {
     _fila.removeListener(_aoMudarAFila);
+    _gravadasSub?.cancel();
     _relogioDaCopia?.cancel();
     _songsSub?.cancel();
     super.dispose();
@@ -369,11 +588,13 @@ class SongsProvider extends ChangeNotifier {
     // A cópia guardada no aparelho sai junto: a música não está mais no
     // repertório, e deixá-la ali só confundiria quem procura offline.
     await LocalStorageService.removeSongOffline(songId);
+    unawaited(_recarregarMusica(songId));
     return null;
   }
 
   Future<String?> desarquivar(String songId) async {
     final r = await FirestoreService.desarquivarSong(songId);
+    if (r.success) unawaited(_recarregarMusica(songId));
     return r.success ? null : r.error;
   }
 
@@ -571,12 +792,15 @@ class SongsProvider extends ChangeNotifier {
   List<SongModel> hinosDe(String hinario, {String busca = ''}) =>
       hinosFiltrados(repertorio, hinario, busca);
 
+  /// A música [id], ou nulo. Se não está na memória, PEDE ao banco (uma
+  /// leitura) e avisa quando chegar: é assim que o Início mostra as músicas de
+  /// um culto sem ter baixado o repertório inteiro.
   SongModel? getSongById(String id) {
-    try {
-      return _songs.firstWhere((s) => s.id == id);
-    } catch (_) {
-      return null;
+    for (final s in _songs) {
+      if (s.id == id) return s;
     }
+    _pedirPorId(id);
+    return null;
   }
 
   /// Repertoire suggestion. Seeded by the current day so the list stays
@@ -586,8 +810,18 @@ class SongsProvider extends ChangeNotifier {
   // Correcting a song now corrects every service that uses it.
 
   /// Name to show for a referenced song.
-  String nameOf(ScaleSong ref) =>
-      getSongById(ref.songId)?.name ?? 'Música removida';
+  ///
+  /// Enquanto a música vem do banco diz "Carregando…", e "Música removida" só
+  /// depois de o banco responder que não existe — dizer "removida" no meio do
+  /// caminho assustaria quem acabou de abrir o app. Se não deu para perguntar
+  /// (sem internet), diz "ainda não baixada", que é o que é.
+  String nameOf(ScaleSong ref) {
+    final m = getSongById(ref.songId);
+    if (m != null) return m.name;
+    if (_semBanco || _naoExistem.contains(ref.songId)) return 'Música removida';
+    if (_falhouEm.containsKey(ref.songId)) return 'Música ainda não baixada';
+    return 'Carregando…';
+  }
 
   /// Artist to show, empty when unknown.
   String artistOf(ScaleSong ref) => getSongById(ref.songId)?.artist ?? '';
@@ -599,7 +833,14 @@ class SongsProvider extends ChangeNotifier {
   }
 
   /// Whether the referenced song still exists in the repertoire.
-  bool exists(ScaleSong ref) => getSongById(ref.songId) != null;
+  ///
+  /// "Ainda não sei" conta como existe: só é "faltando" quando o banco
+  /// confirmou que não há — senão toda tela de culto piscaria o aviso de
+  /// música faltando enquanto as músicas chegam.
+  bool exists(ScaleSong ref) {
+    if (getSongById(ref.songId) != null) return true;
+    return !(_semBanco || _naoExistem.contains(ref.songId));
+  }
 
   List<SongModel> suggestRepertoire({int count = 6}) {
     if (repertorio.isEmpty) return const [];

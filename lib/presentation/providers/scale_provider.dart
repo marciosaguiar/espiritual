@@ -8,6 +8,7 @@ import '../../core/utils/snapshot_local.dart';
 import '../../data/models/scale_model.dart';
 import '../../data/models/team_model.dart';
 import '../../data/services/fila_service.dart';
+import '../../data/services/modo_economia.dart';
 import '../../data/services/firestore_service.dart';
 
 class ScaleProvider extends ChangeNotifier {
@@ -26,26 +27,139 @@ class ScaleProvider extends ChangeNotifier {
   bool _isLoading = false;
   String? _error;
 
-  StreamSubscription<({List<ScaleModel> itens, bool doCache})>? _scalesSub;
 
   List<ScaleModel> get scales => _scales;
   ScaleModel? get selectedScale => _selectedScale;
   bool get isLoading => _isLoading;
   String? get error => _error;
 
-  /// [fonte] só os testes trocam: é o que permite provar o que o provider faz
-  /// com um vazio do cache sem ter um Firestore.
+  // ─── janelas de leitura ───────────────────────────────────────────────────
+  //
+  // Os cultos NÃO vêm todos de uma vez. A escuta de sempre pegava de 60 dias
+  // atrás a 90 à frente (~110 documentos, ~45% do que uma abertura fria custava)
+  // para mostrar, no Início, um cartão com o próximo culto. Agora há uma janela
+  // BASE curta, sempre ligada — de 2 dias atrás a 28 à frente, ~20 documentos —
+  // e as outras abrem por demanda: o mês que a pessoa vê no calendário e o
+  // histórico de 60 dias que só a escolha de músicas e "mais tocados" usam.
+  //
+  // `_servidor` é a união do que cada janela respondeu, por cima do que veio do
+  // aparelho: um documento do aparelho dentro de uma janela que já respondeu é
+  // substituído pela resposta (o servidor manda), e um fora de toda janela fica.
+
+  final Map<String, _Janela> _janelas = {};
+  String? _chaveDaBase;
+  DateTime? _diaDaBase;
+
+  /// Ligado por `carregarParaTeste`: não há banco, então as janelas por demanda
+  /// (calendário, histórico) não abrem escuta nenhuma.
+  bool _semBanco = false;
+
+  /// O que veio do aparelho (e o que se criou aqui), por baixo das janelas.
+  List<ScaleModel> _restaurados = [];
+
+  static String _chaveDa(DateTime i, DateTime f) =>
+      '${i.year}-${i.month}-${i.day}:${f.year}-${f.month}-${f.day}';
+
+  /// Liga a janela BASE. [fonte] só os testes trocam: é o que permite provar o
+  /// que o provider faz com um vazio do cache sem ter um Firestore.
   void listenToScales({Stream<({List<ScaleModel> itens, bool doCache})>? fonte}) {
-    if (_scalesSub != null) return;
-    _scalesSub = (fonte ?? FirestoreService.watchScalesComOrigem()).listen((r) {
+    if (_chaveDaBase != null) return;
+    final agora = DateTime.now();
+    _diaDaBase = DateTime(agora.year, agora.month, agora.day);
+    _chaveDaBase = _abrirJanela(
+      FirestoreService.inicioDaJanelaBase(agora),
+      FirestoreService.fimDaJanelaBase(agora),
+      fonte: fonte,
+    );
+  }
+
+  /// Garante que o intervalo está sendo lido. Barato quando já está.
+  void garantirJanela(DateTime inicio, DateTime fim) {
+    _abrirJanela(inicio, fim);
+  }
+
+  /// O mês do calendário que a pessoa está vendo.
+  void garantirMes(DateTime mes) {
+    garantirJanela(DateTime(mes.year, mes.month, 1),
+        DateTime(mes.year, mes.month + 1, 0, 23, 59, 59));
+  }
+
+  /// Os 60 dias de histórico, para "tocada em…" e "mais tocados". Em modo de
+  /// economia não se abre: é conforto, não necessidade.
+  ///
+  /// Devolve quando o servidor responde (ou em [espera], o que vier primeiro):
+  /// quem monta uma lista logo em seguida precisa dos cultos, não da promessa.
+  Future<void> garantirHistorico(
+      {Duration espera = const Duration(seconds: 4)}) async {
+    if (ModoEconomia.instancia.ligado || _semBanco) return;
+    final agora = DateTime.now();
+    final ini = DateTime(agora.year, agora.month, agora.day)
+        .subtract(FirestoreService.janelaPassado);
+    final fim = DateTime(agora.year, agora.month, agora.day);
+    final chave = _abrirJanela(ini, fim);
+    final j = _janelas[chave]!;
+    final limite = DateTime.now().add(espera);
+    while (j.itens == null && DateTime.now().isBefore(limite)) {
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    }
+  }
+
+  /// Os cultos de hoje até [FirestoreService.janelaFuturo] (90 dias), que é até
+  /// onde um culto pode existir. A janela BASE só vai a 4 semanas; quem precisa
+  /// do futuro INTEIRO — tirar uma pessoa de todos os cultos em que ela está —
+  /// pede isto antes, para não deixá-la escalada num culto que o app não leu.
+  /// Devolve quando o servidor responde (ou em [espera]).
+  Future<void> garantirFuturo(
+      {Duration espera = const Duration(seconds: 6)}) async {
+    if (_semBanco) return;
+    final agora = DateTime.now();
+    final hoje = DateTime(agora.year, agora.month, agora.day);
+    final chave =
+        _abrirJanela(hoje, hoje.add(FirestoreService.janelaFuturo));
+    final j = _janelas[chave];
+    if (j == null) return;
+    final limite = DateTime.now().add(espera);
+    while (j.itens == null && DateTime.now().isBefore(limite)) {
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    }
+  }
+
+  /// O app voltou à tela: se o dia virou, a janela BASE (que é relativa a hoje)
+  /// precisa andar junto, senão o "próximo culto" ficaria preso no dia em que o
+  /// app abriu.
+  void renovarJanelaBase() {
+    final b = _chaveDaBase;
+    if (b == null) return;
+    final agora = DateTime.now();
+    final hoje = DateTime(agora.year, agora.month, agora.day);
+    if (_diaDaBase == hoje) return;
+    _janelas.remove(b)?.sub?.cancel();
+    _chaveDaBase = null;
+    listenToScales();
+    _recompor();
+    notifyListeners();
+  }
+
+  String _abrirJanela(DateTime ini, DateTime fim,
+      {Stream<({List<ScaleModel> itens, bool doCache})>? fonte}) {
+    final chave = _chaveDa(ini, fim);
+    if (_janelas.containsKey(chave)) return chave;
+    if (_semBanco && fonte == null) return chave;
+    final j = _Janela(ini, fim);
+    _janelas[chave] = j;
+    j.sub = (fonte ??
+            FirestoreService.watchScalesComOrigem(inicio: ini, fim: fim))
+        .listen((r) {
       // Vazio vindo do cache não é resposta: não apaga o que está na tela.
       if (ignorarVazioDoCache(
-          doCache: r.doCache, vazio: r.itens.isEmpty, jaTemDados: _servidor.isNotEmpty)) {
+          doCache: r.doCache,
+          vazio: r.itens.isEmpty,
+          jaTemDados: _servidor.any((c) => j.contem(c.date)))) {
         return;
       }
       if (_scales.isEmpty) marcar('cultos-recebidos');
-      _servidor = r.itens;
-      _scales = _comPendencias(r.itens);
+      j.itens = r.itens;
+      _recompor();
       _error = null;
       // A cópia só se regrava com o que o SERVIDOR confirmou.
       if (!r.doCache) _guardarNoAparelho();
@@ -54,6 +168,23 @@ class ScaleProvider extends ChangeNotifier {
       _error = 'Erro ao carregar escalas';
       notifyListeners();
     });
+    return chave;
+  }
+
+  /// Refaz `_servidor` e `_scales` a partir do aparelho e das janelas.
+  void _recompor() {
+    final respondidas = _janelas.values.where((j) => j.itens != null).toList();
+    final porId = <String, ScaleModel>{};
+    for (final c in _restaurados) {
+      if (!respondidas.any((j) => j.contem(c.date))) porId[c.id] = c;
+    }
+    for (final j in respondidas) {
+      for (final c in j.itens!) {
+        porId[c.id] = c;
+      }
+    }
+    _servidor = porId.values.toList()..sort((a, b) => a.date.compareTo(b.date));
+    _scales = _comPendencias(_servidor);
   }
 
   /// Drops the listener and attaches a new one.
@@ -61,8 +192,11 @@ class ScaleProvider extends ChangeNotifier {
   /// The listener guards against stacking subscriptions, so after a failure it
   /// would never reconnect on its own — "Tentar de novo" needs this.
   void retry() {
-    _scalesSub?.cancel();
-    _scalesSub = null;
+    for (final j in _janelas.values) {
+      j.sub?.cancel();
+    }
+    _janelas.clear();
+    _chaveDaBase = null;
     _error = null;
     notifyListeners();
     listenToScales();
@@ -71,7 +205,9 @@ class ScaleProvider extends ChangeNotifier {
   @override
   void dispose() {
     _fila.removeListener(_aoMudarAFila);
-    _scalesSub?.cancel();
+    for (final j in _janelas.values) {
+      j.sub?.cancel();
+    }
     super.dispose();
   }
 
@@ -129,11 +265,11 @@ class ScaleProvider extends ChangeNotifier {
     final docs = await SnapshotLocal.ler('scales');
     if (docs == null || _servidor.isNotEmpty) return 0;
     try {
-      _servidor = [for (final d in docs) ScaleModel.fromFirestore(d)];
+      _restaurados = [for (final d in docs) ScaleModel.fromFirestore(d)];
     } catch (_) {
       return 0; // cópia ilegível: o banco responde logo em seguida
     }
-    _scales = _comPendencias(_servidor);
+    _recompor();
     _error = null;
     notifyListeners();
     return _servidor.length;
@@ -144,8 +280,8 @@ class ScaleProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
     try {
-      _servidor = await FirestoreService.getScales();
-      _scales = _comPendencias(_servidor);
+      _restaurados = await FirestoreService.getScales();
+      _recompor();
     } catch (e) {
       _error = 'Erro ao carregar escalas: $e';
     } finally {
@@ -158,8 +294,9 @@ class ScaleProvider extends ChangeNotifier {
   /// testes de tela usam: o provider de verdade só se enche pela escuta.
   @visibleForTesting
   void carregarParaTeste(List<ScaleModel> cultos) {
-    _servidor = cultos;
-    _scales = _comPendencias(cultos);
+    _semBanco = true;
+    _restaurados = cultos;
+    _recompor();
     notifyListeners();
   }
 
@@ -367,7 +504,8 @@ class ScaleProvider extends ChangeNotifier {
     if (!result.success) return result.error;
 
     _scales = [..._scales, scale]..sort((a, b) => a.date.compareTo(b.date));
-    _servidor = [..._servidor, scale]..sort((a, b) => a.date.compareTo(b.date));
+    _restaurados = [..._restaurados, scale];
+    _recompor();
     notifyListeners();
     return null;
   }
@@ -525,12 +663,17 @@ class ScaleProvider extends ChangeNotifier {
   void _applyLocally(String scaleId, ScaleModel Function(ScaleModel) change) {
     final idx = _scales.indexWhere((s) => s.id == scaleId);
     if (idx < 0) return;
-    _scales[idx] = change(_scales[idx]);
-    final i2 = _servidor.indexWhere((s) => s.id == scaleId);
-    if (i2 >= 0 && !identical(_servidor, _scales)) {
-      _servidor = [..._servidor]..[i2] = change(_servidor[i2]);
+    // Em TODAS as listas de onde `_recompor` refaz o que se vê: senão a
+    // próxima resposta de outra janela desfaria a mudança por um instante.
+    ScaleModel trocar(ScaleModel c) => c.id == scaleId ? change(c) : c;
+    _restaurados = _restaurados.map(trocar).toList();
+    for (final j in _janelas.values) {
+      if (j.itens != null) j.itens = j.itens!.map(trocar).toList();
     }
-    if (_selectedScale?.id == scaleId) _selectedScale = _scales[idx];
+    _servidor = _servidor.map(trocar).toList();
+    _scales = _comPendencias(_servidor);
+    final novo = _scales.where((s) => s.id == scaleId).firstOrNull;
+    if (_selectedScale?.id == scaleId && novo != null) _selectedScale = novo;
     notifyListeners();
   }
 
@@ -553,4 +696,17 @@ class MinhaMusica {
     required this.ref,
     required this.instrumento,
   });
+}
+
+/// Um intervalo de datas de cultos que está sendo lido, e o que o servidor já
+/// respondeu para ele (nulo até a primeira resposta).
+class _Janela {
+  final DateTime inicio;
+  final DateTime fim;
+  StreamSubscription<({List<ScaleModel> itens, bool doCache})>? sub;
+  List<ScaleModel>? itens;
+
+  _Janela(this.inicio, this.fim);
+
+  bool contem(DateTime d) => !d.isBefore(inicio) && !d.isAfter(fim);
 }
