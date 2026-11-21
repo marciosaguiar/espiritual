@@ -19,6 +19,17 @@ import http from 'node:http';
 
 const PALAVRAS = ['"documentChange"', '"documentDelete"'];
 
+// Para dizer DE ONDE vêm os documentos: cada `documentChange` traz o caminho do
+// documento (`projects/.../documents/scales/2026-11-22_0800`). O caminho vira a
+// COLEÇÃO trocando os ids por `*` (`hinarios/*/hinos`), que é o que importa
+// para achar quem está lendo demais.
+const CAMINHO = /"documentChange":\{"document":\{"name":"projects\/[^"\/]*\/databases\/[^"\/]*\/documents\/([^"]+)"[\s\S]*?"targetIds":\[([\d,]+)\]/g;
+function colecaoDe(caminho) {
+  const partes = caminho.split('/');
+  partes.pop(); // o id do documento
+  return partes.map((x, i) => (i % 2 === 1 ? '*' : x)).join('/') || '(raiz)';
+}
+
 export async function iniciarProxy({ de, para, host = '127.0.0.1' }) {
   let cortado = false; // rede "desligada": nada passa
   let lidos = 0;
@@ -29,6 +40,13 @@ export async function iniciarProxy({ de, para, host = '127.0.0.1' }) {
   // diferença.
   let tokensEnviados = 0;
   let porMomento = []; // [ms, total]
+  let porColecao = {}; // { 'scales': 20, ... } — só documentChange
+  // Cada (consulta, documento) entregue UMA vez. O emulador às vezes reenvia o
+  // resultado inteiro de uma consulta (observado: a lista de pessoas chegando
+  // duas vezes, 270 ms depois, com um só pedido do app), e isso infla `lidos`
+  // sem o app ter pedido nada a mais. `distintos` é a demanda do app; `lidos` é
+  // o que o emulador mandou — a verdade de produção está entre os dois.
+  let distintos = new Set();
   const t0 = Date.now();
 
   const servidor = http.createServer((req, res) => {
@@ -38,7 +56,27 @@ export async function iniciarProxy({ de, para, host = '127.0.0.1' }) {
       (resp) => {
         res.writeHead(resp.statusCode, resp.headers);
         let resto = '';
+        let acum = ''; // o corpo inteiro desta resposta, para achar os caminhos
+        let posCaminho = 0;
         resp.on('data', (pedaco) => {
+          acum += pedaco.toString('latin1');
+          if (process.env.DEBUG_RESET) {
+            const t = pedaco.toString('latin1');
+            for (const palavra of ['"RESET"', '"CURRENT"', '"NO_CHANGE"', '"ADD"', '"REMOVE"']) {
+              let k = 0, j = -1;
+              while ((j = t.indexOf(palavra, j + 1)) !== -1) k++;
+              if (k) console.log(`   STREAM +${Date.now() - t0}ms ${palavra} x${k}`);
+            }
+          }
+          CAMINHO.lastIndex = posCaminho;
+          let m;
+          while ((m = CAMINHO.exec(acum)) !== null) {
+            distintos.add(`${m[2]}|${m[1]}`);
+            const col = colecaoDe(m[1]);
+            if (process.env.DEBUG_DOCS === col) console.log(`   DOC +${Date.now() - t0}ms ${m[1]}`);
+            porColecao[col] = (porColecao[col] || 0) + 1;
+            posCaminho = CAMINHO.lastIndex;
+          }
           const texto = resto + pedaco.toString('latin1');
           for (const p of PALAVRAS) {
             let i = -1;
@@ -60,6 +98,18 @@ export async function iniciarProxy({ de, para, host = '127.0.0.1' }) {
     req.on('data', (c) => {
       const t = c.toString('latin1');
       if (t.includes('resumeToken')) tokensEnviados++;
+      // Só para depurar de onde vem uma coleção: DEBUG_PEDIDO=users mostra o
+      // corpo dos pedidos que citam essa coleção.
+      if (process.env.DEBUG_PEDIDO) {
+        let d = t;
+        try { d = decodeURIComponent(t.replace(/\+/g, ' ')); } catch {}
+        // Cada addTarget do pedido que cita a coleção, com a hora.
+        for (const seg of d.split('"addTarget"').slice(1)) {
+          if (seg.includes(`"collectionId":"${process.env.DEBUG_PEDIDO}"`)) {
+            console.log(`   ALVO +${Date.now() - t0}ms`, seg.replace(/\s+/g, ' ').slice(0, 330));
+          }
+        }
+      }
     });
     req.pipe(alvo);
   });
@@ -67,7 +117,12 @@ export async function iniciarProxy({ de, para, host = '127.0.0.1' }) {
   return {
     lidos: () => lidos,
     tokensEnviados: () => tokensEnviados,
-    zerar: () => { lidos = 0; porMomento = []; },
+    zerar: () => { lidos = 0; porMomento = []; porColecao = {}; distintos = new Set(); },
+    // Documentos distintos por consulta (ver `distintos` acima).
+    distintos: () => distintos.size,
+    // Quantos documentos vieram de cada coleção (soma = `lidos()` menos os
+    // `documentDelete`, que não trazem caminho).
+    porColecao: () => ({ ...porColecao }),
     cortar: (v) => { cortado = !!v; },
     linhaDoTempo: () => porMomento,
     parar: () => servidor.close(),

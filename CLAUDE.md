@@ -14,13 +14,13 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 1007 testes
+flutter test                   # 1070 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
 
 ```bash
-cd test_regras && npm install && npm test    # 312 testes
+cd test_regras && npm install && npm test    # 327 testes
 ```
 
 Para ver o app em vários tamanhos de tela (sem Firebase, sem navegador):
@@ -68,6 +68,10 @@ node ferramentas/medir/semear_biblioteca.mjs /tmp/semente.json    # 2 hinários 
 COM_PREPARO=1 node ferramentas/medir/medir_leituras.mjs build/web /tmp/leituras.json
 node ferramentas/medir/semear.mjs /tmp/semente.json && node ferramentas/medir/semear_biblioteca.mjs /tmp/semente.json
 node ferramentas/medir/provar_offline.mjs build/web /pasta/das/fotos
+# a medição agora diz DE ONDE vêm os documentos (por coleção), quantos são
+# DISTINTOS por consulta, e mede a "primeira abertura do dia" (cópias vencidas):
+SEMENTE=/tmp/semente-levita.json node ferramentas/medir/medir_leituras.mjs build/web /tmp/saida.json   # entrando como levita
+DEBUG_PEDIDO=users node ferramentas/medir/medir_leituras.mjs ...      # mostra cada consulta enviada a essa coleção
 ```
 
 **Rode os dois antes de qualquer commit.** As regras não compilam junto com o
@@ -3065,7 +3069,8 @@ segundo plano sem a pessoa perceber.
   são texto corrido, e mesclar dois textos editados por pessoas diferentes
   produz um terceiro texto que ninguém escreveu.
 - **Cota diária de preparação: 250 leituras por aparelho — e ela se CALA em dia
-  movimentado** (4+ aberturas do app no dia). 250 é o equivalente a mais UMA abertura
+  movimentado** (4+ aberturas do app no dia). **[Mudou em 21/11/2026: 150 e a
+  3ª abertura — ver "Orçamento de leituras".]** 250 é o equivalente a mais UMA abertura
   fria por aparelho; num domingo com seis, 30 pessoas já passam de 43 mil só
   abrindo, e somar 7.500 estouraria os 50 mil. A trava de dia movimentado entrou
   DEPOIS da prova em navegador e é coberta por teste de unidade (e mutação), não
@@ -3282,6 +3287,264 @@ máquina e o dia mudam).
   fazem sem internet.
 - O CI com o Flutter exato: o conserto dos 5 testes (ver "Armadilhas") só se
   confirma lá.
+
+### Orçamento de leituras (21/11/2026)
+
+Prioridade máxima da rodada: **um domingo movimentado não pode chegar perto das
+50 mil leituras grátis por dia.** A conta da rodada anterior dava 85% para 30
+pessoas, e o grosso não era a preparação: eram os **238 documentos de cada
+abertura fria** — 107 cultos, 50 mensagens, 42 músicas, 16 pessoas, 3 equipes —
+relidos inteiros, por pessoa, cada vez que o app voltava depois de mais de 30
+minutos. O iPhone mantém o app instalado vivo por dias, então "voltar" acontece
+seis vezes num domingo.
+
+**A pergunta que guiou tudo: o que o Início realmente precisa para aparecer?**
+Um culto (o próximo), as minhas músicas dele, e duas ou três pendências. Não
+precisa de 107 cultos, nem de 50 mensagens, nem do repertório inteiro.
+
+#### O que foi feito (do que mais pesava para o que menos)
+
+1. **Cultos: só 2 dias atrás até 28 à frente ficam sempre ligados** (~21
+   documentos, eram 107). O resto é lido **por necessidade**: o mês que o
+   calendário mostra, e os 60 dias de histórico só quando o líder abre "Escolher
+   músicas" ou a ordem "mais tocados" (`ScaleProvider.garantirMes` /
+   `garantirHistorico`). Quem precisa do futuro inteiro (tirar alguém de todos os
+   cultos) pede `garantirFuturo` — 90 dias — antes de calcular o que mexer.
+2. **Chat: a conversa só é escutada com ele à vista.** O Início conta as não
+   lidas por uma consulta agregada (`count()`, 1 leitura por até mil mensagens)
+   mais a última mensagem — DUAS leituras, em vez de 50 —, descontando as que eu
+   mandei desde a última vez (`LocalStorageService.contarMinhaMensagem`: sem
+   isso eu veria "1 mensagem nova" depois de escrever). Sair da aba pára a
+   escuta; voltar a recomeça.
+3. **Repertório: lido POR NECESSIDADE, e o Início resolve cada música do culto
+   pelo id** (`SongsProvider.getSongById` pede a que falta, uma leitura; o texto
+   é "Carregando…" enquanto isso, **"Música removida" só depois de o banco
+   confirmar que não existe**, e "ainda não baixada" quando não deu para
+   perguntar). A lista inteira vem quando a aba Músicas, o cadastro (aviso de
+   duplicata), a escolha de músicas do culto, o teclado de hinos ou o painel do
+   chat a pedem (`atualizarSeVelho`, prazo de 12 h), e uma vez pela preparação
+   num aparelho que nunca a teve. **Isto tira a dependência do TAMANHO do
+   repertório:** 42 músicas passam despercebidas, 300 gastavam sozinhas um quinto
+   da cota em seis aberturas.
+   - **Três músicas soltas não são o repertório.** Músicas buscadas por id vão
+     para outra cópia no aparelho (`songs-avulsas`); só a lista inteira vai para
+     `songs`, **com a hora da leitura completa, não a de agora** — senão uma
+     música cadastrada à mão estenderia o prazo da lista e esconderia por 12 h o
+     que OUTRA pessoa cadastrou (`repertorioCompleto` separa as duas coisas).
+   - "Música cadastrada por outra pessoa não aparece na lista" tem saída na
+     tela: na busca sem resultado, **"Atualizar a lista de músicas"** (custa o
+     repertório, e é a pessoa que decide). No culto ela aparece de qualquer
+     jeito, porque o culto a resolve pelo id.
+4. **Pessoas (nomes): lidas uma vez, prazo de 24 h** (`AuthProvider.prazoDasPessoas`),
+   e **equipes e agenda só para o líder** (eram 4 documentos por abertura para
+   uma lista que quem não é líder não vê). A única vez que um levita precisa das
+   equipes é "Sair do ministério", que agora as lê antes (`AgendaProvider.garantir`).
+5. **Preparação: cota 150 por dia** (era 250) **e silêncio a partir da 3ª
+   abertura do dia** (era a 4ª) — decisão do dono. E ela não renova mais o
+   repertório todo dia: só o baixa se o aparelho nunca o teve.
+
+**O que ficou sempre ligado, e por quê:** a janela curta de cultos (as
+confirmações dos outros aparelhos), o próprio cadastro e a lista de pedidos de
+entrada do líder. É o que muda durante o dia e alguém precisa ver.
+
+#### O contador: medir em produção, de graça
+
+O emulador **ignora o `resumeToken`**, então a regra dos 30 minutos — a que
+decide se voltar ao app custa o resultado inteiro ou só o que mudou — **não é
+medível nele**. Em vez de acreditar na documentação do Firebase, o app mede:
+
+- **`ContadorDeLeituras`** conta, na memória de cada aparelho, as leituras que
+  provoca, e grava **uma escrita agregada** (`FieldValue.increment`) em
+  `usoDiario/{dia}` quando vai para segundo plano e de 15 em 15 minutos (se há
+  20+ leituras a gravar). Com 30 pessoas são algumas centenas de escritas por
+  dia, de 20 mil grátis, e **nenhuma leitura**.
+- **São DUAS contas no mesmo documento**: `leituras` (com a regra: religar dentro
+  de 30 min custa só o que mudou) e `leiturasSemRegra` (a pior hipótese: toda
+  religação custa o resultado inteiro). **A que ficar mais perto do painel de
+  uso do Firebase diz se a regra vale.**
+- **O dia é o da COTA, e a cota vira à meia-noite do Pacífico**, não à de
+  Brasília (`diaDaCota`, com a virada do horário de verão dos EUA testada): um
+  culto de domingo às 21h30 em Brasília ainda é domingo para o Firebase.
+- Em `porFonte` fica de onde veio cada leitura (`cultos`, `musicas`, `pessoas`,
+  `chat`…), para o próximo "o que mais gasta?" não precisar de nova medição.
+- Quem lê esse documento é o modo de economia (uma leitura a cada 10 min por
+  aparelho); gravar é de qualquer aprovado, **mas cada gravação é limitada** pela
+  regra (nenhum aumento passa de 20 mil; o contador só cresce; a hora é a do
+  servidor; id é uma data; ninguém apaga) — um aparelho com defeito, ou alguém
+  falando direto com a API, não liga o modo de economia de todo mundo com um
+  número absurdo. 15 testes de regra, **cada um provado quebrando a regra de
+  propósito.**
+
+- **Provado de ponta a ponta no emulador, com as regras de verdade**: uma
+  abertura de levita com cache vazio. O proxy viu chegar **55 documentos
+  distintos** (74 entregues); o contador do app gravou `usoDiario/2026-11-21`
+  com **54** (cultos 21, pessoas 16, músicas 16 por id, resumo do chat 1) e
+  `aberturas: 1`. A diferença de 1 é o que se espera: o app não conta o próprio
+  cadastro (1–2 leituras por abertura) e o proxy não vê a contagem agregada do
+  chat. `ferramentas/medir/medir_leituras.mjs` repete isso (o app é posto em
+  segundo plano, que é o que dispara a gravação) e imprime as duas contas lado a
+  lado.
+
+**COMO PROVAR OU DERRUBAR A REGRA DOS 30 MINUTOS** (o dono faz, depois de um dia
+de uso com o app novo; leva cinco minutos):
+
+1. Firebase Console → **Firestore Database → aba "Uso"** → escolha o dia → anote
+   as **leituras**. (Os dias do console também viram à meia-noite do Pacífico.)
+2. Firestore → coleção `usoDiario` → o documento daquele dia (`2026-11-23`):
+   anote `leituras` e `leiturasSemRegra`.
+3. Compare. **Se o painel ficar perto de `leituras`**: a regra vale, e a
+   estimativa serve. **Se ficar perto de `leiturasSemRegra`**: a regra NÃO está
+   valendo para este app (cache desligado? segunda aba?) e os 30 minutos são
+   mito para nós — a conta de todas as tabelas abaixo deve usar a outra coluna.
+   **Se passar de AMBAS**, há leitura que o app não está contando: procure em
+   `porFonte` qual fonte parece pequena demais e confira se a leitura dela passa
+   pelo contador.
+4. Mande os números (painel, `leituras`, `leiturasSemRegra`, `aberturas`) e eu
+   atualizo a conta.
+
+**O app não vê a fatura, vê os documentos que chegam.** Isto é estimativa — e
+a tela diz "cerca de". Não conta: o próprio cadastro (1–2 por abertura), as
+leituras de regra (`get()` dentro de `firestore.rules`, cobradas à parte) e o
+que um aparelho antigo (versão sem o contador) lê.
+
+#### A rede de proteção
+
+- **60% (30 mil): amarelo na Saúde do sistema**, só para o líder, com a frase
+  "Hoje o app já usou cerca de 31,2 mil das 50 mil leituras grátis (62%)…".
+  **Não acende o aviso vermelho do Início**: o app já se segura sozinho, e o
+  líder só tem o que saber.
+- **80% (40 mil): modo de economia automático** (`ModoEconomia`). Suspende o que
+  NÃO é essencial até amanhã — a preparação em segundo plano, a atualização
+  automática do repertório e das pessoas, o histórico de cultos (conforto).
+  **Continua**: a escala de agora, a cifra que a pessoa abriu, o chat,
+  confirmar presença, e a leitura por id de música de culto. Ninguém vê isto
+  na tela, exceto o líder na Saúde do sistema: um app que se segura e conta
+  para todo mundo ensina a ter medo dele.
+- **95%: vermelho**, e só aí acende o aviso do Início — é quando a cota acaba
+  antes do fim do dia e o app INTEIRO deixaria de ler.
+- **O uso de ontem não vale hoje**: um aparelho que ficou aberto a noite toda
+  não pode continuar em modo de economia com o dia já zerado.
+- **Falha ao ler o contador é "não sei", nunca vermelho** (o wi-fi da igreja não
+  é um banco quebrado).
+
+#### Medido, com o mesmo proxy (30 e 60 pessoas)
+
+O proxy (`ferramentas/medir/proxy_leituras.mjs`) agora também diz **de onde**
+vêm os documentos e quantos são **distintos por consulta**. Isso importou: o
+emulador às vezes entrega o resultado de uma consulta **duas vezes**, 270 ms
+depois, com um só pedido do app (conferido: um único `addTarget` para a lista de
+pessoas), e só na abertura com cache vazio. **O número de 238 da rodada
+anterior já tinha essa duplicação dentro** (219 distintos), e é medido aqui do
+mesmo jeito para a comparação ser justa. Ver os dois é a honestidade possível:
+o que o app pede é o "distintos"; o que o emulador mandou é o outro; **o que o
+Firebase cobra fica entre os dois e só o contador de produção diz**.
+
+Banco do tamanho do ministério (16 pessoas, 42 músicas, 107 cultos, 50 mensagens,
+3 equipes), mesmas flags, mesmo dia, versão anterior (`f2db2c7`) recompilada:
+
+| Uma abertura | antes | depois (líder) | depois (levita) |
+|---|---|---|---|
+| **Aparelho novo / cache vazio** ("fria") | 238 (219 distintos) | 79 (58) | 74 (55) |
+| **Primeira do dia** (cópias de nomes e repertório vencidas) | 221 | 46 (42) | 41 (39) |
+| **Depois de 30 min, com cópia fresca** (o "vaivém" de um domingo) | 221 | 30 (26) | 25 (23) |
+
+De onde vêm (depois, levita, vaivém): cultos 21, pessoas 2 (o próprio
+cadastro), chat 1. A primeira do dia soma 16 pessoas. A de aparelho novo soma
+as músicas dos próximos cultos, buscadas pelo id (16).
+
+**A meta de "abertura fria abaixo de 40", com franqueza:**
+- **O vaivém (cada volta depois de 30 min): 238 → 25–30. Atingida, com folga.**
+  É a abertura que se repete, e a que a conta de 238 × 6 descrevia.
+- **A primeira do dia: 41 (levita) a 46 (líder). NÃO atinge 40 à risca.** O piso
+  é 21 cultos + 16 pessoas (que se renovam a cada 24 h) + 3 a 5 de cadastro,
+  equipe e chat. Para ficar abaixo de 40 teria de encurtar a janela de cultos
+  (de 28 para 14 dias, tirando ~10) ou deixar os nomes por 72 h — e as duas têm
+  preço que não valia: janela curta quebra o "próximo culto" quando a escala
+  tem um buraco, e nome velho deixa quem saiu do ministério contando como "não
+  leu" nos tiques azuis do chat. **O melhor número possível sem esse preço é o
+  que está aqui.**
+- **Aparelho novo: 74–79.** Piso de 43 sem nenhuma música (21 cultos + 17
+  pessoas + 3 equipes + 1 mensagem + conta). Acontece UMA vez por aparelho (e
+  de novo se o iPhone apagar os dados do site).
+
+**O dia de um ministério** — leituras por dia e % das 50 mil. As colunas
+"antes" usam os 238 por abertura que o dono cita (os 85% dele); "depois" usa os
+números medidos acima (os "entregues", que são o teto), 10% de líderes, mais
+**o que a rodada acrescentou**: uma visita ao chat custa agora a conversa
+(50), porque a escuta só existe com ele à vista, e a aba Músicas custa o
+repertório (42) uma vez a cada 12 h para quem a abre.
+
+| 30 pessoas | antes | depois, 1ª semana | depois, regime |
+|---|---|---|---|
+| 1 abertura, 1 visita ao chat, 5 músicas | 14.940 (30%) | 7.545 (15%) | 3.045 (6%) |
+| 3 aberturas, 2 visitas ao chat, 10 músicas | 29.520 (59%) | 11.127 (22%) | 6.627 (13%) |
+| **Domingo: 6 aberturas, 3 chats (2 cheios), 15 músicas** | 43.890 (88%) | 9.540 (19%) | **9.540 (19%)** |
+| Domingo, PIOR CASO: 6 aberturas, 3 chats cheios, todos na aba Músicas | 44.490 (89%) | 12.480 (25%) | 12.480 (25%) |
+
+| 60 pessoas | antes | depois, 1ª semana | depois, regime |
+|---|---|---|---|
+| 1 abertura, 1 visita ao chat, 5 músicas | 29.880 (60%) | 15.090 (30%) | 6.090 (12%) |
+| 3 aberturas, 2 visitas ao chat, 10 músicas | 59.040 (**118%**) | 22.254 (45%) | 13.254 (27%) |
+| **Domingo: 6 aberturas, 3 chats (2 cheios), 15 músicas** | 87.780 (**176%**) | 19.080 (38%) | **19.080 (38%)** |
+| Domingo, PIOR CASO | 88.980 (**178%**) | 24.960 (50%) | 24.960 (50%) |
+
+- **A meta de "domingo de 30 pessoas × 6 aberturas abaixo de 25%": atingida no
+  caso realista (19%), e no PIOR caso fica em 24,96% — em cima da linha, sem
+  margem.** Só as 180 aberturas custam ~10% (5.070 de 50.000); o resto é chat,
+  aba Músicas e cifras. O pior caso supõe que TODOS abram a aba Músicas e que as
+  seis aberturas e os três chats estejam sempre a mais de 30 minutos um do outro
+  — e o modo de economia, em 80%, existe para o dia em que algo assim aconteça.
+- **Com 60 pessoas** a versão anterior estourava o plano num dia comum (118%) e
+  no domingo passava do dobro; a de agora fica em 27–38% (50% no pior caso).
+  Cabe, sem folga para crescer mais que isso.
+- **Estas contas valem para 42 músicas. Com 300, a aba Músicas custa 300 e o
+  pior caso de 30 pessoas passa de 30%** — o repertório "por necessidade" é o que
+  impede isso de aparecer na abertura, mas quem abre a lista ainda a paga.
+- **Tudo é estimativa a partir de um emulador.** A de produção sai do
+  `usoDiario`, pelo passo a passo acima.
+
+#### O que NÃO foi feito, e por quê
+
+- **Encurtar a janela de cultos para 14 dias nos levitas.** Tiraria ~10
+  documentos de cada abertura, mas a agenda fixa e o "próximo culto" assumem a
+  janela de 4 semanas, e um buraco na escala viraria "nenhum culto marcado" —
+  uma frase falsa. Fica como a próxima alavanca, com a regra "se não há culto
+  futuro nos 14 dias, abre a janela até 28".
+- **Atualização incremental do repertório por campo `atualizadoEm`.** Exigiria
+  gravar o campo em todo caminho que escreve música (cadastro, edição, fila,
+  arquivar, colar cifra), mudar a regra, e preencher o campo nas músicas que já
+  existem — e o app não tem como fazer esse preenchimento sem chave de
+  administrador. A leitura por necessidade tirou o custo da abertura sem isso.
+- **Documento-resumo "próximos cultos" mantido pelo Worker.** Trocaria 21
+  leituras por 1, mas faria o Worker reescrever o resumo a cada confirmação de
+  presença (escrita por culto, por pessoa), e o resumo ficaria atrás da verdade
+  durante o culto, que é quando mais importa. Avaliado e descartado.
+- **A segunda abertura de uma consulta com `resumeToken` no emulador**: continua
+  não medível lá (ver acima).
+- **Chat com menos de 50 mensagens na primeira carga.** A tela não tem "ver
+  mensagens anteriores"; cortar esconderia conversa sem aviso.
+
+#### Armadilhas desta rodada
+
+- **O número do emulador mentiu em duas direções.** Em uma, duplicava a lista de
+  pessoas só na abertura com cache vazio (e só alguns builds, por causa de
+  tempo); na outra, não implementa a regra dos 30 minutos. Daí o contador de
+  produção, e daí o proxy reportar "distintos".
+- **`getSongById` agora tem efeito colateral** (pede ao banco) e é chamado de
+  dentro de `build`. Por isso o pedido é agendado (`scheduleMicrotask`) e o aviso
+  só sai depois que o banco responde — notificar de dentro do `build` é erro do
+  Flutter. Nas telas de teste, `carregarParaTeste` desliga o banco (`_semBanco`),
+  senão cada tela tentaria falar com um Firestore que não existe.
+- **Um teste de "abrir ao lado" estava frágil por data**: ele procurava "Aliança
+  eterna" na sugestão do dia, e a sugestão é sorteada pela data. Passava num dia
+  e falhava no seguinte — **também na CI**, num dia qualquer. Agora lê o nome da
+  primeira sugestão.
+- **A lista de pessoas ainda não conhece quem se cadastrou depois.** Em culto
+  gerado pela agenda fixa o nome vem do cadastro, e quem entrou há menos de 24 h
+  aparece como "Alguém" nos aparelhos que ainda não renovaram. Conhecido; o
+  líder que aprova vê o nome na hora, porque a tela Membros escuta.
+- **`atualizarPessoasSeVelho` e `atualizarSeVelho` não renovam em modo de
+  economia** — a menos que a tela esteja vazia, ou que a própria pessoa peça.
 
 ## O que não existe (e o relatório de auditoria aponta)
 

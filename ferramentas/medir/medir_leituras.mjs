@@ -141,8 +141,39 @@ async function abrir(ctx, query) {
   await entrar(pag);
   await pag.waitForTimeout(8000);
   resultado.fria = proxy.lidos();
+  resultado.friaPorColecao = proxy.porColecao();
+  resultado.friaDistintos = proxy.distintos();
+  if (process.env.DEBUG_MARCAS) {
+    const ms = await pag.evaluate(() => performance.getEntriesByType('mark').map((m) => `${Math.round(m.startTime)} ${m.name}`));
+    console.log('   MARCAS:\n   ' + ms.join('\n   '));
+  }
   resultado.tokensEnviadosNaFria = proxy.tokensEnviados();
-  console.log(`fria (entrar + Início): ${resultado.fria} documentos`);
+  console.log(`fria (entrar + Início): ${resultado.fria} documentos entregues (${resultado.friaDistintos} distintos por consulta)`);
+  console.log('   de onde vieram:', JSON.stringify(resultado.friaPorColecao));
+
+  // O CONTADOR DE PRODUÇÃO, de ponta a ponta: o app vai para segundo plano (o
+  // que grava `usoDiario/{dia}`, pelas regras de verdade do emulador), e o que
+  // ele contou é comparado com o que o proxy viu chegar. É a prova de que o
+  // contador conta o que o banco entrega — e de que a regra deixa gravar.
+  await pag.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { value: 'hidden', configurable: true });
+    Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await pag.waitForTimeout(3000);
+  try {
+    const r = await fetch(`http://127.0.0.1:${process.env.FIRESTORE_PORTA || 8080}/v1/projects/espiritual-d2403/databases/(default)/documents/usoDiario`, { headers: { authorization: 'Bearer owner' } });
+    const docs = (await r.json()).documents || [];
+    const n = (f, k) => Number(f[k]?.integerValue ?? 0);
+    const uso = docs.map((d) => ({
+      dia: d.name.split('/').pop(), leituras: n(d.fields, 'leituras'), semRegra: n(d.fields, 'leiturasSemRegra'),
+      aberturas: n(d.fields, 'aberturas'),
+      porFonte: Object.fromEntries(Object.entries(d.fields.porFonte?.mapValue?.fields || {}).map(([k, v]) => [k, Number(v.integerValue)])),
+    }));
+    resultado.usoGravado = uso;
+    console.log(`contador do app (usoDiario): ${JSON.stringify(uso)}`);
+    console.log(`   o proxy viu chegar ${resultado.fria} (${resultado.friaDistintos} distintos)`);
+  } catch (e) { console.log('   não consegui ler usoDiario:', String(e).slice(0, 100)); }
 
   await pag.evaluate(() => navigator.serviceWorker?.ready).catch(() => {});
   await pag.waitForTimeout(3000);
@@ -155,10 +186,45 @@ async function abrir(ctx, query) {
     await esperarMarca(pag, 'inicio-com-dados', 30000);
     await pag.waitForTimeout(8000);
     resultado[`quente${n}`] = proxy.lidos();
+    resultado[`quente${n}Distintos`] = proxy.distintos();
+    resultado[`quente${n}PorColecao`] = proxy.porColecao();
+    console.log(`   de onde vieram:`, JSON.stringify(proxy.porColecao()));
     resultado[`tokensEnviadosNaQuente${n}`] = proxy.tokensEnviados();
-    console.log(`quente ${n}: ${resultado[`quente${n}`]} documentos (o app mandou ${proxy.tokensEnviados()} resumeToken)`);
+    console.log(`quente ${n}: ${resultado[`quente${n}`]} documentos entregues (${resultado[`quente${n}Distintos`]} distintos; o app mandou ${proxy.tokensEnviados()} resumeToken)`);
     await pag.close();
     await new Promise((ok) => setTimeout(ok, 7000));
+  }
+  // A PRIMEIRA ABERTURA DO DIA: as cópias que têm prazo (pessoas 24 h,
+  // repertório 12 h) já venceram. É a abertura mais cara de quem volta ao app, e
+  // a que a meta de "abertura fria" precisa olhar. Envelhecer a cópia é mudar a
+  // hora em que ela foi guardada — o resto do app não sabe a diferença.
+  {
+    let pag = await abrir(ctx, '?sem-preparo');
+    await esperarMarca(pag, 'inicio-com-dados', 30000);
+    await pag.waitForTimeout(3000);
+    await pag.evaluate(async () => {
+      const velho = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
+      for (const nome of ['pessoas', 'songs']) {
+        const t = await window.levitaArmazemLer(`snap:${nome}`);
+        if (!t) continue;
+        const j = JSON.parse(t);
+        j.em = velho;
+        await window.levitaArmazemGravar(`snap:${nome}`, JSON.stringify(j));
+      }
+    });
+    await pag.waitForTimeout(1500);
+    await pag.close();
+    await new Promise((ok) => setTimeout(ok, 7000));
+    proxy.zerar();
+    pag = await abrir(ctx, '?sem-preparo');
+    await esperarMarca(pag, 'inicio-com-dados', 30000);
+    await pag.waitForTimeout(8000);
+    resultado.primeiraDoDia = proxy.lidos();
+    resultado.primeiraDoDiaDistintos = proxy.distintos();
+    resultado.primeiraDoDiaPorColecao = proxy.porColecao();
+    console.log(`primeira do dia (cópias vencidas): ${resultado.primeiraDoDia} documentos entregues (${resultado.primeiraDoDiaDistintos} distintos)`);
+    console.log('   de onde vieram:', JSON.stringify(resultado.primeiraDoDiaPorColecao));
+    await pag.close();
   }
   await ctx.close();
 }
