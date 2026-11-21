@@ -479,7 +479,7 @@ void main() {
           reason: 'id que não existe mais é descartado');
     });
 
-    test('DIA MOVIMENTADO: a partir da 4ª abertura do app no dia a preparação '
+    test('DIA MOVIMENTADO: a partir da 3ª abertura do app no dia a preparação '
         'fica quieta (é a conta do plano grátis num domingo)', () async {
       final hoje = DateTime(2026, 11, 22, 10); // um domingo
       final cifras = <int>[];
@@ -487,15 +487,15 @@ void main() {
           contadorDeCifras: cifras,
           contadorDePaginas: [],
           agora: () => hoje);
-      for (var i = 1; i <= 3; i++) {
+      for (var i = 1; i <= 2; i++) {
         expect(await PreparoOffline.registrarAbertura(agora: hoje), i);
       }
-      // 3 aberturas: ainda baixa.
+      // 2 aberturas: ainda baixa.
       final calmo = await novo().executar(idsDeMusicas: ['m0'], hinarios: []);
       expect(calmo.parouPor, isNot('dia movimentado'));
       expect(cifras.length, 1);
 
-      expect(await PreparoOffline.registrarAbertura(agora: hoje), 4);
+      expect(await PreparoOffline.registrarAbertura(agora: hoje), 3);
       final movimentado =
           await novo().executar(idsDeMusicas: ['m1', 'm2'], hinarios: ['harpa']);
       expect(movimentado.parouPor, 'dia movimentado');

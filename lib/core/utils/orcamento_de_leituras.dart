@@ -19,7 +19,11 @@ library;
 
 class OrcamentoDeLeituras {
   /// Quantas leituras de preparação cada aparelho pode gastar por dia.
-  static const int limiteDiario = 250;
+  ///
+  /// 150 desde a rodada "orçamento de leituras" (eram 250): com 30 pessoas são
+  /// 4.500 por dia, 9% do limite grátis, e os dois hinários e as cifras (~1.265
+  /// documentos) enchem em cerca de 8 dias.
+  static const int limiteDiario = 150;
 
   /// O dia da conta (`yyyy-mm-dd`, do relógio do aparelho) e o gasto nele.
   final String dia;

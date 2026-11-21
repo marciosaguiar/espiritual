@@ -16,6 +16,7 @@ import 'audios_locais.dart';
 import 'firestore_service.dart';
 import 'hinos_locais.dart';
 import 'local_storage_service.dart';
+import 'modo_economia.dart';
 
 /// O que a preparação fez, para o teste e para o log.
 class RelatorioDoPreparo {
@@ -82,6 +83,7 @@ class PreparoOffline {
   final LerPaginaNoBanco lerPagina;
   final Future<void> Function(String traducaoId) baixarBiblia;
   final int limiteDiario;
+  final bool Function() economia;
 
   PreparoOffline({
     DateTime Function()? agora,
@@ -91,7 +93,9 @@ class PreparoOffline {
     LerPaginaNoBanco? lerPagina,
     Future<void> Function(String)? baixarBiblia,
     this.limiteDiario = OrcamentoDeLeituras.limiteDiario,
-  })  : agora = agora ?? DateTime.now,
+    bool Function()? economia,
+  })  : economia = economia ?? (() => ModoEconomia.instancia.ligado),
+        agora = agora ?? DateTime.now,
         online = online ?? (() => Rede.online),
         lerCifra = lerCifra ?? FirestoreService.lerArranjoDoServidor,
         lerIndice = lerIndice ?? FirestoreService.lerIndiceDoHinario,
@@ -143,16 +147,17 @@ class PreparoOffline {
 
   static const String chaveDasAberturas = 'preparo:aberturas';
 
-  /// A partir de quantas aberturas do app no mesmo dia a preparação fica quieta.
+  /// A partir de quantas aberturas do app no mesmo dia a preparação fica quieta
+  /// (a 3ª; eram 4 até a rodada "orçamento de leituras").
   ///
   /// **É a conta do plano grátis.** Cada abertura de mais de 30 minutos depois
   /// da anterior custa ~240 leituras (todos os documentos das escutas, de novo);
-  /// a preparação custa até 250 por dia — o equivalente a MAIS UMA abertura fria
+  /// a preparação custa até 150 por dia — mais da metade de OUTRA abertura fria
   /// por aparelho. Num domingo em que cada pessoa abre o app seis vezes, 30
   /// pessoas gastam ~43 mil leituras só abrindo, e somar 7.500 da preparação
   /// passaria dos 50 mil. Dia movimentado é justamente o dia de não baixar nada
   /// de fundo: a preparação espera um dia calmo.
-  static const int aberturasQueSilenciam = 4;
+  static const int aberturasQueSilenciam = 3;
 
   /// Conta uma abertura do app hoje e devolve quantas já foram.
   static Future<int> registrarAbertura({DateTime? agora}) async {
@@ -198,14 +203,33 @@ class PreparoOffline {
   /// Roda um passo da preparação. [idsDeMusicas] são as do repertório (as
   /// arquivadas não entram) e [hinarios] os ids dos hinários na ordem em que a
   /// pessoa os usa; [traducaoDaBiblia] é a tradução que ela lê.
+  ///
+  /// [carregarIdsDeMusicas] pede os ids DEPOIS de a preparação decidir que vai
+  /// rodar (sem internet, em modo de economia e num dia movimentado ela nem
+  /// começa). O repertório já não é lido a cada abertura do app — só quando
+  /// alguém abre a lista —, então é aqui, e só aqui, que a preparação o traz
+  /// para o aparelho. Se vier vazio, o passo das cifras simplesmente não tem o
+  /// que fazer.
   Future<RelatorioDoPreparo> executar({
-    required List<String> idsDeMusicas,
+    List<String> idsDeMusicas = const [],
+    Future<List<String>> Function()? carregarIdsDeMusicas,
     required List<String> hinarios,
     String? traducaoDaBiblia,
   }) async {
     if (!online()) return const RelatorioDoPreparo(parouPor: 'sem internet');
+    // Passou de 80% das leituras do dia: o que é conforto espera amanhã.
+    if (economia()) return const RelatorioDoPreparo(parouPor: 'modo de economia');
     if (await _aberturasHoje() >= aberturasQueSilenciam) {
       return const RelatorioDoPreparo(parouPor: 'dia movimentado');
+    }
+
+    if (carregarIdsDeMusicas != null) {
+      try {
+        idsDeMusicas = await carregarIdsDeMusicas();
+      } catch (_) {
+        // Sem a lista, a preparação segue com o que não depende dela.
+        idsDeMusicas = const [];
+      }
     }
 
     var orcamento = await _lerOrcamento();
