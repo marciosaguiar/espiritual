@@ -14,6 +14,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:provider/provider.dart';
+import 'package:levitasync/presentation/providers/songs_provider.dart';
 import 'package:levitasync/data/models/scale_model.dart';
 import 'package:levitasync/presentation/providers/scale_provider.dart';
 import 'package:levitasync/presentation/screens/scale/scale_screen.dart';
@@ -116,8 +118,16 @@ void main() {
 
       // O espaço à direita do nome curto, onde não há texto nem ícone: com o
       // `GestureDetector` do jeito antigo o clique caía no vazio.
+      // A sugestão é sorteada com a semente do DIA: o teste não pode apostar
+      // numa música — foi o que o fez reprovar na virada do dia (21/11/2026).
+      final primeira = t
+          .element(find.byType(SugestoesDoDia))
+          .read<SongsProvider>()
+          .suggestRepertoire(count: 4)
+          .first
+          .name;
       final nome = find.descendant(
-          of: find.byType(SugestoesDoDia), matching: find.text('Aliança eterna'));
+          of: find.byType(SugestoesDoDia), matching: find.text(primeira));
       final r = t.getRect(nome);
       await t.tapAt(Offset(r.right + 60, r.center.dy));
       await assentar(t);
