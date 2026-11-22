@@ -9,6 +9,7 @@ import '../../widgets/common/install_banner.dart';
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/app_strings.dart';
 import '../../../data/models/scale_model.dart';
+import '../biblia/biblia_screen.dart';
 import '../scale/scale_detail_screen.dart';
 import '../scale/modo_ao_vivo_screen.dart';
 import '../../../data/services/avisos_de_sincronia.dart';
@@ -18,6 +19,7 @@ import '../../widgets/home/pendencias.dart';
 import '../../../data/services/local_storage_service.dart';
 import '../../providers/chat_provider.dart';
 import '../../widgets/common/glass.dart';
+import '../../widgets/common/responsivo.dart';
 import '../../widgets/common/recuperacao_por_email.dart';
 import '../../widgets/common/minhas_proximas_musicas.dart';
 import '../../../data/models/user_model.dart';
@@ -141,6 +143,14 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             actions: [
+              // A Bíblia VOLTOU para a tela principal (pedido do dono). Tinha ido
+              // para a aba Músicas na rodada "menos é mais", e quem lê antes do
+              // culto não a achava. Fica na BARRA DE CIMA, ao lado do avatar, e
+              // não no meio da tela: o Início de quem está escalado já enche o
+              // celular (cartão do culto + as músicas), e um atalho no fim ficaria
+              // abaixo da dobra. Na barra fixa ele está à vista a qualquer
+              // momento, sem custar nenhuma altura.
+              const _AtalhoBiblia(),
               Padding(
                 padding: const EdgeInsets.only(right: 16),
                 child: Semantics(
@@ -218,8 +228,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   // feitos.
                   //
                   // O que SAIU desta tela, e para onde foi: "Hino pelo
-                  // número" e o atalho da Bíblia → aba Músicas; versículo do
-                  // dia → topo da Bíblia; sugestões do dia → Repertório.
+                  // número" → aba Músicas; versículo do dia → topo da Bíblia;
+                  // sugestões do dia → Repertório. (O atalho da Bíblia saiu e
+                  // VOLTOU: ver `_AtalhoBiblia`.)
                   final aviso = <Widget>[
                     // Recado de uma edição que não valeu: vem antes de tudo
                     // porque é sobre algo que a pessoa JÁ fez e acha que está
@@ -289,6 +300,65 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Atalho para a Bíblia, na barra de cima da tela principal.
+///
+/// Uma pílula com TEXTO e ícone, e não um ícone sozinho: o que está atrás de um
+/// ícone não existe para quem só usa WhatsApp. A tela e o texto só são
+/// carregados no toque — a Bíblia não entra no pacote inicial nem atrasa a
+/// abertura de quem nunca a lê. Abre por cima, como os outros toques do Início
+/// (que não é mestre-detalhe), e a mesma Bíblia continua dentro da aba Músicas:
+/// nada foi removido, só ganhou um segundo caminho.
+class _AtalhoBiblia extends StatelessWidget {
+  const _AtalhoBiblia();
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    return Padding(
+      padding: const EdgeInsets.only(right: 10),
+      child: Center(
+        child: Semantics(
+          button: true,
+          label: 'Bíblia. Ler no aparelho, sem internet.',
+          excludeSemantics: true,
+          child: ComMao(
+            onTap: () => Navigator.push(
+              context,
+              GlassPageRoute(builder: (_) => const BibliaScreen()),
+            ),
+            child: Container(
+              height: 40,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: AppColors.blue.withValues(alpha: isDark ? 0.28 : 0.13),
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.menu_book_rounded,
+                      size: 19,
+                      color: isDark ? Colors.white : AppColors.blue),
+                  const SizedBox(width: 7),
+                  Text(
+                    'Bíblia',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                      color: isDark ? Colors.white : AppColors.blue,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

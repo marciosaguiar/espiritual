@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 1070 testes
+flutter test                   # 1083 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -1817,6 +1817,14 @@ ou desce um nível. **Nada foi removido** — mudou de lugar.
   baixo — "Hino pelo número" e o versículo do dia foram para dentro de
   Músicas e da Bíblia. **Quando não há nada pendente, uma linha amigável**,
   não um cartão vazio.
+  **[22/11/2026: a Bíblia VOLTOU para a tela principal, a pedido do dono.]** Não
+  como cartão: uma pílula "Bíblia" (ícone e texto) na barra de CIMA do Início, ao
+  lado do avatar. O Início de quem está escalado já enche o celular (cartão do
+  culto + músicas), e um atalho no fim ficaria abaixo da dobra — foi o que a
+  primeira tentativa, uma linha embaixo do cartão, mostrou ao ser fotografada. Na
+  barra fixa ele está à vista a qualquer momento e não custa altura. A mesma
+  Bíblia continua dentro da aba Músicas; o versículo do dia continua no topo
+  dela. `test/biblia_no_inicio_test.dart` guarda o lugar a 375, 768 e 1280 px.
   As três contas de pendência são funções puras (`widgets/home/pendencias.dart`)
   e o que os testes guardam é principalmente o que NÃO deve aparecer: minha
   própria mensagem não conta como não lida, **"nunca abriu o chat neste
