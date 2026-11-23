@@ -41,12 +41,35 @@ colar() {
 #
 # `git am` com mudança não salva recusa no meio e deixa o repositório num
 # estado que assusta. Melhor parar antes e dizer o que fazer.
-if ! git diff --quiet || ! git diff --cached --quiet; then
-  echo "Há mudanças não salvas no repositório."
+#
+# EXCEÇÃO: arquivos que o PRÓPRIO FLUTTER regenera a cada `flutter pub get` e a
+# cada teste (a lista de pacotes e o registro de plugins). O `publicar.sh` roda
+# os dois, então, depois de qualquer publicação, o repositório amanhece "sujo"
+# por causa deles — e o `aplicar.sh` recusava o patch seguinte por um motivo
+# que ninguém mexeu. Esses arquivos voltam sozinhos ao que está no repositório,
+# e o script diz que fez isso. Qualquer OUTRO arquivo modificado continua
+# parando tudo: aí pode ser trabalho de verdade.
+REGENERADOS='(^|/)pubspec\.lock$|(^|/)GeneratedPluginRegistrant\.(java|m|swift)$|(^|/)generated_plugin_registrant\.(cc|h|cmake)$|(^|/)generated_plugins\.cmake$'
+
+MODIFICADOS=$( { git diff --name-only; git diff --cached --name-only; } | sort -u )
+if [ -n "$MODIFICADOS" ]; then
+  GERADOS=$(printf '%s\n' "$MODIFICADOS" | grep -E "$REGENERADOS" || true)
+  OUTROS=$(printf '%s\n' "$MODIFICADOS" | grep -vE "$REGENERADOS" || true)
+
+  if [ -n "$OUTROS" ]; then
+    echo "Há mudanças não salvas no repositório:"
+    printf '%s\n' "$OUTROS" | sed 's/^/  · /'
+    echo
+    echo "Guarde-as antes:   git stash"
+    echo "Ou jogue fora:     git checkout ."
+    exit 1
+  fi
+
+  echo "Arquivos que o Flutter regenera sozinho voltam ao normal:"
+  printf '%s\n' "$GERADOS" | sed 's/^/  · /'
+  # `-q` + `--` : só estes arquivos, sem tocar em mais nada.
+  printf '%s\n' "$GERADOS" | xargs git checkout HEAD --
   echo
-  echo "Guarde-as antes:   git stash"
-  echo "Ou jogue fora:     git checkout ."
-  exit 1
 fi
 
 RAMO=$(git rev-parse --abbrev-ref HEAD)
@@ -55,7 +78,7 @@ echo "Último commit: $(git log --oneline -1)"
 echo
 
 # ── 2. Decodificar o patch ───────────────────────────────────────────────
-TMP=$(mktemp -t levita-patch)
+TMP=$(mktemp "${TMPDIR:-/tmp}/levita-patch.XXXXXX")
 trap 'rm -f "$TMP"' EXIT
 
 if ! colar | base64 -d 2>/dev/null | gunzip > "$TMP" 2>/dev/null; then
@@ -71,8 +94,15 @@ if [ ! -s "$TMP" ]; then
   exit 1
 fi
 
+# O título vem codificado no arquivo (`=?UTF-8?q?feat:=20a=20B=C3=ADblia...`):
+# quem decodifica é o próprio git, que é o que vai gravar o commit.
 echo "O patch traz:"
-grep -E '^Subject: ' "$TMP" | sed -E 's/^Subject: (\[PATCH[^]]*\] )?/  · /'
+DIR_PATCH=$(mktemp -d "${TMPDIR:-/tmp}/levita-mbox.XXXXXX")
+trap 'rm -f "$TMP"; rm -rf "$DIR_PATCH"' EXIT
+git mailsplit -o"$DIR_PATCH" "$TMP" >/dev/null
+for mensagem in "$DIR_PATCH"/*; do
+  git mailinfo /dev/null /dev/null < "$mensagem" | sed -n 's/^Subject: /  · /p'
+done
 echo
 
 # ── 3. Aplicar ───────────────────────────────────────────────────────────
