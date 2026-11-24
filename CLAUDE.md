@@ -14,7 +14,7 @@ flutter pub get
 flutter run -d chrome          # ou um dispositivo conectado
 flutter analyze                # deve terminar sem nenhum "error"
                                # (os "issues" restantes são avisos)
-flutter test                   # 1083 testes
+flutter test                   # 1107 testes
 ```
 
 Testes das regras de segurança (sobem o emulador do Firestore; exigem Node e Java):
@@ -630,8 +630,8 @@ ainda guardam nome e artista copiados dentro de `songs[]`.
 
 Leitura offline, dentro do app: atalho no Início e em Perfil, grade de livros
 AT/NT com busca, capítulos, versículos numerados, fonte ajustável, copiar e
-compartilhar com a referência, e "Abrir no YouVersion" para quem quer outra
-tradução.
+compartilhar com a referência, e, no fim de cada capítulo, o mesmo capítulo
+aberto no YouVersion em NVI (padrão), NTLH, ARA, ARC ou NAA.
 
 - **O texto é ATIVO, não código.** `assets/biblia/<id>.json`, declarado no
   `pubspec.yaml`. Na web, um ativo do Flutter só sai pela rede quando alguém
@@ -658,10 +658,49 @@ tradução.
   Society) licencia por tradução e tem plano gratuito com 3 Bíblias e 5 mil
   chamadas por mês — exige chave e conferir se a NVI em português está no
   catálogo; ou pedir autorização à SBB (ARA, ARC, NTLH) e à Biblica (NVI).
-- **O botão leva ao capítulo certo na NVI**, em `bible.com`, que é de quem
-  tem o direito de publicá-la. `129` é a NVI em português e os livros usam o
-  código USFM de três letras (`JHN`, `SNG`); os dois foram conferidos no
-  próprio site, e um teste cobre os 66 códigos.
+- **NVI, Linguagem de Hoje (NTLH), ARA, ARC e NAA: abrem FORA, no capítulo
+  certo** (24/11/2026). O dono pediu "outras traduções em pt-BR, NVI como
+  padrão". **O texto delas continua não entrando no app**, pelo motivo acima, e
+  o que se entregou foi o que dá sem licença: no fim de cada capítulo, a NVI
+  vem como botão principal ("Ler João 3 na NVI") e NTLH, ARA, ARC e NAA logo
+  abaixo, sempre nesta ordem, cada uma abrindo o MESMO capítulo no
+  `bible.com`, que é de quem tem o direito de publicá-las. A tela diz que abre
+  fora e que precisa de internet — a Bíblia que funciona no culto sem sinal
+  continua sendo a Bíblia Livre e a Almeida 1911.
+  - **"Padrão" aqui é destaque, não leitura.** Não há tradução externa
+    "selecionada" que o leitor mostre: sem o texto, não há o que mostrar. A
+    NVI é o botão grande, e as outras quatro são um toque cada. **A ordem é
+    fixa** (`traducoesExternas`, a primeira é a padrão) e **o app não lembra
+    a última escolha**: tentei, e tirei — com todas a um toque, lembrar só
+    mudaria o que fica marcado, e lista que muda de lugar faz tocar na linha
+    errada.
+  - **Os números do YouVersion foram conferidos no site**, abrindo João 3 em
+    cada um (o contêiner não alcança o `bible.com`; foi o leitor de páginas):
+    **NVI 129** (Biblica), **NTLH 211**, **ARA 1608**, **ARC 212**, **NAA 1840**
+    (as quatro da Sociedade Bíblica do Brasil). Há versões com a MESMA sigla
+    que NÃO são as usadas: NVI 4360, NTLH 4539 ("edição católica"), ARC 3407
+    (Portugal). Um teste trava os cinco números — número errado levaria a
+    pessoa a outra Bíblia sem aviso — e outro garante que nenhuma sigla de
+    editora esteja na lista de textos que moram no app.
+  - **O capítulo do link acompanha a leitura** (passou para o 4, abre o 4), e
+    link que não abre AVISA com o endereço e um "Copiar" (`abrirLink`). O
+    link é aberto SEM esperar nada antes: no navegador, abrir página só vale
+    dentro do toque que a pediu.
+  - **Para pôr o TEXTO da NVI/NTLH/ARA dentro do app seria preciso licença, e
+    isso é uma decisão do dono, não um defeito.** Os caminhos que existem:
+    (1) autorização por escrito da SBB (NTLH, ARA, ARC, NAA) e da Biblica
+    (NVI) — com ela, é um arquivo em `assets/biblia` e uma linha em
+    `traducoesDisponiveis`, ou uma importação como a dos hinários (ver
+    "Biblioteca de hinários"), mas **aí o teste das siglas proibidas tem de
+    mudar junto, de propósito**; (2) `api.bible`, que exige chave (o Worker a
+    guardaria — chave no app é chave pública), tem 5 mil chamadas por mês no
+    plano grátis (um capítulo é uma chamada) e provavelmente **proíbe guardar
+    o texto no aparelho**, o que bate de frente com "offline primeiro". Nenhum
+    dos dois foi feito; o dono disse no pedido dos hinários que os
+    detentores "já autorizaram", mas **isso foi dito, não conferido, e para a
+    Bíblia nada foi dito**.
+  - Os livros usam o código USFM de três letras (`JHN`, `SNG`), e um teste
+    cobre os 66.
 - **Os `.json` não estão no histórico como patch:** são gerados por
   `bash ferramentas/baixar-biblia.sh`, que busca na fonte, confere os 66
   livros e grava sempre igual. Estão commitados no repositório, porque é o

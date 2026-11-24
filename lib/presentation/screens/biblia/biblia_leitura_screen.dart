@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 import '../../../core/constants/app_colors.dart';
 import '../../../core/constants/livros_biblia.dart';
 import '../../../core/platform/compartilhar.dart';
 import '../../../data/services/biblia_service.dart';
 import '../../providers/biblia_provider.dart';
+import '../../widgets/common/abrir_link.dart';
 
 /// A leitura: versículos numerados, fonte ajustável, capítulo anterior e
 /// próximo, e o crédito da tradução no rodapé — que não é enfeite, é o que a
@@ -110,14 +110,14 @@ class _BibliaLeituraScreenState extends State<BibliaLeituraScreen> {
     );
   }
 
-  Future<void> _abrirYouVersion() async {
-    final uri = BibliaService.noYouVersion(_livro.sigla, _capitulo);
-    final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
-    if (!ok && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Não foi possível abrir o navegador.')),
-      );
-    }
+  /// Abre ESTE capítulo na tradução escolhida, no YouVersion.
+  ///
+  /// Nada é esperado antes de abrir: no navegador, abrir uma página só
+  /// funciona dentro do toque que a pediu, e o iPhone bloqueia a que vem
+  /// depois de uma espera.
+  Future<void> _abrirNaExterna(TraducaoExterna t) {
+    final uri = BibliaService.noYouVersion(_livro.sigla, _capitulo, em: t);
+    return abrirLink(context, uri.toString());
   }
 
   @override
@@ -163,15 +163,11 @@ class _BibliaLeituraScreenState extends State<BibliaLeituraScreen> {
                   ),
                 const SizedBox(height: 24),
                 _Creditos(traducao: b.traducao, isDark: isDark),
-                const SizedBox(height: 12),
-                Center(
-                  child: TextButton.icon(
-                    onPressed: _abrirYouVersion,
-                    icon: const Icon(Icons.open_in_new_rounded, size: 17),
-                    label: const Text('Ler este capítulo na NVI'),
-                    style:
-                        TextButton.styleFrom(foregroundColor: AppColors.blue),
-                  ),
+                const SizedBox(height: 14),
+                _OutrasTraducoes(
+                  referencia: '${_livro.nome} $_capitulo',
+                  isDark: isDark,
+                  aoEscolher: _abrirNaExterna,
                 ),
               ],
             ),
@@ -268,6 +264,150 @@ class _Creditos extends StatelessWidget {
           color: isDark
               ? AppColors.textSecondaryDark
               : AppColors.textSecondaryLight,
+        ),
+      ),
+    );
+  }
+}
+
+/// NVI, NTLH, ARA, ARC e NAA: o MESMO capítulo, no YouVersion.
+///
+/// Essas traduções são de editoras e o app não pode guardá-las, então esta
+/// tela não finge que as tem: diz que abre fora e que precisa de internet. A
+/// NVI vem em destaque (é a padrão) e as outras ficam logo abaixo, sempre na
+/// mesma ordem.
+class _OutrasTraducoes extends StatelessWidget {
+  final String referencia;
+  final bool isDark;
+  final Future<void> Function(TraducaoExterna) aoEscolher;
+
+  const _OutrasTraducoes({
+    required this.referencia,
+    required this.isDark,
+    required this.aoEscolher,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final corTexto =
+        isDark ? AppColors.textPrimaryDark : AppColors.textPrimaryLight;
+    final corSuave =
+        isDark ? AppColors.textSecondaryDark : AppColors.textSecondaryLight;
+    final padrao = traducoesExternas.first;
+    final outras = traducoesExternas.skip(1);
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: isDark
+            ? Colors.white.withValues(alpha: 0.04)
+            : Colors.white.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      // O toque pinta no Material mais próximo, e a caixa colorida acima o
+      // esconderia: sem este, o toque não daria sinal nenhum.
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Semantics(
+              button: true,
+              excludeSemantics: true,
+              label: 'Ler $referencia na ${padrao.sigla}, ${padrao.nome}. '
+                  'Abre o YouVersion.',
+              child: FilledButton.icon(
+                onPressed: () => aoEscolher(padrao),
+                icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                label: Text('Ler $referencia na ${padrao.sigla}'),
+                style: FilledButton.styleFrom(
+                  backgroundColor: AppColors.blue,
+                  foregroundColor: Colors.white,
+                  minimumSize: const Size.fromHeight(48),
+                  textStyle: const TextStyle(
+                    fontFamily: 'Poppins',
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(top: 6, bottom: 12),
+              child: Text(
+                '${padrao.nome} · ${padrao.editora}',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    fontFamily: 'Poppins', fontSize: 11.5, color: corSuave),
+              ),
+            ),
+            Text(
+              'Ou em outra tradução',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: corTexto,
+              ),
+            ),
+            const SizedBox(height: 2),
+            for (final t in outras)
+              InkWell(
+                onTap: () => aoEscolher(t),
+                borderRadius: BorderRadius.circular(8),
+                child: Semantics(
+                  button: true,
+                  excludeSemantics: true,
+                  label: 'Ler $referencia na ${t.sigla}, ${t.nome}. '
+                      'Abre o YouVersion.',
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minHeight: 48),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 52,
+                          child: Text(
+                            t.sigla,
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.blue,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 6),
+                            child: Text(
+                              t.nome,
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 13.5,
+                                color: corTexto,
+                              ),
+                            ),
+                          ),
+                        ),
+                        Icon(Icons.open_in_new_rounded,
+                            size: 17, color: corSuave),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 6),
+            Text(
+              'Abre no site YouVersion e precisa de internet. São traduções de '
+              'editoras e não podem ser guardadas dentro do app.',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 10.5,
+                height: 1.5,
+                color: corSuave,
+              ),
+            ),
+          ],
         ),
       ),
     );

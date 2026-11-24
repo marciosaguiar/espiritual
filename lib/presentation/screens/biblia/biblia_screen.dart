@@ -535,8 +535,10 @@ class _EscolherTraducao extends StatelessWidget {
             ),
           const SizedBox(height: 6),
           Text(
-            'Só traduções que podem ser distribuídas dentro do app. Para NVI, '
-            'ARA e outras, use "Abrir no YouVersion" na tela de leitura.',
+            'Aqui ficam só as traduções que podem ser guardadas dentro do app, '
+            'e por isso funcionam sem internet. NVI, Linguagem de Hoje, ARA, '
+            'ARC e NAA são de editoras: no fim de qualquer capítulo há botões '
+            'que abrem o mesmo capítulo nelas (precisa de internet).',
             style: TextStyle(
               fontFamily: 'Poppins',
               fontSize: 12,

@@ -58,4 +58,12 @@ obra (nº 62383) com o aviso "Public domain in the USA".
 
 NVI, ARA, NAA, ARC, ACF, NTLH e companhia pertencem a editoras. Não importa
 que se ache o arquivo na internet: distribuir é com a editora. Quem quiser
-ler nessas traduções usa o botão "Abrir no YouVersion".
+ler nessas traduções usa os botões do fim de cada capítulo (NVI, NTLH, ARA,
+ARC e NAA), que abrem o mesmo capítulo no YouVersion — ver
+`traducoesExternas` em `lib/data/services/biblia_service.dart`, onde estão os
+números conferidos no site.
+
+Para colocar o TEXTO de uma delas dentro do app é preciso licença da editora
+(SBB para NTLH, ARA, ARC e NAA; Biblica para a NVI), e o teste que reprova as
+siglas proibidas tem de ser mudado junto, de propósito. Ver "Bíblia" no
+`CLAUDE.md`.

@@ -54,6 +54,16 @@ class BibliaProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Só para os testes de tela: põe uma tradução pronta, sem ler o arquivo.
+  @visibleForTesting
+  void carregarParaTeste(Traducao t) {
+    _traducao = t;
+    _idAtual = t.id;
+    _carregando = false;
+    _erro = null;
+    notifyListeners();
+  }
+
   Future<void> mudarFonte(double tamanho) async {
     _fonte = tamanho.clamp(13, 30);
     notifyListeners();
